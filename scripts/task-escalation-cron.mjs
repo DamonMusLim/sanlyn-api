@@ -103,15 +103,53 @@ function idempotencyKey(taskId, stageInfo, now) {
   return `${taskId}:stage${stageInfo.stage}`;
 }
 
+function nonEmptyText(value, fallback, maxLen) {
+  const text = String(value ?? "").trim() || String(fallback ?? "").trim();
+  const safe = text || "闭环任务提醒";
+  return maxLen ? safe.slice(0, maxLen) : safe;
+}
+
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+// 微信 time 类字段(time7)只吃日期,不吃完整 ISO,也不能塞文本兜底。
+// 依据:同仓 push.mjs 的 sendPendingCard 传的是 YYYY-MM-DD。
+function wechatDate(value) {
+  const d = asDate(value);
+  if (!d) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+function deadlineFor(task, stageInfo) {
+  return firstNonEmpty(
+    wechatDate(task.due_at),
+    wechatDate(task.next_notify_at),
+    wechatDate(stageInfo && stageInfo.nextAt),
+    wechatDate(task.created_at),
+    wechatDate(new Date())
+  );
+}
+
 function payloadFor(task, stageInfo) {
   const raw = rawObject(task.raw);
   const title = stageInfo.stage >= 2 ? `【加急】${task.title}` : task.title;
+  const cargo = firstNonEmpty(raw.cargo, raw.goods, raw.item, title, "闭环任务提醒");
+  const containerHint = firstNonEmpty(
+    raw.containers, raw.container_no, raw.container,
+    raw.domain, task.source, priorityLabel(task.priority)
+  );
+  // 微信模板不接受任何字段为空串(47003),每个字段都必须有真实兜底。
   return {
     to: "damon",
-    orderNo: task.related_order_no || "",
-    cargo: raw.cargo || raw.goods || raw.item || title,
-    deadline: task.due_at ? new Date(task.due_at).toISOString() : "",
-    containers: raw.containers || raw.container_no || raw.container || "",
+    orderNo: nonEmptyText(task.related_order_no, task.id, 32),
+    cargo: nonEmptyText(cargo, title, 20),
+    deadline: deadlineFor(task, stageInfo),
+    containers: nonEmptyText(containerHint, priorityLabel(task.priority), 32),
     url: `${PUBLIC_TASK_URL}${encodeURIComponent(task.id)}`,
   };
 }

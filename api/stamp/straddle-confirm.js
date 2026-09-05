@@ -98,7 +98,12 @@ async function inspectExistingSignatureContent(pdfBuffer, signature, pageW, page
       const i = rowBase + x * info.channels;
       const alpha = data[i + 3];
       if (alpha <= 20) continue;
-      if (data[i] < 245 || data[i + 1] < 245 || data[i + 2] < 245) ink++;
+      // 2026-08-27 修：原来"非白即算墨"(任一通道<245)会把普通浅灰/浅蓝设计底色盒子(如港杂费账单的
+      // "TOTAL PAYABLE"框，实测底色238,238,238)误判成"已有印章"，导致该盖的正常票据被跳过。
+      // 真正要防的是"这个位置已经有一个红色印章"，不是"这个位置不是纯白"——改成专门认红色墨迹
+      // (跟 squareCropStamp/色彩校正那批代码同一套判据：R 通道明显高于 G/B 才算印油)。
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      if (r - g > 30 && r - b > 20) ink++;
     }
   }
 
@@ -154,7 +159,11 @@ function normalizeSignature(signature, totalPages) {
   const x = Number(signature.x);
   const y = Number(signature.y);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  return { page: resolvePageIndex(signature.page, totalPages), x: clamp01(x), y: clamp01(y) };
+  // 2026-08-27 加：有些单据(比如港杂费账单)只需要盖公司正章，不需要"Damon 林"手写签名——
+  // 原来只要给了 signature 坐标就无条件连章带签一起画，没有单独关掉签名的开关。
+  // 默认还是 true(不传等于以前的行为，不破坏现有调用方)，显式传 withSignature:false 才只盖章。
+  const withSignature = signature.withSignature !== false;
+  return { page: resolvePageIndex(signature.page, totalPages), x: clamp01(x), y: clamp01(y), withSignature };
 }
 
 function embedStamp(pdfDoc, stampBuffer) {
@@ -262,6 +271,8 @@ export default async function handler(req, res) {
         // Font rendering (sharp+SVG+system fonts) is an environment dependency that can break
         // independently of everything else here — never let a signature failure 500 the whole
         // stamping request; just skip the signature and still stamp the seal (codex review finding).
+        // 2026-08-27: 只有 signature.withSignature !== false 才画这段——有些单据只要公司章不要个人签名。
+        if (signature.withSignature) {
         try {
           const sigBuffer = await generateSignaturePng();
           const sigImage = await pdfDoc.embedPng(sigBuffer);
@@ -281,6 +292,7 @@ export default async function handler(req, res) {
           });
         } catch (sigErr) {
           console.warn('signature generation failed, stamping seal without it:', sigErr.message);
+        }
         }
 
         const angleDeg = randomSealRotationDeg();

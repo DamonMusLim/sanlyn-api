@@ -4,39 +4,52 @@
 <meta charset="UTF-8">
 <title>购销合同模板 · 鑫宝凌</title>
 <style>
-@font-face { font-family:'FangSong'; src:url('https://api.sanlyn.cn/public/FangSong.ttf') format('truetype'); }
 * { box-sizing:border-box; margin:0; padding:0; }
-body { font-family:"STSongti-SC","Songti SC","SimSun","宋体",serif; background:#f0f2f5; padding:24px; color:#111; }
+/* ── 2026-08-19 统一视觉：跟 doc-css.js(PI/SC/IV 那套 Sanlyn OS 单据引擎共用样式) 对齐——
+   字体/表格/签署栏/页脚品牌行都照那边的语言改，这份合同以前是另一套旧样式(宋体+彩色圆角按钮+大阴影卡片)，
+   跟系统其它单据长得不一样。功能(选章/旋转/导出即归档)不动，只改视觉。 */
+body { font-family:-apple-system,'Helvetica Neue','Helvetica','Arial','PingFang SC',sans-serif; background:#f0f2f5; padding:24px; color:#111; }
 .toolbar { max-width:800px; margin:0 auto 16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-.toolbar button { padding:8px 18px; border-radius:7px; border:none; cursor:pointer; font-size:13px; font-weight:700; }
+.toolbar button { padding:8px 18px; border-radius:5px; border:none; cursor:pointer; font-size:12px; font-weight:700; letter-spacing:0.02em; }
 .btn-print { background:#1d4ed8; color:#fff; }
 .btn-seal  { background:#16a34a; color:#fff; }
 .btn-clear { background:#64748b; color:#fff; }
 .hint { font-size:11px; color:#64748b; }
-.page { max-width:800px; margin:0 auto; background:#fff; padding:60px 70px; box-shadow:0 4px 24px rgba(0,0,0,.15); min-height:1120px; }
-h1 { text-align:center; font-size:28px; font-weight:900; letter-spacing:4px; margin-bottom:28px; }
-.meta { font-size:15px; line-height:2.1; margin-bottom:18px; }
-.editable { display:inline-block; border-bottom:1px solid #aaa; min-width:60px; padding:0 4px; color:#111; outline:none; }
-.intro { font-size:15px; margin-bottom:14px; }
-table { width:100%; border-collapse:collapse; font-size:13px; margin-bottom:8px; }
-th,td { border:1px solid #333; padding:7px 8px; text-align:center; } th { font-weight:700; }
-td input { width:100%; border:none; outline:none; text-align:center; font-size:13px; font-family:inherit; background:#f0f7ff; padding:2px 4px; border-radius:3px; }
+.page { max-width:800px; margin:0 auto; background:#fff; padding:24px; box-shadow:0 1px 3px rgba(0,0,0,.12); min-height:1120px; font-size:11px; line-height:1.4; }
+.doc-head { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1.5px solid #111; padding-bottom:10px; margin-bottom:18px; }
+.doc-head h1 { margin:0; font-size:22px; font-weight:800; letter-spacing:0.06em; color:#111; line-height:1; }
+.doc-head p { font-size:10px; color:#888; letter-spacing:0.18em; margin:4px 0 0; text-transform:uppercase; }
+.meta { font-size:11px; line-height:2; margin-bottom:16px; }
+.editable { display:inline-block; border-bottom:1px solid #aaa; min-width:60px; padding:0 4px; color:#111; outline:none; font-weight:700; }
+.intro { font-size:11px; margin-bottom:10px; color:#333; }
+table { width:100%; border-collapse:collapse; font-size:10.5px; margin-bottom:14px; margin-top:4px; }
+th { background:#f5f5f5; border-top:1.5px solid #111; border-bottom:1px solid #111; padding:7px 8px; font-size:9px; font-weight:700; color:#333; letter-spacing:0.06em; text-transform:uppercase; text-align:center; }
+td { padding:8px; border-bottom:1px solid #ececec; text-align:center; color:#222; }
+td input { width:100%; border:none; outline:none; text-align:center; font-size:10.5px; font-family:inherit; background:#f8fafc; padding:2px 4px; border-radius:3px; }
 td input.left { text-align:left; }
-.clauses { font-size:15px; line-height:2.1; margin:16px 0; } .clauses p { margin-bottom:4px; }
-.sig-row { display:flex; justify-content:space-between; margin-top:60px; }
-.sig-box { width:46%; font-size:14px; }
-.sig-label { margin-bottom:10px; font-weight:700; }
-.seal-area { width:150px; height:150px; border:none; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:10px auto; cursor:default; position:relative; overflow:visible; }
+tr:last-child td { border-top:1.5px solid #111; border-bottom:1.5px solid #111; font-weight:800; background:#fafafa; }
+.clauses { font-size:11px; line-height:2; margin:16px 0; color:#333; } .clauses p { margin-bottom:4px; }
+.sig-row { display:flex; justify-content:space-between; margin-top:48px; page-break-inside:avoid; }
+.sig-box { width:46%; font-size:9px; border-top:1px solid #111; padding-top:8px; text-align:center; font-weight:700; color:#444; letter-spacing:0.08em; text-transform:uppercase; }
+.sig-label { margin-bottom:6px; }
+.seal-area { width:130px; height:130px; border:none; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:8px auto; cursor:default; position:relative; overflow:visible; }
 .seal-clip { position:absolute; inset:0; border-radius:50%; overflow:hidden; pointer-events:none; }
 .seal-clip img { width:100%; height:100%; object-fit:contain; display:none; transform-origin:center center; pointer-events:auto; cursor:grab; }
-.seal-hint { font-size:11px; color:#94a3b8; text-align:center; line-height:1.5; cursor:pointer; }
+.seal-hint { font-size:10px; color:#94a3b8; text-align:center; line-height:1.5; cursor:pointer; text-transform:none; font-weight:400; letter-spacing:normal; }
 .rot-handle { position:absolute; bottom:-12px; right:-12px; width:26px; height:26px; background:#3b82f6; color:#fff; border-radius:50%; display:none; align-items:center; justify-content:center; font-size:15px; cursor:grab; z-index:10; box-shadow:0 2px 8px rgba(0,0,0,.3); user-select:none; }
 .rot-handle:active { cursor:grabbing; background:#1d4ed8; }
-.sig-date { font-size:13px; margin-top:14px; color:#444; }
+.sig-date { font-size:8.5px; margin-top:10px; color:#888; text-transform:none; font-weight:400; letter-spacing:normal; }
+.brand-slogan { text-align:center; margin-top:24px; padding-top:10px; border-top:1px solid #e5e5e5; font-size:8.5px; color:#aaa; letter-spacing:0.1em; }
+.brand-slogan b { color:#888; font-weight:600; }
 
 /* ── Modal ── */
-#sealModal { display:none; position:fixed; inset:0; z-index:9999; background:#f8fafc; align-items:flex-start; justify-content:center; overflow-y:auto; }
-#sealModal.open { display:flex; }
+#sealModal, #historyModal { display:none; position:fixed; inset:0; z-index:9999; background:#f8fafc; align-items:flex-start; justify-content:center; overflow-y:auto; }
+#sealModal.open, #historyModal.open { display:flex; }
+.hist-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.hist-table th,.hist-table td { border:1px solid #e2e8f0; padding:7px 8px; text-align:left; }
+.hist-table th { background:#f1f5f9; }
+.hist-table a { color:#1d4ed8; text-decoration:none; font-weight:700; }
+.hist-table a:hover { text-decoration:underline; }
 .modal-box { background:#fff; border-radius:0; padding:32px 40px; width:100%; min-height:100vh; box-shadow:none; max-width:860px; margin:0 auto; }
 .modal-title { font-size:16px; font-weight:800; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; }
 .modal-close { cursor:pointer; font-size:20px; color:#94a3b8; background:none; border:none; }
@@ -94,8 +107,8 @@ td input.left { text-align:left; }
 
 @media print {
   body { background:#fff; padding:0; }
-  .toolbar, #sealModal { display:none!important; }
-  .page { box-shadow:none; padding:40px 60px; }
+  .toolbar, #sealModal, #historyModal { display:none!important; }
+  .page { box-shadow:none; padding:0; max-width:100%; }
   td input { background:transparent; }
   .seal-area { border:none; } .seal-hint,.rot-handle { display:none !important; }
 }
@@ -103,7 +116,10 @@ td input.left { text-align:left; }
 </head>
 <body>
 <div class="toolbar">
-  <button class="btn-print" onclick="window.print()">🖨 打印 / 导出PDF</button>
+  <button class="btn-print" onclick="printAndArchive()">🖨 打印 / 导出PDF</button>
+  <button class="btn-seal" onclick="archiveContract()">💾 保存</button>
+  <button class="btn-clear" style="background:#0f766e" onclick="openHistory()">📜 历史</button>
+  <span class="hint" id="archiveStatus"></span>
   <div class="seal-status-wrap">
     <div class="seal-status-item">
       <span class="seal-status-label">卖方章：</span>
@@ -123,7 +139,10 @@ td input.left { text-align:left; }
 </div>
 
 <div class="page">
-  <h1>购 销 合 同</h1>
+  <div class="doc-head">
+    <h1>购销合同</h1>
+    <p>PURCHASE CONTRACT</p>
+  </div>
   <div class="meta">
     买方：<span class="editable" contenteditable="true">厦门鑫宝凌汽车服务有限公司</span><br>
     卖方：<span class="editable" contenteditable="true">厦门车茶驿站汽车服务有限公司</span><br>
@@ -180,6 +199,18 @@ td input.left { text-align:left; }
       </div>
       <div class="sig-date">日期：<span class="editable" contenteditable="true">2026年&nbsp;&nbsp;月&nbsp;&nbsp;日</span></div>
     </div>
+  </div>
+  <div class="brand-slogan">⚡ Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b></div>
+</div>
+
+<!-- ── History Modal ── -->
+<div id="historyModal">
+  <div class="modal-box" style="max-width:900px;">
+    <div class="modal-title">
+      <span>📜 导出历史</span>
+      <button class="modal-close" onclick="closeHistory()">✕</button>
+    </div>
+    <div id="historyList" style="font-size:13px;">加载中…</div>
   </div>
 </div>
 
@@ -468,6 +499,31 @@ function openSealPicker(who) {
 }
 function closeModal() { document.getElementById('sealModal').classList.remove('open'); }
 
+/* ── History ── */
+function openHistory() {
+  document.getElementById('historyModal').classList.add('open');
+  var list = document.getElementById('historyList');
+  list.textContent = '加载中…';
+  fetch(API_BASE + '/api/db/contract-archive?docType=purchase-contract&limit=100', { headers: authHeaders() })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d.success) throw new Error(d.error || '加载失败');
+      if (!d.rows.length) { list.innerHTML = '<div class="stamp-empty">还没有归档记录。点「保存」或「打印/导出PDF」后会出现在这里。</div>'; return; }
+      var html = '<table class="hist-table"><thead><tr><th>归档时间</th><th>买方</th><th>卖方</th><th>金额</th><th>合同日期</th><th>操作人</th><th>PDF</th></tr></thead><tbody>';
+      d.rows.forEach(function(row) {
+        var t = row.archivedAt ? new Date(row.archivedAt).toLocaleString('zh-CN') : '';
+        html += '<tr><td>' + t + '</td><td>' + (row.buyer || '') + '</td><td>' + (row.seller || '') + '</td>'
+          + '<td>' + (row.amount || '') + '</td><td>' + (row.contractDate || '') + '</td><td>' + (row.operator || '') + '</td>'
+          + '<td><a href="' + row.url + '" target="_blank">查看/下载</a></td></tr>';
+      });
+      html += '</tbody></table>';
+      list.innerHTML = html;
+    })
+    .catch(function(err) { list.innerHTML = '<div class="stamp-empty">加载失败：' + err.message + '</div>'; });
+}
+function closeHistory() { document.getElementById('historyModal').classList.remove('open'); }
+document.getElementById('historyModal').addEventListener('click', function(e) { if (e.target === this) closeHistory(); });
+
 window.addEventListener('message', function(e) {
   if (!e.data || e.data.type !== 'seal-ready') return;
   applySeal(_sealTarget, e.data.dataUrl, e.data.label || '制作印章');
@@ -698,6 +754,49 @@ function calcAmount() {
   document.getElementById('amountTotal').value = fmt;
 }
 document.getElementById('sealModal').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
+
+/* ── 导出即归档：之前"打印/导出PDF"只是 window.print()，产物只在用户本机，服务器完全没留痕 ──
+   现在每次导出都顺带把当前合同(含已盖的章)渲染成PDF存一份到服务器+记一条 stamp_log，本机文件丢了/找不到了server这边还有底。 */
+function buildArchiveHtml() {
+  var pageClone = document.querySelector('.page').cloneNode(true);
+  var styleHtml = document.querySelector('head style').outerHTML;
+  return '<!DOCTYPE html><html><head><meta charset="UTF-8">' + styleHtml
+    + '<style>body{background:#fff;padding:0}.page{box-shadow:none;padding:40px 60px}</style></head>'
+    + '<body>' + pageClone.outerHTML + '</body></html>';
+}
+function printAndArchive() {
+  archiveContract();
+  window.print();
+}
+function archiveContract() {
+  var statusEl = document.getElementById('archiveStatus');
+  if (statusEl) { statusEl.textContent = '⏳ 归档中…'; statusEl.style.color = '#3b82f6'; }
+  var editables = document.querySelectorAll('.meta .editable');
+  var buyer = editables[0] ? editables[0].textContent.trim() : '';
+  var seller = editables[1] ? editables[1].textContent.trim() : '';
+  var contractDate = editables[2] ? editables[2].textContent.trim() : '';
+  var amountEl = document.getElementById('amountTotal');
+  var amount = amountEl ? amountEl.value : '';
+  var payload = {
+    html: buildArchiveHtml(),
+    docTitle: '购销合同',
+    docType: 'purchase-contract',
+    buyer: buyer,
+    seller: seller,
+    amount: amount,
+    contractDate: contractDate,
+    operator: getToken() ? 'web-authed' : 'web-anonymous',
+  };
+  fetch(API_BASE + '/api/db/contract-archive', { method: 'POST', headers: authHeaders(), body: JSON.stringify(payload) })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d.success) throw new Error(d.error || '归档失败');
+      if (statusEl) { statusEl.textContent = '✓ 已归档留痕'; statusEl.style.color = '#16a34a'; }
+    })
+    .catch(function(err) {
+      if (statusEl) { statusEl.textContent = '⚠ 归档失败：' + err.message + '（本地文件仍会正常导出，但服务器没留底，请截图保存）'; statusEl.style.color = '#ef4444'; }
+    });
+}
 
 /* ── Auto-restore saved seals on page load ── */
 document.addEventListener('DOMContentLoaded', function() {
