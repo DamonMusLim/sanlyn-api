@@ -9,6 +9,21 @@ function pos(v) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+const LOCAL_PORT_ALIASES = {
+  QINGDAO: ["QINGDAO", "青岛"],
+  XIAMEN: ["XIAMEN", "厦门"],
+  NINGBO: ["NINGBO", "宁波"],
+  TIANJIN: ["TIANJIN", "天津"],
+  SHANGHAI: ["SHANGHAI", "上海"],
+  LIANYUNGANG: ["LIANYUNGANG", "连云港"],
+  DALIAN: ["DALIAN", "大连"],
+  PORTKLANGWESTPORT: ["PORT KLANG WESTPORT", "PKG WESTPORT", "巴生西"],
+  PORTKLANGNORTHPORT: ["PORT KLANG NORTHPORT", "PKG NORTHPORT", "巴生北"],
+  KOTAKINABALU: ["KOTA KINABALU", "亚庇"],
+  PASIRGUDANG: ["PASIR GUDANG", "新山"],
+  CHITTAGONG: ["CHITTAGONG", "吉大港"],
+};
+
 function ymd(date) {
   var d = date instanceof Date ? date : new Date(date);
   if (!Number.isFinite(d.getTime())) return null;
@@ -35,6 +50,15 @@ function normCarrier(v) {
   return text(v).toUpperCase().replace(/\s+/g, " ");
 }
 
+function normScheduleCarrier(v) {
+  return text(v).toUpperCase().replace(/\s+/g, "");
+}
+
+function marketCarrierCode(v) {
+  var first = text(v).split(/\s+/)[0] || "";
+  return /^[A-Za-z0-9-]+$/.test(first) ? normScheduleCarrier(first) : "";
+}
+
 function normBox(v) {
   var s = text(v).toUpperCase().replace(/\s+/g, "").replace("HC", "HQ");
   if (s === "20" || s === "20GP") return "20GP";
@@ -42,8 +66,26 @@ function normBox(v) {
   return s;
 }
 
+function localNormalizePort(v) {
+  var official = normalizePort(v);
+  var direct = text(v).toUpperCase().replace(/\s+/g, "");
+  var keys = Object.keys(LOCAL_PORT_ALIASES);
+  for (var i = 0; i < keys.length; i++) {
+    var aliases = LOCAL_PORT_ALIASES[keys[i]];
+    for (var j = 0; j < aliases.length; j++) {
+      var alias = text(aliases[j]).toUpperCase().replace(/\s+/g, "");
+      if (official === alias || direct === alias) return keys[i];
+    }
+  }
+  return official.replace(/\s+/g, "");
+}
+
 function laneKey(pol, pod, carrier) {
   return normalizePort(pol) + "::" + normalizePort(pod) + "::" + normCarrier(carrier);
+}
+
+function scheduleLaneKey(pol, pod, carrier) {
+  return localNormalizePort(pol) + "::" + localNormalizePort(pod) + "::" + normScheduleCarrier(carrier);
 }
 
 function buildWeeks(today) {
@@ -62,21 +104,11 @@ function buildWeeks(today) {
       voyage: null,
       vessel: null,
       schedule_source: null,
+      transit_days: null,
       quoted: false,
       prices: {},
     };
   });
-}
-
-function parseDepartures(v) {
-  if (Array.isArray(v)) return v;
-  if (typeof v !== "string") return [];
-  try {
-    var parsed = JSON.parse(v || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (_) {
-    return [];
-  }
 }
 
 function inWindow(day, week) {
@@ -104,13 +136,19 @@ function collectPairs(lanes) {
   return { carriers: Object.keys(carriers), pairs: pairs };
 }
 
-async function loadSchedules(pool, carriers) {
+async function loadSchedules(pool, carriers, from, to) {
   if (!carriers.length) return [];
+  var codes = carriers.map(marketCarrierCode).filter(Boolean);
+  if (!codes.length) return [];
   const { rows } = await pool.query(
-    `SELECT ss.pol, ss.pod, ss.carrier_name, ss.next_sailing, ss.all_departures
-       FROM ship_schedules ss
-      WHERE upper(btrim(COALESCE(ss.carrier_name, ''))) = ANY($1::text[])`,
-    [carriers]
+    `SELECT ms.pol_name, ms.pod_name, ms.carrier, ms.vessel, ms.voyage,
+            ms.etd, ms.transit_days, ms.id
+       FROM market_sailings ms
+      WHERE ms.etd >= $1::date
+        AND ms.etd < $2::date
+        AND upper(substring(btrim(COALESCE(ms.carrier, '')) from '^[A-Za-z0-9-]+')) = ANY($3::text[])
+      ORDER BY ms.etd ASC, ms.id ASC`,
+    [from, to, codes]
   );
   return rows;
 }
@@ -148,28 +186,41 @@ async function loadRates(pool, companyId, carriers, from, to) {
   return rows;
 }
 
+function betterScheduleEntry(next, prev, targetCarrier) {
+  if (!prev) return next;
+  var nextCarrier = normScheduleCarrier(next.carrier_code);
+  var prevCarrier = normScheduleCarrier(prev.carrier_code);
+  var target = normScheduleCarrier(targetCarrier);
+  if (nextCarrier === target && prevCarrier !== target) return next;
+  if (next.etd < prev.etd) return next;
+  return prev;
+}
+
 function scheduleEntries(rows, pairs) {
   var byLane = {};
   (rows || []).forEach(function(row) {
-    var key = laneKey(row.pol, row.pod, row.carrier_name);
+    var carrierCode = marketCarrierCode(row.carrier);
+    if (!carrierCode) return;
+    var key = scheduleLaneKey(row.pol_name, row.pod_name, carrierCode);
     if (!pairs[key]) return;
-    var deps = parseDepartures(row.all_departures);
-    if (row.next_sailing) deps.push({ etd: row.next_sailing });
-    deps.forEach(function(dep) {
-      var etd = cleanDate(dep && dep.etd);
-      if (!etd) return;
-      var entry = {
-        etd: etd,
-        voyage: text(dep && dep.voyage) || null,
-        vessel: text(dep && dep.vessel) || null,
-        schedule_source: "ship_schedules",
-      };
-      if (!byLane[key]) byLane[key] = [];
-      byLane[key].push(entry);
-    });
+    var etd = cleanDate(row.etd);
+    if (!etd) return;
+    var entry = {
+      etd: etd,
+      voyage: text(row.voyage) || null,
+      vessel: text(row.vessel) || null,
+      transit_days: pos(row.transit_days),
+      carrier_code: carrierCode,
+      schedule_source: "market_sailings",
+    };
+    var dedupe = [entry.vessel || "", entry.voyage || "", entry.etd].join("::");
+    if (!byLane[key]) byLane[key] = {};
+    byLane[key][dedupe] = betterScheduleEntry(entry, byLane[key][dedupe], carrierCode);
   });
   Object.keys(byLane).forEach(function(key) {
-    byLane[key].sort(function(a, b) { return a.etd.localeCompare(b.etd); });
+    byLane[key] = Object.keys(byLane[key]).map(function(dedupe) {
+      return byLane[key][dedupe];
+    }).sort(function(a, b) { return a.etd.localeCompare(b.etd); });
   });
   return byLane;
 }
@@ -181,6 +232,7 @@ function applySchedule(week, entries) {
   week.voyage = hit.voyage;
   week.vessel = hit.vessel;
   week.schedule_source = hit.schedule_source;
+  week.transit_days = hit.transit_days;
 }
 
 function applyRfqPrices(weeks, rows) {
@@ -220,6 +272,14 @@ export async function attachLaneWeeks(pool, companyId, lanes) {
   var out = Array.isArray(lanes) ? lanes : [];
   var meta = collectPairs(out);
   var template = buildWeeks(new Date());
+  var schedulePairs = {};
+  out.forEach(function(lane) {
+    (lane.carriers || []).forEach(function(carrier) {
+      var carrierCode = marketCarrierCode(carrier && carrier.name);
+      if (!carrierCode) return;
+      schedulePairs[scheduleLaneKey(lane.pol, lane.pod, carrierCode)] = true;
+    });
+  });
   if (!pool || !companyId || !meta.carriers.length) {
     out.forEach(function(lane) {
       (lane.carriers || []).forEach(function(carrier) { carrier.weeks = buildWeeks(new Date()); });
@@ -228,14 +288,15 @@ export async function attachLaneWeeks(pool, companyId, lanes) {
   }
   var from = template[0].from;
   var to = template[2].to;
-  var schedules = scheduleEntries(await loadSchedules(pool, meta.carriers), meta.pairs);
+  var schedules = scheduleEntries(await loadSchedules(pool, meta.carriers, from, to), schedulePairs);
   var rfqs = groupPriceRows(await loadRfqItems(pool, companyId, meta.carriers, from, to), meta.pairs);
   var rates = groupPriceRows(await loadRates(pool, companyId, meta.carriers, from, to), meta.pairs);
   out.forEach(function(lane) {
     (lane.carriers || []).forEach(function(carrier) {
       var key = laneKey(lane.pol, lane.pod, carrier.name);
+      var scheduleKey = scheduleLaneKey(lane.pol, lane.pod, marketCarrierCode(carrier.name));
       var weeks = buildWeeks(new Date());
-      weeks.forEach(function(week) { applySchedule(week, schedules[key]); });
+      weeks.forEach(function(week) { applySchedule(week, schedules[scheduleKey]); });
       applyRfqPrices(weeks, rfqs[key]);
       applyRatePrices(weeks, rates[key]);
       weeks.forEach(function(week) { week.quoted = Object.keys(week.prices).length > 0; });
