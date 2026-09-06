@@ -198,8 +198,8 @@ async function upsertItem(client, rfqId, line) {
     `INSERT INTO freight_rfq_items
        (id, rfq_id, forwarder_co, forwarder_company_id, vessel, voyage, etd,
         usd_rate, currency, status, container_type, carrier, submitted_at, quote_detail_json)
-     VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6::date, $7, 'USD', $8, $9,
-        'quoted', now(), $10::jsonb)
+     VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6::date, $7, 'USD', 'quoted', $8,
+        $9, now(), $10::jsonb)
      RETURNING id`,
     [
       rfqId,
