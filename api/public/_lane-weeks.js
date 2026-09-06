@@ -24,6 +24,25 @@ const LOCAL_PORT_ALIASES = {
   CHITTAGONG: ["CHITTAGONG", "吉大港"],
 };
 
+const MARKET_CARRIER_ALIASES = {
+  "IAL运达航运": "IAL",
+  "ESL阿联酋": "ESL",
+  "GFS格飞驰": "GFS",
+  "南星": "NAMSUNG",
+  "SML森罗": "SML",
+  "CSL可达利": "CSL",
+  "SKR长锦": "SKR",
+  "WIN-FAST永发": "WIN-FAST",
+  "HAL兴亚": "HAL",
+  "ASL亚海": "ASL",
+  "外运集运": "外运",
+  "TGL亿发": "TGL",
+  "TCLC太海集运": "TCLC",
+  "合德海运": "合德",
+  "SLG海杰航运": "SLG",
+  "CUL中联航运": "CUL",
+};
+
 function ymd(date) {
   var d = date instanceof Date ? date : new Date(date);
   if (!Number.isFinite(d.getTime())) return null;
@@ -70,8 +89,25 @@ function normScheduleCarrier(v) {
 }
 
 function marketCarrierCode(v) {
+  var direct = normScheduleCarrier(v);
+  if (MARKET_CARRIER_ALIASES[direct]) return normScheduleCarrier(MARKET_CARRIER_ALIASES[direct]);
+  var aliases = Object.keys(MARKET_CARRIER_ALIASES);
+  for (var i = 0; i < aliases.length; i++) {
+    if (direct === normScheduleCarrier(MARKET_CARRIER_ALIASES[aliases[i]])) return direct;
+  }
   var first = text(v).split(/\s+/)[0] || "";
   return /^[A-Za-z0-9-]+$/.test(first) ? normScheduleCarrier(first) : "";
+}
+
+function marketCarrierAliasKeys(codes) {
+  var wanted = {};
+  (codes || []).forEach(function(code) {
+    var normalized = normScheduleCarrier(code);
+    if (normalized) wanted[normalized] = true;
+  });
+  return Object.keys(MARKET_CARRIER_ALIASES).filter(function(alias) {
+    return wanted[normScheduleCarrier(MARKET_CARRIER_ALIASES[alias])] === true;
+  });
 }
 
 function normBox(v) {
@@ -158,6 +194,7 @@ function collectPairs(lanes) {
 async function loadSchedules(pool, carriers, from, to) {
   if (!carriers.length) return [];
   var codes = carriers.map(marketCarrierCode).filter(Boolean);
+  var aliasKeys = marketCarrierAliasKeys(codes);
   if (!codes.length) return [];
   const { rows } = await pool.query(
     `SELECT ms.pol_name, ms.pod_name, ms.carrier, ms.vessel, ms.voyage,
@@ -165,9 +202,12 @@ async function loadSchedules(pool, carriers, from, to) {
        FROM market_sailings ms
       WHERE ms.etd >= $1::date
         AND ms.etd < $2::date
-        AND upper(substring(btrim(COALESCE(ms.carrier, '')) from '^[A-Za-z0-9-]+')) = ANY($3::text[])
+        AND (
+          upper(substring(btrim(COALESCE(ms.carrier, '')) from '^[A-Za-z0-9-]+')) = ANY($3::text[])
+          OR upper(regexp_replace(btrim(COALESCE(ms.carrier, '')), '\\s+', '', 'g')) = ANY($4::text[])
+        )
       ORDER BY ms.etd ASC, ms.id ASC`,
-    [from, to, codes]
+    [from, to, codes, aliasKeys]
   );
   return rows;
 }
