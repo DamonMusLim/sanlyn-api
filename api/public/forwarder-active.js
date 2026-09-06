@@ -1,6 +1,6 @@
 import { getPool, setCors } from "../db.js";
 import { normalizePort } from "../db/_official-port-charges.js";
-import { attachLaneWeeks } from "./_lane-weeks.js";
+import { addPendingPlan, attachLaneWeeks, finishPendingLane, isPendingShipment } from "./_lane-weeks.js";
 
 function cleanCode(req){
   var p = req.params && req.params.code;
@@ -272,7 +272,7 @@ function shipment(row, closed){
     booked_eta:booked ? (row.eta || null) : null,
     booking_state:booked ? (bookingState(row) || null) : null,
     arrived:booked && isArrived(row),
-    closed:!!(bl && closed[bl]),
+    is_pending:isPendingShipment(row), closed:!!(bl && closed[bl]),
   };
 }
 
@@ -317,12 +317,12 @@ function addPlan(lane, row, closed){
   lane.shipments.push(s);
   lane.order_count += 1;
 
-  var qty = numOrNull(row.container_qty);
+  var qty = numOrNull(row.container_qty), ct = boxType(row.container_type);
   if (qty != null) {
     lane.total_containers += qty;
-    var ct = boxType(row.container_type);
     if (ct) lane._box[ct] = (lane._box[ct] || 0) + qty;
   }
+  addPendingPlan(lane, row, s, qty, ct);
   addCarrier(lane, row);
   var gw = s.gross_weight_kg;
   if (gw != null) lane.gw_total += gw;
@@ -429,7 +429,7 @@ function finishLane(lane){
   var now = Date.now();
   lane.hot = t != null && t >= now && t <= now + 7 * 24 * 60 * 60 * 1000;
   lane.missing = Object.keys(lane._missing).sort();
-  finishCarriers(lane);
+  finishCarriers(lane); finishPendingLane(lane);
 
   delete lane._box;
   delete lane._cargo;

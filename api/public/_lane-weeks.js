@@ -117,6 +117,33 @@ function normBox(v) {
   return s;
 }
 
+export function isPendingShipment(row) {
+  return !(text(row && row.bl_no) && row && row.eta != null);
+}
+
+export function addPendingPlan(lane, row, shipment, qty, box) {
+  if (!lane || !shipment || !shipment.is_pending) return;
+  if (lane.pending_orders == null) lane.pending_orders = 0;
+  if (lane.pending_containers == null) lane.pending_containers = 0;
+  if (!lane._pendingBox) lane._pendingBox = {};
+  lane.pending_orders += 1;
+  if (qty != null) {
+    lane.pending_containers += qty;
+    if (box) lane._pendingBox[box] = (lane._pendingBox[box] || 0) + qty;
+  }
+}
+
+export function finishPendingLane(lane) {
+  if (!lane) return lane;
+  if (lane.pending_orders == null) lane.pending_orders = 0;
+  if (lane.pending_containers == null) lane.pending_containers = 0;
+  var box = lane._pendingBox || {};
+  var keys = Object.keys(box).sort();
+  lane.pending_boxes = keys.length ? keys.map(function(k) { return box[k] + "×" + k; }).join(" / ") : null;
+  delete lane._pendingBox;
+  return lane;
+}
+
 function localNormalizePort(v) {
   var official = normalizePort(v);
   var direct = text(v).toUpperCase().replace(/\s+/g, "");
