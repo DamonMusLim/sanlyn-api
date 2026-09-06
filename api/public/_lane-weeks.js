@@ -39,11 +39,26 @@ function addDays(date, days) {
   return d;
 }
 
+function localDateFromYmd(v) {
+  var m = text(v).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
 function cleanDate(v) {
   var s = text(v);
   var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return m[1] + "-" + m[2] + "-" + m[3];
   return v ? ymd(v) : null;
+}
+
+function etaFields(etd, transitDays, eta) {
+  var realEta = cleanDate(eta);
+  if (realEta) return { eta_est: realEta, eta_is_estimated: false };
+  if (!etd || transitDays == null) return { eta_est: null, eta_is_estimated: false };
+  var etdDate = localDateFromYmd(etd);
+  if (!etdDate) return { eta_est: null, eta_is_estimated: false };
+  return { eta_est: ymd(addDays(etdDate, transitDays)), eta_is_estimated: true };
 }
 
 function normCarrier(v) {
@@ -105,6 +120,10 @@ function buildWeeks(today) {
       vessel: null,
       schedule_source: null,
       transit_days: null,
+      slot_shared: false,
+      slot_carriers: [],
+      eta_est: null,
+      eta_is_estimated: false,
       quoted: false,
       prices: {},
     };
@@ -142,7 +161,7 @@ async function loadSchedules(pool, carriers, from, to) {
   if (!codes.length) return [];
   const { rows } = await pool.query(
     `SELECT ms.pol_name, ms.pod_name, ms.carrier, ms.vessel, ms.voyage,
-            ms.etd, ms.transit_days, ms.id
+            ms.etd, ms.eta, ms.transit_days, ms.slot_shared, ms.slot_carriers, ms.id
        FROM market_sailings ms
       WHERE ms.etd >= $1::date
         AND ms.etd < $2::date
@@ -205,11 +224,17 @@ function scheduleEntries(rows, pairs) {
     if (!pairs[key]) return;
     var etd = cleanDate(row.etd);
     if (!etd) return;
+    var transitDays = pos(row.transit_days);
+    var eta = etaFields(etd, transitDays, row.eta);
     var entry = {
       etd: etd,
       voyage: text(row.voyage) || null,
       vessel: text(row.vessel) || null,
-      transit_days: pos(row.transit_days),
+      transit_days: transitDays,
+      slot_shared: row.slot_shared === true,
+      slot_carriers: Array.isArray(row.slot_carriers) ? row.slot_carriers : [],
+      eta_est: eta.eta_est,
+      eta_is_estimated: eta.eta_is_estimated,
       carrier_code: carrierCode,
       schedule_source: "market_sailings",
     };
@@ -233,6 +258,10 @@ function applySchedule(week, entries) {
   week.vessel = hit.vessel;
   week.schedule_source = hit.schedule_source;
   week.transit_days = hit.transit_days;
+  week.slot_shared = hit.slot_shared;
+  week.slot_carriers = hit.slot_carriers;
+  week.eta_est = hit.eta_est;
+  week.eta_is_estimated = hit.eta_is_estimated;
 }
 
 function applyRfqPrices(weeks, rows) {
