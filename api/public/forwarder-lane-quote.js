@@ -374,7 +374,9 @@ export default async function handler(req, res) {
   var today = new Date();
   var body = req.body || {};
   var validFrom = cleanDate(body.valid_from) || ymd(today);
-  var validTo = cleanDate(body.valid_to) || ymd(addDays(today, 7));
+  // 2026-09-06 Damon 定 14 天(原 7 天):DeepSeek 与 GPT 独立评审均判「30天是旧运价表维护习惯不该延续、7天货代嫌烦会弃用或乱填」,
+  // GPT 给 14、DeepSeek 给 11,取 14 —— 目的是推动货代常态更新,又不至于满屏过期价。货代可手改。
+  var validTo = cleanDate(body.valid_to) || ymd(addDays(today, 14));
   var prepared = buildLines(body, loaded.token, company, validFrom, validTo);
   if (!prepared.lines.length) {
     return send(res, 400, { ok: false, error: "no_valid_lines", saved: [], skipped: prepared.skipped });

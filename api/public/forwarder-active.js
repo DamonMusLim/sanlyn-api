@@ -1,5 +1,6 @@
 import { getPool, setCors } from "../db.js";
 import { normalizePort } from "../db/_official-port-charges.js";
+import { attachLaneWeeks } from "./_lane-weeks.js";
 
 function cleanCode(req){
   var p = req.params && req.params.code;
@@ -474,7 +475,7 @@ async function handleGet(pool, token, res){
 
   var closed = await loadClosedMap(pool, supplierName);
   var plans = await loadPlans(pool, token.company_id);
-  var lanes = groupActivePlans(plans, closed);
+  var lanes = await attachLaneWeeks(pool, token.company_id, groupActivePlans(plans, closed));
   var preferredCarriers = (await pool.query("SELECT COALESCE(preferred_carriers, '{}'::text[]) AS preferred_carriers FROM companies WHERE id = $1 LIMIT 1", [token.company_id])).rows[0]?.preferred_carriers || [];
 
   return send(res, 200, {
