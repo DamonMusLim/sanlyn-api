@@ -143,9 +143,17 @@ async function findOrCreateRfq(client, line) {
 
 async function upsertItem(client, rfqId, line) {
   const detail = {
+    week_idx: line.week_idx,
+    week_from: line.week_from,
+    week_to: line.week_to,
+    etd: line.etd,
+    vessel: line.vessel,
+    voyage: line.voyage,
     guaranteed_usd: line.guaranteed_usd,
+    unguaranteed_usd: line.unguaranteed_usd,
     penalty_cny: line.penalty_cny,
     deposit_cny: line.deposit_cny,
+    submitted_at: ymd(new Date()),
   };
   const upd = await client.query(
     `UPDATE freight_rfq_items
@@ -157,11 +165,16 @@ async function upsertItem(client, rfqId, line) {
             forwarder_co = $9,
             forwarder_company_id = $10,
             submitted_at = COALESCE(submitted_at, now()),
-            quote_detail_json = $11::jsonb
+            quote_detail_json = CASE
+              WHEN quote_detail_json IS NULL THEN jsonb_build_array($11::jsonb)
+              WHEN jsonb_typeof(quote_detail_json) = 'array' THEN quote_detail_json || $11::jsonb
+              ELSE jsonb_build_array(quote_detail_json, $11::jsonb)
+            END
       WHERE rfq_id = $1
         AND forwarder_company_id = $2
         AND COALESCE(carrier, '') = COALESCE($3, '')
         AND COALESCE(container_type, '') = COALESCE($4, '')
+        AND COALESCE(etd::date::text, '') = COALESCE($8, '')
       RETURNING id`,
     [
       rfqId,
@@ -213,10 +226,11 @@ async function findRate(client, line) {
         AND lower(btrim(fr.pod)) = lower(btrim($4))
         AND fr.source = 'portal_quote'
         AND fr.${col} IS NOT NULL
+        AND COALESCE(fr.sail_date::date::text, '') = COALESCE($5, '')
       ORDER BY fr.updated_at DESC NULLS LAST, fr.id DESC
       LIMIT 1
       FOR UPDATE`,
-    [line.forwarder_company_id, line.carrier, line.pol, line.pod]
+    [line.forwarder_company_id, line.carrier, line.pol, line.pod, line.etd]
   );
   return rows[0] ? rows[0].id : null;
 }
@@ -226,26 +240,33 @@ async function expireOverlaps(client, line, keepId) {
   await client.query(
     `UPDATE freight_rates
         SET status = 'expired', updated_at = now()
-      WHERE forwarder_company_id = $1
-        AND COALESCE(carrier, '') = COALESCE($2, '')
-        AND lower(btrim(pol)) = lower(btrim($3))
-        AND lower(btrim(pod)) = lower(btrim($4))
-        AND ${col} IS NOT NULL
-        AND status = 'active'
-        AND ($7::int IS NULL OR id <> $7)
-        AND COALESCE(valid_from::date, '-infinity'::date) <= COALESCE($6::date, 'infinity'::date)
-        AND COALESCE(valid_to::date, 'infinity'::date) >= COALESCE($5::date, '-infinity'::date)`,
-    [line.forwarder_company_id, line.carrier, line.pol, line.pod, line.valid_from, line.valid_to, keepId]
+      WHERE freight_rates.forwarder_company_id = $1
+        AND COALESCE(freight_rates.carrier, '') = COALESCE($2, '')
+        AND lower(btrim(freight_rates.pol)) = lower(btrim($3))
+        AND lower(btrim(freight_rates.pod)) = lower(btrim($4))
+        AND freight_rates.source = 'portal_quote'
+        AND freight_rates.${col} IS NOT NULL
+        AND freight_rates.status = 'active'
+        AND COALESCE(freight_rates.sail_date::date::text, '') = COALESCE($5, '')
+        AND ($6::int IS NULL OR freight_rates.id <> $6)`,
+    [line.forwarder_company_id, line.carrier, line.pol, line.pod, line.etd, keepId]
   );
 }
 
 async function upsertRate(client, line, rfqItemId, code) {
   var col = rateColumn(line.container_type);
+  var otherCol = col === "gp20" ? "hq40" : "gp20";
   var existingId = await findRate(client, line);
   var raw = {
     rfq_item_id: rfqItemId,
     submitted_by_portal_code: code,
     forwarder_company_code: line.forwarder_company_code,
+    week_idx: line.week_idx,
+    week_from: line.week_from,
+    week_to: line.week_to,
+    etd: line.etd,
+    vessel: line.vessel,
+    voyage: line.voyage,
     guaranteed_usd: line.guaranteed_usd,
     penalty_cny: line.penalty_cny,
     deposit_cny: line.deposit_cny,
@@ -259,11 +280,16 @@ async function upsertRate(client, line, rfqItemId, code) {
               pol = $4,
               pod = $5,
               ${col} = $6,
+              ${otherCol} = NULL,
               valid_from = $7,
               valid_to = $8,
+              sail_date = $9,
+              vessel_name = $10,
+              voyage_no = $11,
+              transit_days = $12,
               status = 'active',
               source = 'portal_quote',
-              raw = COALESCE(raw, '{}'::jsonb) || $9::jsonb,
+              raw = COALESCE(raw, '{}'::jsonb) || $13::jsonb,
               updated_at = now()
         WHERE id = $1
         RETURNING id`,
@@ -276,6 +302,10 @@ async function upsertRate(client, line, rfqItemId, code) {
         line.unguaranteed_usd,
         line.valid_from,
         line.valid_to,
+        line.etd,
+        line.vessel,
+        line.voyage,
+        line.transit_days,
         JSON.stringify(raw),
       ]
     );
@@ -285,8 +315,9 @@ async function upsertRate(client, line, rfqItemId, code) {
   const ins = await client.query(
     `INSERT INTO freight_rates
        (forwarder_company_id, forwarder, carrier, pol, pod, ${col},
-        valid_from, valid_to, status, source, raw, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active','portal_quote',$9::jsonb,now(),now())
+        valid_from, valid_to, sail_date, vessel_name, voyage_no, transit_days,
+        status, source, raw, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'active','portal_quote',$13::jsonb,now(),now())
      RETURNING id`,
     [
       line.forwarder_company_id,
@@ -297,6 +328,10 @@ async function upsertRate(client, line, rfqItemId, code) {
       line.unguaranteed_usd,
       line.valid_from,
       line.valid_to,
+      line.etd,
+      line.vessel,
+      line.voyage,
+      line.transit_days,
       JSON.stringify(raw),
     ]
   );
@@ -344,9 +379,13 @@ function buildLines(body, token, company, validFrom, validTo) {
       guaranteed_usd: nullableNumber(line && line.guaranteed_usd),
       penalty_cny: nullableNumber(line && line.penalty_cny),
       deposit_cny: nullableNumber(line && line.deposit_cny),
+      week_idx: line && line.week_idx == null ? null : nullableNumber(line && line.week_idx),
+      week_from: cleanDate(line && line.week_from),
+      week_to: cleanDate(line && line.week_to),
       etd: cleanDate(line && line.etd),
       vessel: text(line && line.vessel),
       voyage: text(line && line.voyage),
+      transit_days: nullableNumber(line && line.transit_days),
       valid_from: validFrom,
       valid_to: validTo,
       forwarder_company_id: token.company_id,
@@ -397,6 +436,8 @@ export default async function handler(req, res) {
         rfq_id: rfqId,
         rfq_item_id: rfqItemId,
         freight_rate_id: freightRateId,
+        week_idx: line.week_idx,
+        etd: line.etd,
       });
     }
     await client.query("COMMIT");
