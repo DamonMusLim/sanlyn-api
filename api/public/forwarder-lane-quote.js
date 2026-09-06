@@ -161,7 +161,7 @@ async function upsertItem(client, rfqId, line) {
             currency = 'USD',
             vessel = $6,
             voyage = $7,
-            etd = $8,
+            etd = $8::date,
             forwarder_co = $9,
             forwarder_company_id = $10,
             submitted_at = COALESCE(submitted_at, now()),
@@ -174,7 +174,7 @@ async function upsertItem(client, rfqId, line) {
         AND forwarder_company_id = $2
         AND COALESCE(carrier, '') = COALESCE($3, '')
         AND COALESCE(container_type, '') = COALESCE($4, '')
-        AND COALESCE(etd::date::text, '') = COALESCE($8, '')
+        AND COALESCE(etd::date::text, '') = COALESCE($12::text, '')
       RETURNING id`,
     [
       rfqId,
@@ -188,6 +188,7 @@ async function upsertItem(client, rfqId, line) {
       line.forwarder_name,
       line.forwarder_company_id,
       JSON.stringify(detail),
+      line.etd,
     ]
   );
   if (upd.rows.length) return upd.rows[0].id;
@@ -196,7 +197,7 @@ async function upsertItem(client, rfqId, line) {
     `INSERT INTO freight_rfq_items
        (id, rfq_id, forwarder_co, forwarder_company_id, vessel, voyage, etd,
         usd_rate, currency, container_type, carrier, submitted_at, quote_detail_json)
-     VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, 'USD', $8, $9,
+     VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6::date, $7, 'USD', $8, $9,
         now(), $10::jsonb)
      RETURNING id`,
     [
@@ -226,7 +227,7 @@ async function findRate(client, line) {
         AND lower(btrim(fr.pod)) = lower(btrim($4))
         AND fr.source = 'portal_quote'
         AND fr.${col} IS NOT NULL
-        AND COALESCE(fr.sail_date::date::text, '') = COALESCE($5, '')
+        AND COALESCE(fr.sail_date::date::text, '') = COALESCE($5::text, '')
       ORDER BY fr.updated_at DESC NULLS LAST, fr.id DESC
       LIMIT 1
       FOR UPDATE`,
@@ -247,7 +248,7 @@ async function expireOverlaps(client, line, keepId) {
         AND freight_rates.source = 'portal_quote'
         AND freight_rates.${col} IS NOT NULL
         AND freight_rates.status = 'active'
-        AND COALESCE(freight_rates.sail_date::date::text, '') = COALESCE($5, '')
+        AND COALESCE(freight_rates.sail_date::date::text, '') = COALESCE($5::text, '')
         AND ($6::int IS NULL OR freight_rates.id <> $6)`,
     [line.forwarder_company_id, line.carrier, line.pol, line.pod, line.etd, keepId]
   );
@@ -283,7 +284,7 @@ async function upsertRate(client, line, rfqItemId, code) {
               ${otherCol} = NULL,
               valid_from = $7,
               valid_to = $8,
-              sail_date = $9,
+              sail_date = $9::date,
               vessel_name = $10,
               voyage_no = $11,
               transit_days = $12,
@@ -317,7 +318,7 @@ async function upsertRate(client, line, rfqItemId, code) {
        (forwarder_company_id, forwarder, carrier, pol, pod, ${col},
         valid_from, valid_to, sail_date, vessel_name, voyage_no, transit_days,
         status, source, raw, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'active','portal_quote',$13::jsonb,now(),now())
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10,$11,$12,'active','portal_quote',$13::jsonb,now(),now())
      RETURNING id`,
     [
       line.forwarder_company_id,
