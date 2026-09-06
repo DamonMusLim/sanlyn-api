@@ -95,7 +95,13 @@ logistics_rows AS (
          NULL::jsonb AS details,
          false AS is_group
     FROM active_freight_supplier_bills b
-    LEFT JOIN shipping_plans sp ON sp.bl_no = b.bl_no OR sp.hbl_no = b.bl_no OR sp._id = b.link_plan_id
+    LEFT JOIN shipping_plans sp ON (
+      sp.bl_no = b.bl_no
+      OR sp.hbl_no = b.bl_no
+      -- 2026 实测 link_plan_id 混用 shipping_plans.id 2,406 行 / _id 362 行:客户门户两种主键都认,不批量改历史数据。
+      OR sp.id::text = b.link_plan_id::text
+      OR sp._id::text = b.link_plan_id::text
+    )
    WHERE b.payer_company_code = $1
      AND COALESCE(b.sale_amount, 0) > 0
 )
@@ -160,5 +166,6 @@ export function buildSummary(rows) {
 // shipping_plans, order_line_items/products labels, recon-board money/due/statusOf.
 // Claude review fixes: p.name_en(不存在)->bl_description/declaration_name_en; direction='in'->COALESCE NOT IN(空串陷阱铁律).
 // 2026-07-17: product_rows aggregated by bl_no (merge same-B/L multi-order lines); order_nos/details/is_group added for frontend expand.
+// 2026-09-06: logistics join 同时认 shipping_plans.id/_id,止血 2,406 行整型 link_plan_id 隐形。
 // item_desc now prefers declaration_name_en (IV/PL goods category, e.g. "CAT LITTER") over full product_name.
-// Final line count after this edit: 163.
+// Final line count after this edit: 170.

@@ -8,6 +8,12 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { normalizeChargeName } from "./lib/portcharge-close-loop.js";
+import {
+  planGovernFlag,
+  planStats,
+  planWarning,
+  resolvePlanIdForBillResult,
+} from "./_plan-resolver.js";
 
 const FOB_TERMS = new Set(["FOB", "FCA", "EXW"]);
 const ABSORBED_TERMS = new Set(["CIF", "CFR", "CIP", "CPT", "DDP", "DAP"]);
@@ -110,29 +116,6 @@ async function getBillColumns(pool) {
   );
   billColumnsCache = new Set(r.rows.map(row => row.column_name));
   return billColumnsCache;
-}
-
-async function resolvePlanIdForBill(pool, blNo, linkPlanId) {
-  const raw = norm(linkPlanId);
-  if (/^[0-9]+$/.test(raw)) return raw;
-
-  const plans = await pool.query(
-    `SELECT id
-       FROM shipping_plans
-      WHERE bl_no = $1
-        AND bl_no NOT LIKE '%#%'
-      ORDER BY id
-      LIMIT 2`,
-    [blNo]
-  );
-  if (plans.rows.length === 1) return String(plans.rows[0].id);
-  if (!raw) return null;
-
-  const err = new Error(plans.rows.length ? "link_plan_id ambiguous by bl_no" : "link_plan_id cannot resolve by bl_no");
-  err.status = 409;
-  err.code = plans.rows.length ? "ambiguous_plan" : "plan_not_found";
-  err.field = "link_plan_id";
-  throw err;
 }
 
 async function findCompanies(pool, q) {
@@ -359,7 +342,10 @@ export default async function handler(req, res) {
     const raw = buildRaw(body, supplier, payer, payerType, freightTerm);
     raw.original_name = chargeNorm.original_name || null;
     raw.unmapped = Boolean(chargeNorm.unmapped);
-    const linkPlanId = await resolvePlanIdForBill(pool, blNo, body.link_plan_id);
+
+    // 归集解析只产出 planId/治理标记,多命中不猜、未命中不卡录入。
+    const planResult = await resolvePlanIdForBillResult(pool, blNo, body.link_plan_id, body);
+    const warning = planWarning(body, planResult);
 
     const base = {
       supplier: companyLabel(supplier),
@@ -376,12 +362,16 @@ export default async function handler(req, res) {
       pair_id: body.pair_id || null,
       rebill_status: payerResult.rebillStatus,
       incoterm: freightTerm || null,
-      link_plan_id: linkPlanId,
+      link_plan_id: planResult.planId,
       link_agency_id: body.link_agency_id || null,
       reconciled: false,
       reconcile_note: body.reconcile_note || null,
       source_row: body.source_row || null,
       raw,
+      govern_flag: planGovernFlag(planResult),
+      resolved_method: planResult.status === "matched" ? planResult.method : null,
+      resolved_confidence: planResult.status === "matched" ? 1.0 : null,
+      resolved_at: planResult.status === "matched" ? new Date() : null,
     };
 
     const columns = await getBillColumns(pool);
@@ -410,6 +400,8 @@ export default async function handler(req, res) {
     return res.status(201).json({
       ok: true,
       data: r.rows[0],
+      warnings: warning ? [warning] : [],
+      stats: planStats([planResult]),
       supplier: {
         code: supplier.code,
         type: supplier.type,

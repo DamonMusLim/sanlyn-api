@@ -17,12 +17,19 @@
 //   currency       — filter by currency (exact)
 //   limit          — max rows (default 200, max 1000)
 //   offset         — pagination offset (default 0)
+//   meta=unlinked_sweep — read-only sweep for unlinked rows
 //
 // Response: { success: true, data: [...], count: N, total: N }
 
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { normalizeChargeName } from "./lib/portcharge-close-loop.js";
+import {
+  planGovernFlag,
+  planStats,
+  planWarning,
+  resolvePlanIdForBillResult,
+} from "./_plan-resolver.js";
 
 function cleanText(v) {
   return String(v ?? "").trim();
@@ -69,28 +76,8 @@ function auditPlanId(row) {
   return Number(raw);
 }
 
-// 可传 pool 或事务内的 client
-async function resolvePlanIdForBill(db, blNo, linkPlanId) {
-  const raw = cleanText(linkPlanId);
-  if (/^[0-9]+$/.test(raw)) return raw;
-
-  const plans = await db.query(
-    `SELECT id
-       FROM shipping_plans
-      WHERE bl_no = $1
-        AND bl_no NOT LIKE '%#%'
-      ORDER BY id
-      LIMIT 2`,
-    [cleanText(blNo)]
-  );
-  if (plans.rows.length === 1) return String(plans.rows[0].id);
-  if (!raw) return null;
-
-  const err = new Error(plans.rows.length ? "link_plan_id ambiguous by bl_no" : "link_plan_id cannot resolve by bl_no");
-  err.status = 409;
-  err.code = plans.rows.length ? "ambiguous_plan" : "plan_not_found";
-  err.field = "link_plan_id";
-  throw err;
+function isAllowedPatchGovernFlag(v) {
+  return v === null || v === "unlinked_pending" || v === "unlinked_ambiguous";
 }
 
 export default async function handler(req, res) {
@@ -116,16 +103,26 @@ export default async function handler(req, res) {
       const raw = b.raw && typeof b.raw === "object" ? { ...b.raw } : {};
       raw.original_name = chargeNorm.original_name || null;
       raw.unmapped = Boolean(chargeNorm.unmapped);
-      const linkPlanId = await resolvePlanIdForBill(pool, b.bl_no, b.link_plan_id);
+      const planResult = await resolvePlanIdForBillResult(pool, b.bl_no, b.link_plan_id, b);
+      const warning = planWarning(b, planResult);
       const r = await pool.query(
         `INSERT INTO freight_supplier_bills
-           (bl_no, link_plan_id, cost_category, amount, currency, sale_amount, rebill_status, supplier, bill_month, raw, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now()) RETURNING *`,
-        [b.bl_no, linkPlanId, chargeNorm.name || b.cost_category, b.amount, b.currency,
+           (bl_no, link_plan_id, cost_category, amount, currency, sale_amount, rebill_status, supplier, bill_month, raw,
+            govern_flag, resolved_method, resolved_confidence, resolved_at, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,now(),now()) RETURNING *`,
+        [b.bl_no, planResult.planId, chargeNorm.name || b.cost_category, b.amount, b.currency,
          b.sale_amount, b.rebill_status ?? null, b.supplier ?? "待补",
-         b.bill_month ?? null, JSON.stringify(raw)]
+         b.bill_month ?? null, JSON.stringify(raw), planGovernFlag(planResult),
+         planResult.status === "matched" ? planResult.method : null,
+         planResult.status === "matched" ? 1.0 : null,
+         planResult.status === "matched" ? new Date() : null]
       );
-      return res.status(201).json({ success: true, data: r.rows[0] });
+      return res.status(201).json({
+        success: true,
+        data: r.rows[0],
+        warnings: warning ? [warning] : [],
+        stats: planStats([planResult]),
+      });
     } catch (err) {
       return res.status(err.status || 500).json({ success: false, error: err.message, code: err.code, field: err.field });
     }
@@ -143,9 +140,18 @@ export default async function handler(req, res) {
     try {
       const body = req.body || {};
       if (!body.id) return res.status(400).json({ success: false, error: "id required" });
-      const PATCHABLE = ["amount","sale_amount","cost_category","rebill_status","reconcile_note","container_no","link_plan_id","incoterm","supplier_type","currency","rebill_to_type","rebill_to_name","rebill_dn_no","rebill_finance_slip_id","confirmed_at","confirmed_by","unit_price","qty","charge_basis","remarks"];
+      const PATCHABLE = ["amount","sale_amount","cost_category","rebill_status","reconcile_note","container_no","link_plan_id","incoterm","supplier_type","currency","rebill_to_type","rebill_to_name","rebill_dn_no","rebill_finance_slip_id","confirmed_at","confirmed_by","unit_price","qty","charge_basis","remarks","govern_flag","resolved_method","resolved_confidence","resolved_at"];
       const patchFields = PATCHABLE.filter((col) => Object.prototype.hasOwnProperty.call(body, col));
       if (!patchFields.length) return res.status(400).json({ success: false, error: "no patchable fields" });
+
+      // govern_flag 还有 cat_pending 等其他用途值;PATCH 只允许写归集巡检专用值,避免静默污染状态语义。
+      if (Object.prototype.hasOwnProperty.call(body, "govern_flag") && !isAllowedPatchGovernFlag(body.govern_flag)) {
+        return res.status(400).json({
+          success: false,
+          error: "invalid govern_flag for PATCH; allowed values: unlinked_pending, unlinked_ambiguous, null",
+          field: "govern_flag",
+        });
+      }
 
       for (const col of ["sale_amount", "amount", "currency"]) {
         if (Object.prototype.hasOwnProperty.call(body, col) && isMissingRequired(body[col])) {
@@ -161,9 +167,19 @@ export default async function handler(req, res) {
         return res.status(404).json({ success: false, error: "record not found" });
       }
       const oldRow = current.rows[0];
+      let warning = null;
 
       if (Object.prototype.hasOwnProperty.call(body, "link_plan_id")) {
-        body.link_plan_id = await resolvePlanIdForBill(client, body.bl_no || oldRow.bl_no, body.link_plan_id);
+        const planResult = await resolvePlanIdForBillResult(client, body.bl_no || oldRow.bl_no, body.link_plan_id, { ...oldRow, ...body });
+        body.link_plan_id = planResult.planId;
+        body.govern_flag = planGovernFlag(planResult);
+        body.resolved_method = planResult.status === "matched" ? planResult.method : null;
+        body.resolved_confidence = planResult.status === "matched" ? 1.0 : null;
+        body.resolved_at = planResult.status === "matched" ? new Date() : null;
+        warning = planWarning({ ...oldRow, ...body }, planResult);
+        for (const col of ["govern_flag", "resolved_method", "resolved_confidence", "resolved_at"]) {
+          if (!patchFields.includes(col)) patchFields.push(col);
+        }
       }
 
       const params = [], sets = [];
@@ -201,7 +217,7 @@ export default async function handler(req, res) {
       );
 
       await client.query("COMMIT");
-      return res.status(200).json({ success: true, data: newRow });
+      return res.status(200).json({ success: true, data: newRow, warnings: warning ? [warning] : [] });
     } catch (err) {
       await client.query("ROLLBACK").catch(() => {});
       return res.status(err.status || 500).json({ success: false, error: err.message, code: err.code, field: err.field });
@@ -225,7 +241,6 @@ export default async function handler(req, res) {
     } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
   }
 
-  // Only GET (and above POST/PATCH/DELETE) allowed
   if (req.method !== "GET") {
     return res.status(405).json({
       error: "Method not allowed.",
@@ -235,12 +250,6 @@ export default async function handler(req, res) {
 
   if (!requireAuth(req, res)) return;
 
-  // ── Access control ────────────────────────────────────────────────────────
-  // admin / finance : full access (all suppliers, all filters honoured)
-  // logistics       : read-only access to OWN supplier rows only
-  //                   company binding is taken from JWT; ?supplier= query param
-  //                   is IGNORED to prevent cross-supplier data leakage
-  // others          : 403
   const role        = req.user?.role;
   const userCompany     = req.user?.company || req.user?.companyName || null;
   const userCompanyCode = req.user?.companyCode || (Array.isArray(req.user?.companyCodes) && req.user.companyCodes[0]) || null;
@@ -261,15 +270,46 @@ export default async function handler(req, res) {
   try {
     const {
       bl_no,
-      supplier,          // NOTE: ignored for logistics role (see below)
+      supplier,
       supplier_type,
       bill_month,
       reconciled,
       cost_category,
       currency,
+      meta,
       limit: rawLimit = "200",
       offset: rawOffset = "0",
     } = req.query;
+
+    if (meta === "unlinked_sweep") {
+      // 只读巡检:覆盖 API 之外直接 SQL 写入的漏挂账单,只报数不自动修历史数据。
+      const where = `link_plan_id IS NULL AND govern_flag IS NULL AND COALESCE(rebill_status,'') <> 'voided'`;
+      const [totalResult, supplierResult, dateResult] = await Promise.all([
+        pool.query(`SELECT COUNT(*)::int AS total FROM freight_supplier_bills WHERE ${where}`),
+        pool.query(
+          `SELECT COALESCE(NULLIF(TRIM(supplier), ''), '待补') AS supplier, COUNT(*)::int AS count
+             FROM freight_supplier_bills
+            WHERE ${where}
+            GROUP BY COALESCE(NULLIF(TRIM(supplier), ''), '待补')
+            ORDER BY count DESC, supplier`
+        ),
+        pool.query(
+          `SELECT created_at::date AS created_date, COUNT(*)::int AS count
+             FROM freight_supplier_bills
+            WHERE ${where}
+            GROUP BY created_at::date
+            ORDER BY created_date DESC`
+        ),
+      ]);
+      return res.status(200).json({
+        success: true,
+        meta,
+        total: totalResult.rows[0]?.total || 0,
+        by_supplier: supplierResult.rows,
+        by_created_date: dateResult.rows,
+        data_source: "REAL",
+      });
+    }
 
     const safeLimit  = Math.min(Math.max(parseInt(rawLimit)  || 200, 1), 1000);
     const safeOffset = Math.max(parseInt(rawOffset) || 0, 0);
@@ -282,12 +322,9 @@ export default async function handler(req, res) {
       conds.push(`bl_no = $${params.length}`);
     }
 
-    // supplier filter — logistics role: enforce company_code binding from JWT (stable across name format variations)
-    // ?supplier= query param is IGNORED for logistics to prevent cross-supplier data leakage
     if (role === "logistics") {
       params.push(userCompanyCode);
       conds.push(`supplier_company_code = $${params.length}`);
-      // req.query.supplier is intentionally dropped — JWT companyCode is the only source of truth
     } else if (supplier) {
       params.push(`%${supplier}%`);
       conds.push(`supplier ILIKE $${params.length}`);
@@ -315,14 +352,12 @@ export default async function handler(req, res) {
 
     const whereClause = conds.length > 0 ? `WHERE ${conds.join(" AND ")}` : "";
 
-    // Count query (no limit/offset)
     const countResult = await pool.query(
       `SELECT COUNT(*) AS total FROM freight_supplier_bills ${whereClause}`,
       params
     );
     const total = parseInt(countResult.rows[0]?.total ?? 0);
 
-    // Data query
     params.push(safeLimit);
     params.push(safeOffset);
     const dataResult = await pool.query(

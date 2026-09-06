@@ -72,7 +72,6 @@ anchor_from_fer AS (
                   ELSE ds.fob_cny / NULLIF(ds.parts_in_decl,0) END) AS amt,
          MIN(ds.currency) AS cur,
          COUNT(*) AS n,
-         -- 退税:平价转卖模式下利润全在退税(Damon 2026-08-05)。退税额按同比例拆到单。
          MAX(ds.rebate_rate) AS rebate_rate,
          SUM(CASE WHEN ds.decl_sale_total > 0 THEN ds.rebate_amt * (ds.one_sale / ds.decl_sale_total)
                   ELSE ds.rebate_amt / NULLIF(ds.parts_in_decl,0) END) AS rebate_amt,
@@ -82,8 +81,6 @@ anchor_from_fer AS (
     JOIN decl_share ds ON ds.one_contract = dc.contract_no
    GROUP BY dc.contract_no
 ),
--- 第二来源:报关单主表 customs_declarations,经 shipping_plans.order_nos 关联到订单。
--- fer(退税表)是首选真值;这里只补 fer 没覆盖到的单(报关了但还没进退税流程)。同样按销售额占比拆到单。
 anchor_from_cd AS (
   SELECT o.contract_no,
          SUM(CASE WHEN pt.plan_sale > 0 THEN cd.total_declaration_amount * (ABS(COALESCE(o.customer_amount,o.total_amount,0)) / pt.plan_sale)
@@ -115,7 +112,6 @@ receivable_anchor AS (
     LEFT JOIN anchor_from_cd cdx USING (contract_no)
    WHERE COALESCE(f.amt, cdx.amt) IS NOT NULL
 ),
--- 客户发票号:finance_invoices_out.contract_nos 数组重叠匹配(排除作废/红冲/草稿)。
 customer_invoices AS (
   SELECT so.contract_no,
          (array_agg(DISTINCT fio.invoice_no) FILTER (WHERE fio.invoice_no IS NOT NULL))[1] AS invoice_no
@@ -128,8 +124,6 @@ customer_invoices AS (
      AND COALESCE(fio.invoice_no,'') NOT LIKE 'CI-DRAFT%'
    GROUP BY so.contract_no
 ),
--- 客户水单:file_url + 分摊金额 + 有无回单文件。⚠ 方向甄别:sender=我方主体(巴匕/洋宝宝)的水单是"我们付出去"的
--- (如 slip36 巴匕→中宠人工确认记录),绝不能算作客户已收 → 单列 ap_alloc 并置 direction_warn,前端显警示不计已收。
 customer_slip_file AS (
   SELECT so.contract_no, so.order_no,
          (array_agg(bs.file_url ORDER BY bs.created_at DESC) FILTER (WHERE bs.file_url IS NOT NULL))[1] AS slip_file_url,
@@ -143,7 +137,6 @@ customer_slip_file AS (
     JOIN bank_slips bs ON bs.id = bsl.slip_id
    GROUP BY so.contract_no, so.order_no
 ),
--- 订单运输信息:按 order_no 在 shipping_plans.order_nos 数组里找;一订单多柜取最新 etd。
 order_shipment AS (
   SELECT DISTINCT ON (so.order_no)
          so.order_no,
@@ -160,7 +153,12 @@ selected_shipments AS (
 ),
 bill_rows AS (
   SELECT sp.id AS plan_id, fsb.* FROM selected_shipments sp
-    LEFT JOIN active_freight_supplier_bills fsb ON fsb.link_plan_id=sp._id OR (sp.bl_no IS NOT NULL AND (fsb.bl_no=sp.bl_no OR fsb.link_plan_id=sp.bl_no))
+    LEFT JOIN active_freight_supplier_bills fsb ON (
+      -- 2026 实测 link_plan_id 混用 shipping_plans.id 2,406 行 / _id 362 行:两种主键都认,不做历史批量 UPDATE。
+      sp.id::text = fsb.link_plan_id::text
+      OR sp._id::text = fsb.link_plan_id::text
+      OR (sp.bl_no IS NOT NULL AND (fsb.bl_no = sp.bl_no OR fsb.link_plan_id = sp.bl_no))
+    )
 ),
 bill_groups AS (
   SELECT br.plan_id,
@@ -178,7 +176,6 @@ bill_groups AS (
    WHERE br.id IS NOT NULL
    GROUP BY br.plan_id, COALESCE(br.supplier_company_code, br.supplier), COALESCE(br.currency_norm, br.currency, 'CNY')
 ),
--- 费目四分类(闭环表格):海运费/拖车(车队)/报关/其余归港杂;按票+币种聚合出 已付/未付
 fee_groups AS (
   SELECT br.plan_id,
          CASE WHEN br.cost_category IS NULL OR BTRIM(br.cost_category)='' OR br.cost_category ILIKE 'misc' THEN 'unknown'
@@ -230,12 +227,10 @@ SELECT
            so.created_by, so.status_updated_by, COALESCE(so.status_updated_at, so.updated_at) AS last_action_at,
            so.factory_confirmed_at, so.customer_confirmed_at,
            COALESCE(so.factory_total_amount, so.total_amount_factory, so.factory_amount) AS payable,
-           -- 应收锚定:仅报关销售额 fob_cny;无 fer 锚 → NULL(anchored=false → 前端"待报关"),绝不兜底订单额。
            ra.receivable_anchor AS receivable,
            (ra.receivable_anchor IS NOT NULL) AS anchored,
            ra.anchor_currency, ra.anchor_decl_count, ra.anchor_from_declaration,
            ra.rebate_rate, ra.rebate_amt, ra.rebate_received, ra.rebate_status,
-           -- 三价并列(Damon 2026-08-05 要):采购=付工厂 / 报关=申报额 / 销售=收客户
            COALESCE(so.factory_total_amount, so.total_amount_factory, so.factory_amount) AS price_buy,
            ra.receivable_anchor AS price_declared,
            COALESCE(so.customer_amount, so.total_amount) AS price_sale,
@@ -243,8 +238,6 @@ SELECT
            csf.slip_file_url, csf.slip_alloc, csf.slip_ap_alloc, csf.receipt_count, csf.slip_currency,
            osh.container_no, osh.shipper, osh.carrier_code, osh.vessel, osh.etd AS ship_etd, osh.eta AS ship_eta, osh.consignee,
            p.paid,
-           -- 已收 = finance_payments 入账额 与 水单已认领分摊额 取大者(同一笔钱的两种记录,相加会翻倍)。
-           -- 水单侧只认客户汇入(sender 非我方主体),我方付出的水单被错挂时不计入客户已收(见 customer_slip_file.slip_alloc)。
            GREATEST(COALESCE(p.received,0), COALESCE(csf.slip_alloc,0)) AS received,
            d.invoice_status, d.invoice_currency, d.invoice_amount, s.factory_slip_count, s.customer_slip_count
       FROM selected_orders so LEFT JOIN payments p USING(order_no, contract_no) LEFT JOIN drafts d USING(order_no, contract_no) LEFT JOIN slips s USING(order_no, contract_no)
