@@ -159,6 +159,7 @@ async function upsertItem(client, rfqId, line) {
     `UPDATE freight_rfq_items
         SET usd_rate = $5,
             currency = 'USD',
+            status = 'quoted',
             vessel = $6,
             voyage = $7,
             etd = $8::date,
@@ -196,9 +197,9 @@ async function upsertItem(client, rfqId, line) {
   const ins = await client.query(
     `INSERT INTO freight_rfq_items
        (id, rfq_id, forwarder_co, forwarder_company_id, vessel, voyage, etd,
-        usd_rate, currency, container_type, carrier, submitted_at, quote_detail_json)
+        usd_rate, currency, status, container_type, carrier, submitted_at, quote_detail_json)
      VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6::date, $7, 'USD', $8, $9,
-        now(), $10::jsonb)
+        'quoted', now(), $10::jsonb)
      RETURNING id`,
     [
       rfqId,
