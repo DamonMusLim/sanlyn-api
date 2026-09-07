@@ -1,0 +1,34 @@
+<!doctype html><html lang="zh-CN"><head>
+<meta charset="utf-8"><title>数据加工中心 · 宠爱我</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="./workbench.css">
+<link rel="stylesheet" href="./dataops-wb.css">
+</head><body>
+<div class="app">
+  <div class="side">
+    <div class="brand"><div class="bico">🗄️</div>
+      <div><div class="bnm">数据加工中心</div><div class="bsub" id="bsub">读取中…</div></div></div>
+    <div class="sgrp">经营</div>
+    <a class="snav on" data-p="list">金枋店<span class="sn" id="nlist"></span></a>
+    <a class="snav" data-p="cat">库存概况<span class="sn" id="ncat"></span></a>
+    <a class="snav" data-p="l4">产品分析<span class="sn" id="n4"></span></a>
+    <a class="snav" data-p="l5">效期风险<span class="sn" id="n5"></span></a>
+    <a class="snav dim">价格毛利</a>
+    <a class="snav dim">采购建议</a>
+    <details class="lay"><summary>加工层 · 平时不用看<span class="sn" id="nlay"></span></summary>
+      <a class="snav" data-p="listall">总商品库 · 全量<span class="sn" id="nall"></span></a>
+      <a class="snav" data-p="l0">第0层 表注册表<span class="sn" id="n0"></span></a>
+      <a class="snav" data-p="l1">第1层 真源状态<span class="sn" id="n1"></span></a>
+      <a class="snav" data-p="l2">第2层 身份对齐<span class="sn" id="n2"></span></a>
+      <a class="snav" data-p="l3">第3层 资料缺口<span class="sn" id="n3"></span></a>
+    </details>
+  </div>
+  <div class="main">
+    <div class="hd"><h1 id="ttl">第0层 表注册表</h1><span class="sc" id="sc">宠爱我–金枋店</span></div>
+    <div class="verdict" id="vd"></div>
+    <div id="body"></div>
+    <footer id="ft"></footer>
+  </div>
+</div>
+<script src="./dataops-wb.js"></script>
+</body></html>
