@@ -80,12 +80,13 @@ async function primaryKeyColumn(pool, tableName, columns) {
 async function loadFieldRows(pool, moduleKey, columns) {
   const result = await pool.query(
     `SELECT field_key, label, label_cn, type, input_kind, unit, format,
-            sort_order, col_span, source_column
+            sort_order, col_span, source_column,
+            section_key, section_label_cn, section_order, editable
      FROM field_definitions
      WHERE module_key = $1
        AND COALESCE(show_in_business, false) = true
        AND COALESCE(status, '') <> 'deprecated'
-     ORDER BY COALESCE(sort_order, 0), field_key`,
+     ORDER BY COALESCE(section_order, 999), COALESCE(sort_order, 0), field_key`,
     [moduleKey]
   );
   const seenColumns = new Set();
@@ -154,6 +155,11 @@ function responseFields(fields) {
     sort_order: Number(field.sort_order || 0),
     col_span: Math.max(1, Math.min(6, Number(field.col_span || 1))),
     searchable: searchable(field),
+    // 前端抽屉依赖分区和可编辑标记；这里只透传字段定义，不改变原有字段语义。
+    section_key: field.section_key,
+    section_label_cn: field.section_label_cn,
+    section_order: Number(field.section_order || 0),
+    editable: field.editable === true,
   }));
 }
 
