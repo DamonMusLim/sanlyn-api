@@ -37,6 +37,10 @@ function emptyAmounts() {
   return { "20GP": null, "40GP": null, "40HQ": null };
 }
 
+function emptyNotes() {
+  return { "20GP": null, "40GP": null, "40HQ": null };
+}
+
 function emptyFreeDays() {
   return { "20GP": null, "40GP": null, "40HQ": null };
 }
@@ -94,7 +98,6 @@ function groupedFee(rows, feeKind) {
       text(row.fee_code),
       text(row.cost_category),
       text(row.currency),
-      text(row.note),
       text(row.fee_kind),
     ].join("\u0001");
     if (!byKey[key]) {
@@ -102,8 +105,9 @@ function groupedFee(rows, feeKind) {
         fee_code: text(row.fee_code),
         cost_category: text(row.cost_category),
         amounts: emptyAmounts(),
+        notes: emptyNotes(),
         currency: text(row.currency) || null,
-        note: text(row.note),
+        note: "",
         fee_kind: feeKind,
       };
       out.push(byKey[key]);
@@ -111,9 +115,31 @@ function groupedFee(rows, feeKind) {
     var box = normBox(row.container_type);
     if (Object.prototype.hasOwnProperty.call(byKey[key].amounts, box)) {
       byKey[key].amounts[box] = amountOrNull(row.rate);
+      byKey[key].notes[box] = text(row.note) || null;
+      var notes = BOXES.map(function(k) { return byKey[key].notes[k]; })
+        .filter(Boolean)
+        .filter(function(note, idx, arr) { return arr.indexOf(note) === idx; });
+      byKey[key].note = notes.join(" | ");
     }
   });
   return out;
+}
+
+function duplicateFeeWarnings(feeParts) {
+  var seen = {};
+  var warned = {};
+  var warnings = [];
+  var rows = [].concat(feeParts.fees || [], feeParts.conditional_fees || []);
+  rows.forEach(function(fee) {
+    var name = text(fee.cost_category);
+    if (!name) return;
+    if (seen[name] && !warned[name]) {
+      warned[name] = true;
+      warnings.push("费目 " + name + " 出现多次");
+    }
+    seen[name] = true;
+  });
+  return warnings;
 }
 
 async function loadOfficialFees(pool, carrier, polNormalized) {
@@ -179,6 +205,8 @@ async function handleGet(pool, req, res) {
     free_days_source: FREE_DAYS_SOURCE,
     conditional_fees: feeParts.conditional_fees,
   };
+  var warnings = duplicateFeeWarnings(feeParts);
+  if (warnings.length) body._warn = warnings;
   if (freeDayParts.free_days_reason) body.free_days_reason = freeDayParts.free_days_reason;
   return send(res, 200, body);
 }
