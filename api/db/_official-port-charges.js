@@ -12,8 +12,8 @@ const PORT_ALIASES = {
 const FIELD_PRIORITIES = {
   thc:["THC"],
   cfs:["场站费", "CHC", "装箱费"],
-  seal:["封签费", "铅封费"],
-  eir:["设备交接单", "EIR及铅封"],
+  seal:["封志费", "封签费", "铅封费"],
+  eir:["设备交接单费", "设备交接单", "EIR及铅封"],
   misc:["港杂费", "综合服务费"],
   pick:["提箱费", "套柜费"],
 };
