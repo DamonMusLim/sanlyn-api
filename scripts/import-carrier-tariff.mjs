@@ -32,6 +32,13 @@ async function loadPackage(name) {
   }
 }
 
+function localDate(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 function cellText(cell) {
   const value = cell?.value;
   if (value == null) return "";
@@ -40,19 +47,15 @@ function cellText(cell) {
   if (value.richText) return value.richText.map((part) => part.text || "").join("").trim();
   if (value.text) return String(value.text).trim();
   if (value.result != null) return String(value.result).trim();
-  if (value.hyperlink && value.text) return String(value.text).trim();
   return String(value).trim();
 }
 
-function localDate(date = new Date()) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+function compact(value) {
+  return String(value || "").replace(/[\s'’"＇]/g, "").toUpperCase();
 }
 
-function normalizeHeader(value) {
-  return value.replace(/[\s'’"＇]/g, "").toUpperCase();
+function cleanText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
 }
 
 function parseCarrierCode(sheetName) {
@@ -60,51 +63,30 @@ function parseCarrierCode(sheetName) {
   return match ? match[1].toUpperCase() : null;
 }
 
-function parseRate(value) {
-  if (value == null || value === "") return null;
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  const text = String(value).trim().replace(/[,，]/g, "").replace(/^¥|^￥|^RMB/i, "");
-  if (!/^-?\d+(\.\d+)?$/.test(text)) return null;
-  const n = Number(text);
-  return Number.isFinite(n) ? n : null;
+function containerTypeFromParts(size, type) {
+  const sizeText = compact(size);
+  const typeText = compact(type);
+  const merged = `${sizeText}${typeText}`;
+  if (/^40(HQ|HC|HDG|HCHDG|HC\/HDG).*$/.test(merged)) return "40HQ";
+  if (/^20(GP|DC|DG|DCDG|DC\/DG)?$/.test(merged) || /^20.*(GP|DC|DG)$/.test(merged)) return "20GP";
+  if (/^40(GP|DC|DG|DCDG|DC\/DG)?$/.test(merged) || /^40.*(GP|DC|DG)$/.test(merged)) return "40GP";
+  if (merged.includes("20GP")) return "20GP";
+  if (merged.includes("40GP")) return "40GP";
+  if (merged.includes("40HQ") || merged.includes("40HC")) return "40HQ";
+  return null;
 }
 
-function extractArea(category) {
-  const match = category.match(/THC[（(]([^）)]+)[）)]/i);
-  if (!match) return null;
-  return match[1]
-    .split(/[、,，/／]/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .join("/");
-}
-
-function buildNote(sheetName, category) {
-  const area = extractArea(category);
-  return `${SOURCE_NOTE} | sheet:${sheetName}${area ? ` | 航区:${area}` : ""}`;
-}
-
-function findHeaderRows(ws) {
+function findWideHeaders(ws) {
   const headers = [];
   for (let rowNo = 1; rowNo <= ws.rowCount; rowNo += 1) {
     const typeCols = {};
     ws.getRow(rowNo).eachCell({ includeEmpty: false }, (cell, colNo) => {
-      const text = normalizeHeader(cellText(cell));
-      if (text.includes("20GP")) typeCols["20GP"] = colNo;
-      if (text.includes("40GP")) typeCols["40GP"] = colNo;
-      if (text.includes("40HQ") || text.includes("40HC")) typeCols["40HQ"] = colNo;
+      const type = containerTypeFromParts("", cellText(cell));
+      if (type && !typeCols[type]) typeCols[type] = colNo;
     });
     if (TYPES.every((type) => typeCols[type])) headers.push({ rowNo, typeCols });
   }
   return headers;
-}
-
-function containerTypeFromText(text) {
-  const clean = normalizeHeader(text);
-  if (/^20.*(GP|DC|DG)?$/.test(clean) || clean === "20GP") return "20GP";
-  if (/^40.*(GP|DC|DG)?$/.test(clean) || clean === "40GP") return "40GP";
-  if (/^40.*(HQ|HC|HDG)$/.test(clean) || clean === "40HC") return "40HQ";
-  return null;
 }
 
 function findMatrixHeaders(ws) {
@@ -115,26 +97,85 @@ function findMatrixHeaders(ws) {
     ws.getRow(rowNo).eachCell({ includeEmpty: false }, (cell, colNo) => {
       const text = cellText(cell).replace(/\s+/g, "");
       if (text === "尺寸") sizeCol = colNo;
-      if (text === "柜型" || text === "櫃型" || text === "箱型") typeCol = colNo;
+      if (["柜型", "櫃型", "箱型"].includes(text)) typeCol = colNo;
     });
     if (typeCol) headers.push({ rowNo, sizeCol, typeCol });
   }
   return headers;
 }
 
-function rowContainerType(row, header) {
-  const typeText = cellText(row.getCell(header.typeCol));
-  const direct = containerTypeFromText(typeText);
-  if (direct) return direct;
-  if (!header.sizeCol) return null;
-  const sizeText = cellText(row.getCell(header.sizeCol));
-  return containerTypeFromText(`${sizeText}${typeText}`);
+function parseRateParts(value) {
+  if (value == null || value === "") return [];
+  if (typeof value === "number" && Number.isFinite(value)) return [{ rate: value, notes: [] }];
+  const raw = cleanText(value).replace(/[,，]/g, "");
+  if (!raw || /^(FREE|DEPORT)$/i.test(raw)) return [];
+  const moneyText = raw.replace(/^(?:CNY|RMB|¥|￥)\s*/i, "").trim();
+  const exact = moneyText.match(/^(-?\d+(?:\.\d+)?)(?:\/([^\s/]+))?$/i);
+  if (exact) return [{ rate: Number(exact[1]), notes: exact[2] ? [`计价单位:${exact[2]}`] : [] }];
+  const paren = raw.match(/^¥?￥?R?M?B?\s*(-?\d+(?:\.\d+)?)\s*[（(]([^）)]+)[）)]$/i);
+  if (paren) {
+    const inner = paren[2];
+    const innerNum = inner.match(/(-?\d+(?:\.\d+)?)/);
+    if (innerNum) {
+      const area = cleanText(inner.replace(innerNum[1], "")) || "括号价";
+      return [
+        { rate: Number(paren[1]), notes: ["航区:非台湾"] },
+        { rate: Number(innerNum[1]), categorySuffix: `(${area})`, notes: [`航区:${area}`] },
+      ];
+    }
+  }
+  const leading = raw.match(/^(?:CNY|RMB|¥|￥)?\s*(-?\d+(?:\.\d+)?)(.+)$/i);
+  if (leading && !/[+$]/.test(raw)) {
+    const unit = leading[2].replace(/^[/／]/, "").trim();
+    return [{ rate: Number(leading[1]), notes: unit ? [`计价单位:${unit}`, `原始值:${raw}`] : [`原始值:${raw}`] }];
+  }
+  return [];
+}
+
+function extractArea(category) {
+  const match = category.match(/THC[（(]([^）)]+)[）)]/i);
+  if (!match) return null;
+  return match[1].split(/[、,，/／]/).map((part) => part.trim()).filter(Boolean).join("/");
+}
+
+function makeNote(sheetName, category, extra = []) {
+  const area = extractArea(category);
+  const parts = [SOURCE_NOTE, `sheet:${sheetName}`];
+  if (area) parts.push(`航区:${area}`);
+  parts.push(...extra.filter(Boolean));
+  return parts.join(" | ");
+}
+
+function pushRows(rows, skips, base, category, rawValue, extraNotes = []) {
+  const parsed = parseRateParts(rawValue);
+  if (parsed.length === 0) {
+    if (rawValue) skips.push({ reason: "non_numeric_rate", sheet: base.sheet, rowNo: base.rowNo, category, container_type: base.container_type, raw: rawValue });
+    else skips.push({ reason: "empty_rate", sheet: base.sheet, rowNo: base.rowNo, category, container_type: base.container_type, raw: "" });
+    return;
+  }
+  for (const item of parsed) {
+    const costCategory = `${category}${item.categorySuffix || ""}`;
+    rows.push({
+      carrier_code: base.carrier_code,
+      pol: POL,
+      container_type: base.container_type,
+      cost_category: costCategory,
+      rate: item.rate,
+      currency: "CNY",
+      sample_count: null,
+      note: makeNote(base.sheet, costCategory, [...extraNotes, ...item.notes]),
+      sheet: base.sheet,
+      rowNo: base.rowNo,
+      stations: base.station ? [base.station] : [],
+      raw: String(rawValue),
+    });
+  }
 }
 
 function categoryFromRow(row, firstTypeCol) {
   for (let colNo = firstTypeCol - 1; colNo >= 1; colNo -= 1) {
-    const text = cellText(row.getCell(colNo));
-    if (text) return text.replace(/\s+/g, " ").trim();
+    const text = cleanText(cellText(row.getCell(colNo)));
+    if (text) return text;
   }
   return "";
 }
@@ -147,9 +188,11 @@ function parseWideSheet(ws, headers) {
     const endRow = h + 1 < headers.length ? headers[h + 1].rowNo - 1 : ws.rowCount;
     const firstTypeCol = Math.min(...Object.values(header.typeCols));
     let blankStreak = 0;
-
     for (let rowNo = header.rowNo + 1; rowNo <= endRow; rowNo += 1) {
       const row = ws.getRow(rowNo);
+      const rowText = [];
+      row.eachCell({ includeEmpty: false }, (cell) => rowText.push(cellText(cell)));
+      if (/DND|Port Country/i.test(rowText.join(" "))) break;
       const category = categoryFromRow(row, firstTypeCol);
       if (!category) {
         blankStreak += 1;
@@ -158,30 +201,21 @@ function parseWideSheet(ws, headers) {
       }
       blankStreak = 0;
       if (/^(费用|标准收费|收费项目|项目)$/i.test(category)) continue;
-
       for (const containerType of TYPES) {
-        const raw = cellText(row.getCell(header.typeCols[containerType]));
-        const rate = parseRate(row.getCell(header.typeCols[containerType]).value ?? raw);
-        if (rate == null) {
-          skips.push({ reason: raw ? "non_numeric_rate" : "empty_rate", count: 1 });
-          continue;
-        }
-        rows.push({
-          carrier_code: parseCarrierCode(ws.name),
-          pol: POL,
-          container_type: containerType,
-          cost_category: category,
-          rate,
-          currency: "CNY",
-          sample_count: null,
-          note: buildNote(ws.name, category),
-          sheet: ws.name,
-          rowNo,
-        });
+        const colNo = header.typeCols[containerType];
+        pushRows(rows, skips, { sheet: ws.name, rowNo, carrier_code: parseCarrierCode(ws.name), container_type: containerType }, category, cellText(row.getCell(colNo)));
       }
     }
   }
   return { rows, skips };
+}
+
+function rowContainerType(row, header) {
+  const typeText = cellText(row.getCell(header.typeCol));
+  const direct = containerTypeFromParts("", typeText);
+  if (direct) return direct;
+  if (!header.sizeCol) return null;
+  return containerTypeFromParts(cellText(row.getCell(header.sizeCol)), typeText);
 }
 
 function parseMatrixSheet(ws, headers) {
@@ -193,7 +227,6 @@ function parseMatrixSheet(ws, headers) {
     const endRow = h + 1 < headers.length ? headers[h + 1].rowNo - 1 : ws.rowCount;
     const firstCategoryCol = Math.max(header.sizeCol || 0, header.typeCol) + 1;
     let blankStreak = 0;
-
     for (let rowNo = header.rowNo + 1; rowNo <= endRow; rowNo += 1) {
       const row = ws.getRow(rowNo);
       const containerType = rowContainerType(row, header);
@@ -203,27 +236,18 @@ function parseMatrixSheet(ws, headers) {
         continue;
       }
       blankStreak = 0;
+      let station = "";
       for (let colNo = firstCategoryCol; colNo <= ws.columnCount; colNo += 1) {
-        const category = cellText(headerRow.getCell(colNo));
-        if (!category) continue;
-        const raw = cellText(row.getCell(colNo));
-        const rate = parseRate(row.getCell(colNo).value ?? raw);
-        if (rate == null) {
-          skips.push({ reason: raw ? "non_numeric_rate" : "empty_rate", count: 1 });
-          continue;
-        }
-        rows.push({
-          carrier_code: parseCarrierCode(ws.name),
-          pol: POL,
-          container_type: containerType,
-          cost_category: category,
-          rate,
-          currency: "CNY",
-          sample_count: null,
-          note: buildNote(ws.name, category),
-          sheet: ws.name,
-          rowNo,
-        });
+        const category = cleanText(cellText(headerRow.getCell(colNo)));
+        const raw = cleanText(cellText(row.getCell(colNo)));
+        if (category === "场站" && raw && parseRateParts(raw).length === 0) station = raw;
+      }
+      for (let colNo = firstCategoryCol; colNo <= ws.columnCount; colNo += 1) {
+        const category = cleanText(cellText(headerRow.getCell(colNo)));
+        if (!category || /^(备注|SW BILL)$/i.test(category)) continue;
+        const raw = cleanText(cellText(row.getCell(colNo)));
+        if (category === "场站" && raw && parseRateParts(raw).length === 0) continue;
+        pushRows(rows, skips, { sheet: ws.name, rowNo, carrier_code: parseCarrierCode(ws.name), container_type: containerType, station }, category, raw, station ? [`场站:${station}`] : []);
       }
     }
   }
@@ -231,11 +255,11 @@ function parseMatrixSheet(ws, headers) {
 }
 
 function parseSheet(ws) {
-  const headers = findHeaderRows(ws);
-  if (headers.length > 0) return { headers, ...parseWideSheet(ws, headers) };
+  const wideHeaders = findWideHeaders(ws);
+  if (wideHeaders.length > 0) return parseWideSheet(ws, wideHeaders);
   const matrixHeaders = findMatrixHeaders(ws);
-  if (matrixHeaders.length > 0) return { headers: matrixHeaders, ...parseMatrixSheet(ws, matrixHeaders) };
-  return { headers, rows: [], skips: [{ reason: "header_missing", count: 1 }] };
+  if (matrixHeaders.length > 0) return parseMatrixSheet(ws, matrixHeaders);
+  return { rows: [], skips: [{ reason: "header_missing", sheet: ws.name, count: 1 }] };
 }
 
 function addSkip(skips, reason, count = 1) {
@@ -250,22 +274,71 @@ function sameRate(a, b) {
   return Number(a) === Number(b);
 }
 
+function mergeNote(row) {
+  const stations = [...new Set(row.stations || [])].filter(Boolean);
+  const base = row.note.replace(/( \| 场站:[^|]+)+/g, "");
+  return stations.length ? `${base} | 场站:${stations.join("/")}` : base;
+}
+
+function dedupeParsed(rows, skipCounts) {
+  const seen = new Map();
+  const conflicts = [];
+  for (const row of rows) {
+    const key = keyOf(row);
+    const old = seen.get(key);
+    if (!old) {
+      seen.set(key, { ...row, stations: [...(row.stations || [])], sourceRows: [row.rowNo] });
+      continue;
+    }
+    if (sameRate(old.rate, row.rate)) {
+      old.stations.push(...(row.stations || []));
+      old.sourceRows.push(row.rowNo);
+      old.note = mergeNote(old);
+      addSkip(skipCounts, "parsed_duplicate_same_rate");
+    } else {
+      conflicts.push({ old, next: row });
+      addSkip(skipCounts, "parsed_duplicate_conflict");
+    }
+  }
+  return { rows: [...seen.values()].map((row) => ({ ...row, note: mergeNote(row) })), conflicts };
+}
+
 function summarizeBySheet(parsed) {
   for (const item of parsed) {
     const categories = new Set(item.rows.map((row) => row.cost_category)).size;
     const types = new Set(item.rows.map((row) => row.container_type)).size;
-    console.log(`${item.sheet}: ${categories} 费目 x ${types} 柜型 = ${item.rows.length} 行`);
+    const combos = new Set(item.rows.map((row) => `${row.cost_category}\u0001${row.container_type}`)).size;
+    console.log(`${item.sheet}: ${categories} 费目 x ${types} 柜型 = ${combos} 组合 / ${item.rows.length} 行`);
   }
 }
 
-function printCosco(rows) {
+function printRows(title, rows) {
   console.log("");
-  console.log("COSCO 青岛解析结果:");
+  console.log(title);
   for (const row of rows) {
-    console.log(
-      `${row.carrier_code}\t${row.pol}\t${row.container_type}\t${row.cost_category}\t${row.rate}\t${row.currency}\t${row.note}`,
-    );
+    console.log(`${row.carrier_code}\t${row.pol}\t${row.container_type}\t${row.cost_category}\t${row.rate}\t${row.currency}\t${row.note}`);
   }
+}
+
+function printConflicts(conflicts) {
+  console.log("");
+  console.log(`parsed_duplicate_conflict 全量: ${conflicts.length}`);
+  for (const item of conflicts) {
+    console.log(`${item.next.sheet}\t行${item.old.rowNo}/行${item.next.rowNo}\t${item.next.cost_category}\t${item.next.container_type}\t${item.old.rate}\t${item.next.rate}`);
+  }
+}
+
+function printNonNumeric(skips) {
+  const bad = skips.filter((skip) => skip.reason === "non_numeric_rate");
+  console.log("");
+  console.log(`non_numeric_rate 全量: ${bad.length}`);
+  for (const skip of bad) console.log(`${skip.sheet}\t行${skip.rowNo || ""}\t${skip.category || ""}\t${skip.container_type || ""}\t${skip.raw || ""}`);
+}
+
+function writeTsv(file, rows) {
+  const cols = ["carrier_code", "pol", "container_type", "cost_category", "rate", "currency", "note"];
+  const escape = (v) => String(v ?? "").replace(/\t/g, " ").replace(/\r?\n/g, " ");
+  fs.writeFileSync(file, [cols.join("\t"), ...rows.map((row) => cols.map((col) => escape(row[col])).join("\t"))].join("\n"));
 }
 
 async function loadExisting(pool) {
@@ -288,111 +361,26 @@ function makePlan(parsedRows, existing, skipCounts) {
   const plan = { inserts: [], updates: [], unchanged: [], duplicates: [] };
   for (const row of parsedRows) {
     const matches = existing.get(keyOf(row)) || [];
-    if (matches.length === 0) {
-      plan.inserts.push(row);
-      continue;
-    }
+    if (matches.length === 0) plan.inserts.push(row);
+    else if (matches.some((old) => sameRate(old.rate, row.rate))) plan.unchanged.push(row);
+    else plan.updates.push({ next: row, prev: matches[0] });
     if (matches.length > 1) plan.duplicates.push({ row, ids: matches.map((m) => m.id) });
-    if (matches.some((old) => sameRate(old.rate, row.rate))) {
-      plan.unchanged.push(row);
-      continue;
-    }
-    plan.updates.push({ next: row, prev: matches[0] });
   }
   addSkip(skipCounts, "existing_same_rate", plan.unchanged.length);
   addSkip(skipCounts, "existing_duplicate_keys", plan.duplicates.length);
   return plan;
 }
 
-function dedupeParsed(rows, skipCounts) {
-  const seen = new Map();
-  const kept = [];
-  for (const row of rows) {
-    const key = keyOf(row);
-    const old = seen.get(key);
-    if (!old) {
-      seen.set(key, row);
-      kept.push(row);
-      continue;
-    }
-    addSkip(skipCounts, sameRate(old.rate, row.rate) ? "parsed_duplicate_same_rate" : "parsed_duplicate_conflict");
-  }
-  return kept;
-}
-
-async function applyPlan(pool, plan) {
-  const client = await pool.connect();
+async function reconcile(rows, skipCounts) {
+  let pgMod;
   try {
-    await client.query("BEGIN");
-    for (const row of plan.inserts) {
-      await client.query(
-        `INSERT INTO public.freight_port_rates
-         (carrier_code, pol, container_type, cost_category, rate, currency, sample_count, note, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())`,
-        [row.carrier_code, row.pol, row.container_type, row.cost_category, row.rate, row.currency, null, row.note],
-      );
-    }
-    for (const item of plan.updates) {
-      const note = `${item.next.note} | 原值 ${item.prev.rate}→${item.next.rate}`;
-      await client.query(
-        `UPDATE public.freight_port_rates
-            SET rate = $1, currency = $2, sample_count = NULL, note = $3, updated_at = NOW()
-          WHERE carrier_code = $4 AND pol = $5 AND container_type = $6 AND cost_category = $7
-            AND rate IS DISTINCT FROM $1`,
-        [
-          item.next.rate,
-          item.next.currency,
-          note,
-          item.next.carrier_code,
-          item.next.pol,
-          item.next.container_type,
-          item.next.cost_category,
-        ],
-      );
-    }
-    await client.query("COMMIT");
+    pgMod = await loadPackage("pg");
   } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
+    return { error: `pg 加载失败: ${error.message}` };
   }
-}
-
-async function main() {
-  const commit = process.argv.includes("--commit");
-  const fileArg = process.argv.find((arg) => arg.startsWith("--file="));
-  const xlsxFile = fileArg ? fileArg.slice("--file=".length) : SOURCE_FILE;
-  if (!fs.existsSync(xlsxFile)) throw new Error(`xlsx not found: ${xlsxFile}`);
-
-  const ExcelJS = (await loadPackage("exceljs")).default || (await loadPackage("exceljs"));
-  const pgMod = await loadPackage("pg");
   const dotenv = await loadPackage("dotenv").catch(() => null);
   dotenv?.config?.();
   const Pool = pgMod.default?.Pool || pgMod.Pool;
-
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(xlsxFile);
-
-  const skipCounts = new Map();
-  const badCarrierSheets = [];
-  const parsed = [];
-  for (const ws of workbook.worksheets.slice(1)) {
-    const carrier = parseCarrierCode(ws.name);
-    if (!carrier) {
-      badCarrierSheets.push(ws.name);
-      addSkip(skipCounts, "carrier_code_missing_sheet", 1);
-      continue;
-    }
-    const result = parseSheet(ws);
-    result.rows.forEach((row) => {
-      row.carrier_code = carrier;
-    });
-    for (const skip of result.skips) addSkip(skipCounts, skip.reason, skip.count);
-    parsed.push({ sheet: ws.name, rows: result.rows });
-  }
-
-  const allRows = dedupeParsed(parsed.flatMap((item) => item.rows), skipCounts);
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.PG_URL,
     host: process.env.PG_HOST,
@@ -402,37 +390,75 @@ async function main() {
     password: process.env.PG_PASSWORD,
     ssl: process.env.PGSSL === "true" || process.env.PG_SSL === "true" ? { rejectUnauthorized: false } : false,
     max: 2,
+    connectionTimeoutMillis: 1500,
   });
-
-  let shouldClosePool = true;
   try {
-    let plan = null;
-    let dbError = null;
-    try {
-      const existing = await loadExisting(pool);
-      plan = makePlan(allRows, existing, skipCounts);
-    } catch (error) {
-      dbError = error;
-      if (commit) throw error;
-      shouldClosePool = false;
-    }
-
-    console.log(`模式: ${commit ? "commit" : "dry-run"} | 文件: ${xlsxFile} | 运行日: ${localDate()}`);
-    summarizeBySheet(parsed);
-    printCosco(allRows.filter((row) => row.carrier_code === "COSCO"));
-    console.log("");
-    console.log(`合计解析行: ${allRows.length}`);
-    console.log(`将新增: ${plan ? plan.inserts.length : "DB不可达，未计算"}`);
-    console.log(`将更新: ${plan ? plan.updates.length : "DB不可达，未计算"}`);
-    console.log(`跳过: ${[...skipCounts.values()].reduce((sum, n) => sum + n, 0)}`);
-    for (const [reason, count] of [...skipCounts.entries()].sort()) console.log(`- ${reason}: ${count}`);
-    console.log(`取不出 carrier_code 的 sheet: ${badCarrierSheets.length ? badCarrierSheets.join(" / ") : "(无)"}`);
-    if (dbError) console.log(`DB只读对账失败: ${dbError.message}`);
-    if (commit && plan) await applyPlan(pool, plan);
-    else console.log("dry-run: 未写库。加 --commit 才会 INSERT/UPDATE；不会 DELETE。");
+    return { plan: makePlan(rows, await loadExisting(pool), skipCounts) };
+  } catch (error) {
+    return { error: error.message };
   } finally {
-    if (shouldClosePool) await pool.end();
+    await pool.end().catch(() => {});
   }
+}
+
+function argValue(name) {
+  const exact = process.argv.find((arg) => arg.startsWith(`${name}=`));
+  if (exact) return exact.slice(name.length + 1);
+  const idx = process.argv.indexOf(name);
+  return idx >= 0 ? process.argv[idx + 1] : null;
+}
+
+async function main() {
+  if (process.argv.includes("--commit")) throw new Error("--commit 已禁用；本脚本只做 dry-run 解析和只读对账");
+  const xlsxFile = argValue("--file") || SOURCE_FILE;
+  const outFile = argValue("--out");
+  if (!fs.existsSync(xlsxFile)) throw new Error(`xlsx not found: ${xlsxFile}`);
+
+  const ExcelJS = (await loadPackage("exceljs")).default || (await loadPackage("exceljs"));
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(xlsxFile);
+
+  const skipCounts = new Map();
+  const badCarrierSheets = [];
+  const parsedRaw = [];
+  for (const ws of workbook.worksheets.slice(1)) {
+    const carrier = parseCarrierCode(ws.name);
+    if (!carrier) {
+      badCarrierSheets.push(ws.name);
+      addSkip(skipCounts, "carrier_code_missing_sheet");
+      continue;
+    }
+    const result = parseSheet(ws);
+    for (const skip of result.skips) addSkip(skipCounts, skip.reason, skip.count || 1);
+    parsedRaw.push({ sheet: ws.name, rows: result.rows, skips: result.skips });
+  }
+
+  const deduped = [];
+  const conflicts = [];
+  for (const item of parsedRaw) {
+    const result = dedupeParsed(item.rows, skipCounts);
+    deduped.push({ sheet: item.sheet, rows: result.rows, skips: item.skips });
+    conflicts.push(...result.conflicts);
+  }
+  const allRows = deduped.flatMap((item) => item.rows);
+  if (outFile) writeTsv(outFile, allRows);
+  const recon = await reconcile(allRows, skipCounts);
+
+  console.log(`模式: dry-run | 文件: ${xlsxFile} | 运行日: ${localDate()}`);
+  summarizeBySheet(deduped);
+  printConflicts(conflicts);
+  printNonNumeric(parsedRaw.flatMap((item) => item.skips));
+  printRows("COSCO 青岛解析结果:", allRows.filter((row) => row.carrier_code === "COSCO"));
+  console.log("");
+  console.log(`合计解析行: ${allRows.length}`);
+  console.log(`将新增: ${recon.plan ? recon.plan.inserts.length : "DB不可达，未计算"}`);
+  console.log(`将更新: ${recon.plan ? recon.plan.updates.length : "DB不可达，未计算"}`);
+  console.log(`跳过: ${[...skipCounts.values()].reduce((sum, n) => sum + n, 0)}`);
+  for (const [reason, count] of [...skipCounts.entries()].sort()) console.log(`- ${reason}: ${count}`);
+  console.log(`取不出 carrier_code 的 sheet: ${badCarrierSheets.length ? badCarrierSheets.join(" / ") : "(无)"}`);
+  if (outFile) console.log(`TSV已导出: ${outFile}`);
+  if (recon.error) console.log(`DB只读对账失败，已跳过: ${recon.error}`);
+  console.log("dry-run: 未写库；不会 DELETE。");
 }
 
 main().catch((error) => {
