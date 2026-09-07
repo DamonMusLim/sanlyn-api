@@ -4,6 +4,8 @@ import { requireAuth } from "../auth.js";
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 300;
+const CARD_TYPE_TIMES = "times";
+const CARD_TYPE_VALUE = "value";
 
 function json(res, status, data) {
   return res.status(status).json(data);
@@ -45,11 +47,24 @@ async function list(query) {
     ), total_count AS (
       SELECT COUNT(*)::int AS total FROM filtered
     ), page_rows AS (
-      SELECT *, ROW_NUMBER() OVER (
-               ORDER BY gdc_create_time DESC NULLS LAST, member_no
+      SELECT f.*,
+             string_agg(DISTINCT CONCAT_WS(':', mc.card_no, mc.remaining_times::text), ',')
+               FILTER (WHERE ct.card_type = $6) AS card_summary,
+             string_agg(DISTINCT CONCAT_WS(':', mc.card_no, mc.remaining_times::text), ',')
+               FILTER (WHERE ct.card_type = $7) AS secondary_card_summary,
+             string_agg(DISTINCT p.name, ',')
+               FILTER (WHERE p.name IS NOT NULL AND p.name <> '') AS pet_summary,
+             ROW_NUMBER() OVER (
+               ORDER BY f.gdc_create_time DESC NULLS LAST, f.member_no
              ) AS __rn
-        FROM filtered
-       ORDER BY gdc_create_time DESC NULLS LAST, member_no
+        FROM filtered f
+        LEFT JOIN member_cards mc ON mc.owner_phone = f.member_no
+        LEFT JOIN card_templates ct ON ct.id = mc.template_id
+        LEFT JOIN pet_profiles p ON p.owner_phone = f.member_no
+       GROUP BY f.store_code, f.member_no, f.member_name, f.member_status,
+                f.balance, f.integral, f.accum_amount, f.accum_qty, f.accum_integral,
+                f.gdc_id, f.gdc_create_time, f.gdc_update_time, f.pulled_at
+       ORDER BY f.gdc_create_time DESC NULLS LAST, f.member_no
        LIMIT $4 OFFSET $5
     )
     SELECT COALESCE(
@@ -62,7 +77,9 @@ async function list(query) {
       LEFT JOIN page_rows ON true
      GROUP BY total_count.total`;
 
-  const result = await getPool().query(sql, [storeCode, q, status, pageSize, offset]);
+  const result = await getPool().query(sql, [
+    storeCode, q, status, pageSize, offset, CARD_TYPE_VALUE, CARD_TYPE_TIMES
+  ]);
   const first = result.rows[0] || { rows: [], total: 0 };
   return { ok: true, rows: first.rows, total: first.total, page, pageSize };
 }

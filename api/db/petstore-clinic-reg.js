@@ -31,7 +31,7 @@ export default async function handler(req, res) {
     args.push(size, (page - 1) * size);
     const { rows } = await pool.query(
       `SELECT t.id, t.medical_no, t.record_category, t.vet_name, t.reg_item, t.reg_source,
-     t.status, t.pay_status, t.hospital, t.reg_at, t.amount_due, t.remark,
+     t.status, t.pay_status, t.hospital, t.reg_at, t.created_at, t.amount_due, t.remark,
      t.owner_name, t.owner_phone, p.name AS pet_name, p.avatar_url, p.breed, p.pet_code FROM clinic_registrations t LEFT JOIN pet_profiles p ON p.id = t.pet_id WHERE ${where} ORDER BY (t.status IN ('就诊中','待接诊')) DESC, t.reg_at DESC
         LIMIT $${args.length - 1} OFFSET $${args.length}`, args);
     const sum = (await pool.query(

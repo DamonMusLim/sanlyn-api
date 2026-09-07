@@ -46,7 +46,7 @@ export default async function handler(req, res) {
       `SELECT v.id, v.kind, v.drug_name, v.source, v.planned_at, v.executed_at,
               v.next_due_at, v.vet_name, v.remind_on, v.remark,
               p.id AS pet_id, p.name AS pet_name, p.avatar_url, p.species, p.breed,
-              p.owner_name, p.owner_phone,
+              p.owner_name, p.owner_phone, p.birth_date,
               CASE
                 WHEN v.next_due_at IS NULL THEN NULL
                 ELSE (v.next_due_at - CURRENT_DATE)

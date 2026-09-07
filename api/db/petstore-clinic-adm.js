@@ -30,7 +30,7 @@ export default async function handler(req, res) {
     const { rows } = await pool.query(
       `SELECT t.id, t.medical_no, t.admitted_at, t.discharged_at, t.deposit,
      t.total_amount, t.paid_amount, t.pay_status, t.status, t.remark,
-     t.owner_name, p.name AS pet_name, p.avatar_url, p.breed,
+     t.owner_name, t.care_items, t.store_code, t.created_at, p.name AS pet_name, p.avatar_url, p.breed,
      (t.total_amount - t.paid_amount) AS unpaid,
      CASE WHEN t.status='在院' THEN (CURRENT_DATE - t.admitted_at::date) END AS days_in FROM clinic_admissions t LEFT JOIN pet_profiles p ON p.id = t.pet_id WHERE ${where} ORDER BY (t.status='在院') DESC, t.admitted_at DESC NULLS LAST
         LIMIT $${args.length - 1} OFFSET $${args.length}`, args);

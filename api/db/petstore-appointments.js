@@ -35,7 +35,7 @@ export default async function handler(req, res) {
     const { rows } = await pool.query(
       `SELECT t.id, t.biz_type, t.service_name, t.staff_name, t.start_at, t.end_at,
           t.pay_channel, t.book_source, t.status, t.remark, t.owner_name, t.owner_phone,
-          p.name AS pet_name, p.avatar_url, p.breed,
+          t.store_code, t.created_at, p.name AS pet_name, p.avatar_url, p.breed,
           CASE t.biz_type WHEN 'grooming' THEN '洗护' WHEN 'boarding' THEN '寄养'
                WHEN 'clinic' THEN '诊疗' ELSE '其他' END AS biz_cn,
           CASE t.status WHEN 'booked' THEN '已预约' WHEN 'arrived' THEN '已到店'

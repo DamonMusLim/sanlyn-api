@@ -32,7 +32,7 @@ export default async function handler(req, res) {
     const { rows } = await pool.query(
       `SELECT t.id, t.order_no, t.check_in, t.check_out, t.planned_out, t.day_rule, t.days,
           t.price_per_day, t.deposit, t.total_amount, t.paid_amount, t.status, t.belongings, t.remark,
-          t.owner_name, t.owner_phone,
+          t.owner_name, t.owner_phone, t.store_code, t.created_at,
           r.room_no, r.room_type, p.name AS pet_name, p.avatar_url, p.breed,
           CASE t.status WHEN 'booked' THEN '待入住' WHEN 'in_house' THEN '在住'
                WHEN 'checked_out' THEN '已退房' ELSE '已取消' END AS status_cn,

@@ -29,7 +29,7 @@ export default async function handler(req, res) {
     args.push(size, (page - 1) * size);
     const { rows } = await pool.query(
       `SELECT t.id, t.medical_no, t.visit_date, t.record_type, t.vet_name, t.hospital,
-     t.diagnosis, t.treatment_plan, t.total_amount, t.referral_no, t.remark,
+     t.diagnosis, t.treatment_plan, t.total_amount, t.e_record_url, t.referral_no, t.remark,
      t.owner_name, p.name AS pet_name, p.avatar_url, p.breed, p.pet_code,
      (SELECT count(*) FROM clinic_prescriptions x WHERE x.medical_no=t.medical_no)::int rx_count,
      (SELECT count(*) FROM clinic_exams x WHERE x.medical_no=t.medical_no)::int exam_count FROM clinic_records t LEFT JOIN pet_profiles p ON p.id = t.pet_id WHERE ${where} ORDER BY t.visit_date DESC NULLS LAST, t.id DESC

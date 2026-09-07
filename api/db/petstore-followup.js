@@ -28,6 +28,7 @@ export default async function handler(req, res) {
   try {
     const total = Number((await pool.query(
       `SELECT count(*) n FROM clinic_followups f LEFT JOIN pet_profiles p ON p.id=f.pet_id WHERE ${W}`, args)).rows[0].n);
+    args.push(pageSize, (page - 1) * pageSize);
     const r = await pool.query(
       `SELECT f.medical_no, f.owner_name, p.name AS pet_name, p.avatar_url, p.breed,
               f.planned_at, f.done_at, f.status, f.operator, f.note,
@@ -37,7 +38,7 @@ export default async function handler(req, res) {
          FROM clinic_followups f LEFT JOIN pet_profiles p ON p.id=f.pet_id
         WHERE ${W}
         ORDER BY (f.status='待回访') DESC, f.planned_at NULLS LAST
-        LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`, args);
+        LIMIT $${args.length - 1} OFFSET $${args.length}`, args);
 
     const rows = r.rows.map((x) => {
       const d = x.overdue_days;

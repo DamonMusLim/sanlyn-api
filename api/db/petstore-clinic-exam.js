@@ -32,7 +32,7 @@ export default async function handler(req, res) {
     const { rows } = await pool.query(
       `SELECT t.id, t.exam_no, t.exam_kind, t.category, t.exam_name, t.medical_no,
      t.status, t.pay_status, t.vet_name, t.ordered_at, t.examined_at, t.result_text, t.remark,
-     t.owner_name, p.name AS pet_name, p.avatar_url FROM clinic_exams t LEFT JOIN pet_profiles p ON p.id = t.pet_id WHERE ${where} ORDER BY (t.status='待检查') DESC, t.ordered_at DESC NULLS LAST
+     t.owner_name, t.pet_id, p.name AS pet_name, p.avatar_url FROM clinic_exams t LEFT JOIN pet_profiles p ON p.id = t.pet_id WHERE ${where} ORDER BY (t.status='待检查') DESC, t.ordered_at DESC NULLS LAST
         LIMIT $${args.length - 1} OFFSET $${args.length}`, args);
     const sum = (await pool.query(
       `SELECT count(*) FILTER (WHERE status='待检查')::int pending,

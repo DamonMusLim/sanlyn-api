@@ -47,7 +47,7 @@ export default async function handler(req, res) {
     const { rows } = await pool.query(
       `SELECT c.id, c.card_no, c.owner_name, c.owner_phone, c.total_times, c.used_times,
               c.remaining_times, c.paid_amount, c.sold_at, c.expires_at, c.status, c.sold_by,
-              t.name AS template_name, t.service_name, t.card_type,
+              c.store_code, t.name AS template_name, t.service_name, t.card_type,
               p.name AS pet_name, p.avatar_url, p.breed,
               CASE WHEN c.expires_at IS NULL THEN NULL ELSE (c.expires_at - CURRENT_DATE) END AS days_left,
               CASE

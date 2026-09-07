@@ -37,7 +37,7 @@ export default async function handler(req, res) {
     args.push(size, (page - 1) * size);
     const { rows } = await pool.query(
       `SELECT id, pet_code, name, avatar_url, species, breed, gender, birth_date, neutered,
-              owner_name, owner_phone, tags, staple_food, coat_note, temperament,
+              owner_name, owner_phone, cert_no, tags, staple_food, coat_note, temperament,
               next_vaccine_at, remark, created_at
          FROM pet_profiles WHERE ${where}
         ORDER BY updated_at DESC, id DESC
