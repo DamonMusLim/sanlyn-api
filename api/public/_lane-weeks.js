@@ -118,11 +118,28 @@ function normBox(v) {
 }
 
 export function isPendingShipment(row) {
-  return !(text(row && row.bl_no) && row && row.eta != null);
+  return !isShippedShipment(row) && !isStaleShipment(row);
+}
+
+function isShippedShipment(row) {
+  return !!(text(row && row.bl_no) && row && row.eta != null);
+}
+
+export function isStaleShipment(row, todayYmd) {
+  if (isShippedShipment(row)) return false;
+  var etd = cleanDate(row && row.etd);
+  if (!etd) return false;
+  return etd < (todayYmd || ymd(new Date()));
 }
 
 export function addPendingPlan(lane, row, shipment, qty, box) {
-  if (!lane || !shipment || !shipment.is_pending) return;
+  if (!lane || !shipment) return;
+  if (lane.stale_orders == null) lane.stale_orders = 0;
+  if (isStaleShipment(row)) {
+    lane.stale_orders += 1;
+    return;
+  }
+  if (!shipment.is_pending) return;
   if (lane.pending_orders == null) lane.pending_orders = 0;
   if (lane.pending_containers == null) lane.pending_containers = 0;
   if (!lane._pendingBox) lane._pendingBox = {};
@@ -135,6 +152,7 @@ export function addPendingPlan(lane, row, shipment, qty, box) {
 
 export function finishPendingLane(lane) {
   if (!lane) return lane;
+  if (lane.stale_orders == null) lane.stale_orders = 0;
   if (lane.pending_orders == null) lane.pending_orders = 0;
   if (lane.pending_containers == null) lane.pending_containers = 0;
   var box = lane._pendingBox || {};
