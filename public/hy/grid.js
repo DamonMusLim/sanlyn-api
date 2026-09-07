@@ -1,4 +1,3 @@
-// line_count: 384
 (function(){
 "use strict";
 var params=new URLSearchParams(location.search);
@@ -247,13 +246,15 @@ function refreshOpenDetail(){
   if(next){state.detailRow=next;state.detailOriginal=snapshot(next);renderDetail()}
 }
 function renderDetail(){
-  var row=state.detailRow,pk=rowPk(row),groups=sectionGroups();
+  var row=state.detailRow,pk=rowPk(row),groups=sectionGroups(),readonly=isDetailReadonly(row);
   els.detailTitle.textContent=state.module+" 行详情";
-  els.detailMeta.textContent=pk==null?"无主键，只读展示":"主键 "+pk;
+  els.detailMeta.textContent=readonly?"本表只读(视图或无主键),仅供查看":"主键 "+pk;
+  els.detailMeta.style.color="var(--hgj-muted,#667085)";
   els.detailError.textContent="";
-  els.detailSave.disabled=pk==null||!hasEditableFields();
+  els.detailSave.style.display=readonly?"none":"";
+  els.detailSave.disabled=false;
   els.detailBody.innerHTML=groups.map(function(g){
-    return '<section class="detail-section"><div class="detail-section-title">'+esc(g.label)+'</div><div class="detail-grid">'+g.fields.map(function(f){return renderDetailField(f,row)}).join("")+'</div></section>';
+    return '<section class="detail-section"><div class="detail-section-title">'+esc(g.label)+'</div><div class="detail-grid">'+g.fields.map(function(f){return renderDetailField(f,row,readonly)}).join("")+'</div></section>';
   }).join("")||'<div class="empty">没有字段</div>';
 }
 function sectionGroups(){
@@ -266,6 +267,10 @@ function sectionGroups(){
   });
   return list.sort(function(a,b){return a.order-b.order||a.label.localeCompare(b.label)});
 }
+function isDetailReadonly(row){
+  // 视图行没有主键列，真表也可能无主键；没有可编辑字段时同样不能保存，必须在 UI 明确只读。
+  return rowPk(row)==null||!hasEditableFields();
+}
 function hasEditableFields(){
   return state.fields.some(function(f){return isEditable(f)});
 }
@@ -274,13 +279,13 @@ function isEditable(f){
   return truthy(f.editable)&&clean(f.input_kind)!=="";
 }
 function truthy(v){return v===true||v===1||v==="1"||String(v).toLowerCase()==="true"}
-function renderDetailField(f,row){
+function renderDetailField(f,row,readonly){
   var key=clean(f.field_key),span=Math.max(1,Math.min(6,Number(f.col_span||2))),v=value(row[key]);
-  return '<div class="detail-field span-'+span+'"><label class="detail-label" title="'+esc(key)+'">'+esc(label(f))+'</label>'+fieldControl(f,v)+'</div>';
+  return '<div class="detail-field span-'+span+'"><label class="detail-label" title="'+esc(key)+'">'+esc(label(f))+'</label>'+fieldControl(f,v,readonly)+'</div>';
 }
-function fieldControl(f,v){
+function fieldControl(f,v,readonly){
   var key=clean(f.field_key),k=clean(f.input_kind).toLowerCase();
-  if(!isEditable(f))return '<div class="detail-readonly">'+esc(v)+'</div>';
+  if(readonly||!isEditable(f))return '<div class="detail-readonly">'+esc(v)+'</div>';
   if(k==="textarea"||k==="multiline")return '<textarea class="detail-input" data-field="'+esc(key)+'">'+esc(v)+'</textarea>';
   if(k==="select"||k==="enum")return selectControl(f,v);
   if(k==="checkbox"||k==="boolean"||k==="bool")return '<input class="detail-input" data-field="'+esc(key)+'" type="checkbox" '+(truthy(v)?"checked":"")+'>';
@@ -332,6 +337,7 @@ function inputValue(el){
 async function saveDetail(){
   if(state.busy)return;
   var row=state.detailRow,pk=rowPk(row),changes=collectChanges();
+  if(isDetailReadonly(row)){els.detailError.textContent="本表只读，无法保存";return}
   if(pk==null){els.detailError.textContent="该行无主键，无法保存";return}
   if(!Object.keys(changes).length){els.detailError.textContent="没有改动";return}
   state.busy=true;els.detailSave.disabled=true;els.detailSave.textContent="保存中";els.detailError.textContent="";
@@ -344,7 +350,7 @@ async function saveDetail(){
     els.detailError.textContent=e.message;
     els.status.textContent=e.message;
   }finally{
-    state.busy=false;els.detailSave.disabled=pk==null||!hasEditableFields();els.detailSave.textContent="保存";
+    state.busy=false;els.detailSave.disabled=isDetailReadonly(state.detailRow);els.detailSave.textContent="保存";
   }
 }
 async function refreshAfterSave(pk){
