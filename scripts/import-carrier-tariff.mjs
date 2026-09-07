@@ -2,15 +2,16 @@ import fs from "fs";
 import path from "path";
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
-
 const SOURCE_FILE = "/tmp/carrier_tariff.xlsx";
 const SOURCE_NOTE = "来源:船司人民币收费标准完整版.xlsx(微信 2026-07)";
 const POL = "青岛";
 const TYPES = ["20GP", "40GP", "40HQ"];
-
+const FEE_MASTER = new Map("场站=222,场站费|场站费=222,场站费|电放=333,电放费|电放费=333,电放费|提箱费=444,提箱费|出口服务费=2010,出口服务费|订舱=DCF,订舱费|订舱费=DCF,订舱费|港杂费=GZF,港杂费|港杂=GZF,港杂费|舱单费=CDF,舱单费|文件费=WJF,文件费|封志费=FZF,封志费|铅封=FZF,封志费|铅封费=FZF,封志费|设备交接费=SBJJDF,设备交接单费|设备交接=SBJJDF,设备交接单费|设备交接单费=SBJJDF,设备交接单费|安保费=666,安保费|THC=THC,THC|VGM=VGM,VGM|燃油附加费=1050,燃油附加费".split("|").map((s) => {
+  const [alias, value] = s.split("=");
+  return [alias, value.split(",")];
+}));
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-
 async function loadPackage(name) {
   try {
     return await import(name);
@@ -31,14 +32,12 @@ async function loadPackage(name) {
     throw importError;
   }
 }
-
 function localDate(date = new Date()) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
-
 function cellText(cell) {
   const value = cell?.value;
   if (value == null) return "";
@@ -49,20 +48,12 @@ function cellText(cell) {
   if (value.result != null) return String(value.result).trim();
   return String(value).trim();
 }
-
-function compact(value) {
-  return String(value || "").replace(/[\s'’"＇]/g, "").toUpperCase();
-}
-
-function cleanText(value) {
-  return String(value || "").replace(/\s+/g, " ").trim();
-}
-
+function compact(value) { return String(value || "").replace(/[\s'’"＇]/g, "").toUpperCase(); }
+function cleanText(value) { return String(value || "").replace(/\s+/g, " ").trim(); }
 function parseCarrierCode(sheetName) {
   const match = sheetName.trim().match(/^([A-Za-z0-9]+)/);
   return match ? match[1].toUpperCase() : null;
 }
-
 function containerTypeFromParts(size, type) {
   const sizeText = compact(size);
   const typeText = compact(type);
@@ -75,7 +66,6 @@ function containerTypeFromParts(size, type) {
   if (merged.includes("40HQ") || merged.includes("40HC")) return "40HQ";
   return null;
 }
-
 function findWideHeaders(ws) {
   const headers = [];
   for (let rowNo = 1; rowNo <= ws.rowCount; rowNo += 1) {
@@ -88,7 +78,6 @@ function findWideHeaders(ws) {
   }
   return headers;
 }
-
 function findMatrixHeaders(ws) {
   const headers = [];
   for (let rowNo = 1; rowNo <= ws.rowCount; rowNo += 1) {
@@ -103,7 +92,6 @@ function findMatrixHeaders(ws) {
   }
   return headers;
 }
-
 function parseRateParts(value) {
   if (value == null || value === "") return [];
   if (typeof value === "number" && Number.isFinite(value)) return [{ rate: value, notes: [] }];
@@ -131,21 +119,18 @@ function parseRateParts(value) {
   }
   return [];
 }
-
 function extractArea(category) {
   const match = category.match(/THC[（(]([^）)]+)[）)]/i);
   if (!match) return null;
   return match[1].split(/[、,，/／]/).map((part) => part.trim()).filter(Boolean).join("/");
 }
-
 function makeNote(sheetName, category, extra = []) {
   const area = extractArea(category);
   const parts = [SOURCE_NOTE, `sheet:${sheetName}`];
   if (area) parts.push(`航区:${area}`);
   parts.push(...extra.filter(Boolean));
-  return parts.join(" | ");
+  return [...new Set(parts)].join(" | ");
 }
-
 function pushRows(rows, skips, base, category, rawValue, extraNotes = []) {
   const parsed = parseRateParts(rawValue);
   if (parsed.length === 0) {
@@ -171,7 +156,6 @@ function pushRows(rows, skips, base, category, rawValue, extraNotes = []) {
     });
   }
 }
-
 function categoryFromRow(row, firstTypeCol) {
   for (let colNo = firstTypeCol - 1; colNo >= 1; colNo -= 1) {
     const text = cleanText(cellText(row.getCell(colNo)));
@@ -179,7 +163,6 @@ function categoryFromRow(row, firstTypeCol) {
   }
   return "";
 }
-
 function parseWideSheet(ws, headers) {
   const rows = [];
   const skips = [];
@@ -209,7 +192,6 @@ function parseWideSheet(ws, headers) {
   }
   return { rows, skips };
 }
-
 function rowContainerType(row, header) {
   const typeText = cellText(row.getCell(header.typeCol));
   const direct = containerTypeFromParts("", typeText);
@@ -217,15 +199,34 @@ function rowContainerType(row, header) {
   if (!header.sizeCol) return null;
   return containerTypeFromParts(cellText(row.getCell(header.sizeCol)), typeText);
 }
-
+function matrixHeaderMeta(headerRow, firstCategoryCol, columnCount) {
+  const seen = new Map(), duplicateBases = new Set(), meta = new Map();
+  for (let colNo = firstCategoryCol; colNo <= columnCount; colNo += 1) {
+    const base = cleanText(cellText(headerRow.getCell(colNo)));
+    if (!base) continue;
+    const n = (seen.get(base) || 0) + 1;
+    seen.set(base, n);
+    if (n > 1) duplicateBases.add(base);
+    meta.set(colNo, { base, category: n > 1 ? `${base}(原表第二列)` : base, duplicate: false });
+  }
+  for (const item of meta.values()) if (duplicateBases.has(item.base)) item.duplicate = true;
+  return meta;
+}
+function fillNoteForCell(cell, rowNo) {
+  const master = cell.master;
+  return master && master !== cell && master.row !== rowNo ? `按不随柜型变化补(原表仅${master.row}行给出)` : null;
+}
 function parseMatrixSheet(ws, headers) {
   const rows = [];
   const skips = [];
+  const duplicateColumns = [];
+  const fills = [];
   for (let h = 0; h < headers.length; h += 1) {
     const header = headers[h];
     const headerRow = ws.getRow(header.rowNo);
     const endRow = h + 1 < headers.length ? headers[h + 1].rowNo - 1 : ws.rowCount;
     const firstCategoryCol = Math.max(header.sizeCol || 0, header.typeCol) + 1;
+    const meta = matrixHeaderMeta(headerRow, firstCategoryCol, ws.columnCount);
     let blankStreak = 0;
     for (let rowNo = header.rowNo + 1; rowNo <= endRow; rowNo += 1) {
       const row = ws.getRow(rowNo);
@@ -238,22 +239,31 @@ function parseMatrixSheet(ws, headers) {
       blankStreak = 0;
       let station = "";
       for (let colNo = firstCategoryCol; colNo <= ws.columnCount; colNo += 1) {
-        const category = cleanText(cellText(headerRow.getCell(colNo)));
+        const info = meta.get(colNo), category = info?.category || "";
         const raw = cleanText(cellText(row.getCell(colNo)));
-        if (category === "场站" && raw && parseRateParts(raw).length === 0) station = raw;
+        if (info?.base === "场站" && raw && parseRateParts(raw).length === 0) station = raw;
       }
       for (let colNo = firstCategoryCol; colNo <= ws.columnCount; colNo += 1) {
-        const category = cleanText(cellText(headerRow.getCell(colNo)));
+        const info = meta.get(colNo);
+        const category = info?.category || "";
         if (!category || /^(备注|SW BILL)$/i.test(category)) continue;
-        const raw = cleanText(cellText(row.getCell(colNo)));
-        if (category === "场站" && raw && parseRateParts(raw).length === 0) continue;
-        pushRows(rows, skips, { sheet: ws.name, rowNo, carrier_code: parseCarrierCode(ws.name), container_type: containerType, station }, category, raw, station ? [`场站:${station}`] : []);
+        const cell = row.getCell(colNo);
+        const raw = cleanText(cellText(cell));
+        if (info.base === "场站" && raw && parseRateParts(raw).length === 0) continue;
+        const notes = station ? [`场站:${station}`] : [];
+        if (info?.duplicate && info.base !== "场站") notes.push("⚠️原表同名两列待人工判");
+        const fillNote = fillNoteForCell(cell, rowNo);
+        if (fillNote && raw) {
+          notes.push(fillNote);
+          fills.push({ sheet: ws.name, rowNo, fromRow: cell.master.row, category, container_type: containerType, raw });
+        }
+        if (info?.duplicate && info.base !== "场站") duplicateColumns.push({ sheet: ws.name, rowNo, category, container_type: containerType, raw });
+        pushRows(rows, skips, { sheet: ws.name, rowNo, carrier_code: parseCarrierCode(ws.name), container_type: containerType, station }, category, raw, notes);
       }
     }
   }
-  return { rows, skips };
+  return { rows, skips, duplicateColumns, fills };
 }
-
 function parseSheet(ws) {
   const wideHeaders = findWideHeaders(ws);
   if (wideHeaders.length > 0) return parseWideSheet(ws, wideHeaders);
@@ -261,30 +271,23 @@ function parseSheet(ws) {
   if (matrixHeaders.length > 0) return parseMatrixSheet(ws, matrixHeaders);
   return { rows: [], skips: [{ reason: "header_missing", sheet: ws.name, count: 1 }] };
 }
-
-function addSkip(skips, reason, count = 1) {
-  skips.set(reason, (skips.get(reason) || 0) + count);
-}
-
-function keyOf(row) {
-  return [row.carrier_code, row.pol, row.container_type, row.cost_category].join("\u0001");
-}
-
-function sameRate(a, b) {
-  return Number(a) === Number(b);
-}
-
+function addSkip(skips, reason, count = 1) { skips.set(reason, (skips.get(reason) || 0) + count); }
+function keyOf(row) { return [row.carrier_code, row.pol, row.container_type, row.cost_category].join("\u0001"); }
+function sameRate(a, b) { return Number(a) === Number(b); }
 function mergeNote(row) {
   const stations = [...new Set(row.stations || [])].filter(Boolean);
-  const base = row.note.replace(/( \| 场站:[^|]+)+/g, "");
+  const base = row.note.split(" | ").filter((part) => !part.startsWith("场站:")).join(" | ");
   return stations.length ? `${base} | 场站:${stations.join("/")}` : base;
 }
-
+function conflictCategory(row) {
+  const stations = [...new Set(row.stations || [])].filter(Boolean).join("/");
+  return stations ? `${row.cost_category}(${stations})` : `${row.cost_category}(价格冲突${row.rate})`;
+}
 function dedupeParsed(rows, skipCounts) {
   const seen = new Map();
   const conflicts = [];
   for (const row of rows) {
-    const key = keyOf(row);
+    let key = keyOf(row);
     const old = seen.get(key);
     if (!old) {
       seen.set(key, { ...row, stations: [...(row.stations || [])], sourceRows: [row.rowNo] });
@@ -296,13 +299,44 @@ function dedupeParsed(rows, skipCounts) {
       old.note = mergeNote(old);
       addSkip(skipCounts, "parsed_duplicate_same_rate");
     } else {
+      const baseCategory = row.cost_category;
+      const alt = [...seen.entries()].find(([, r]) => r.carrier_code === row.carrier_code && r.pol === row.pol && r.container_type === row.container_type && sameRate(r.rate, row.rate) && r.cost_category.startsWith(`${baseCategory}(`));
+      row.cost_category = conflictCategory(row);
+      row.note = makeNote(row.sheet, row.cost_category, row.stations?.length ? [`场站:${row.stations.join("/")}`] : []);
+      key = keyOf(row);
+      const renamed = alt?.[1] || seen.get(key);
+      if (renamed) {
+        renamed.stations.push(...(row.stations || []));
+        renamed.sourceRows.push(row.rowNo);
+        if (alt) {
+          seen.delete(alt[0]);
+          renamed.cost_category = conflictCategory({ ...renamed, cost_category: baseCategory });
+          seen.set(keyOf(renamed), renamed);
+          row.cost_category = renamed.cost_category;
+        }
+        renamed.note = mergeNote({ ...renamed, note: makeNote(row.sheet, renamed.cost_category) });
+      } else seen.set(key, { ...row, stations: [...(row.stations || [])], sourceRows: [row.rowNo] });
       conflicts.push({ old, next: row });
       addSkip(skipCounts, "parsed_duplicate_conflict");
     }
   }
   return { rows: [...seen.values()].map((row) => ({ ...row, note: mergeNote(row) })), conflicts };
 }
-
+function normalizeFeeRows(rows) {
+  const unknown = new Map(), split = (name) => {
+    const m = String(name).match(/^(.+?)([（(].+[）)])$/);
+    return m ? [m[1], m[2].replace(/^（/, "(").replace(/）$/, ")")] : [name, ""];
+  };
+  const mapped = rows.map((row) => {
+    const [base, suffix] = split(row.cost_category), hit = FEE_MASTER.get(base);
+    if (hit) return { ...row, fee_code: hit[0], cost_category: `${hit[1]}${suffix}` };
+    const k = `${row.sheet}\u0001${base}`;
+    if (!unknown.has(k)) unknown.set(k, { sheet: row.sheet, category: base, count: 0 });
+    unknown.get(k).count += 1;
+    return { ...row, fee_code: "", cost_category: row.cost_category };
+  });
+  return { rows: mapped, unknown: [...unknown.values()] };
+}
 function summarizeBySheet(parsed) {
   for (const item of parsed) {
     const categories = new Set(item.rows.map((row) => row.cost_category)).size;
@@ -311,7 +345,6 @@ function summarizeBySheet(parsed) {
     console.log(`${item.sheet}: ${categories} 费目 x ${types} 柜型 = ${combos} 组合 / ${item.rows.length} 行`);
   }
 }
-
 function printRows(title, rows) {
   console.log("");
   console.log(title);
@@ -319,28 +352,29 @@ function printRows(title, rows) {
     console.log(`${row.carrier_code}\t${row.pol}\t${row.container_type}\t${row.cost_category}\t${row.rate}\t${row.currency}\t${row.note}`);
   }
 }
-
 function printConflicts(conflicts) {
   console.log("");
-  console.log(`parsed_duplicate_conflict 全量: ${conflicts.length}`);
+  console.log(`价格冲突拆行结果(parsed_duplicate_conflict) 全量: ${conflicts.length}`);
   for (const item of conflicts) {
     console.log(`${item.next.sheet}\t行${item.old.rowNo}/行${item.next.rowNo}\t${item.next.cost_category}\t${item.next.container_type}\t${item.old.rate}\t${item.next.rate}`);
   }
 }
-
+function printList(title, rows, format) {
+  console.log("");
+  console.log(`${title}: ${rows.length}`);
+  for (const row of rows) console.log(format(row));
+}
 function printNonNumeric(skips) {
   const bad = skips.filter((skip) => skip.reason === "non_numeric_rate");
   console.log("");
   console.log(`non_numeric_rate 全量: ${bad.length}`);
   for (const skip of bad) console.log(`${skip.sheet}\t行${skip.rowNo || ""}\t${skip.category || ""}\t${skip.container_type || ""}\t${skip.raw || ""}`);
 }
-
 function writeTsv(file, rows) {
-  const cols = ["carrier_code", "pol", "container_type", "cost_category", "rate", "currency", "note"];
+  const cols = ["carrier_code", "pol", "container_type", "cost_category", "fee_code", "rate", "currency", "note"];
   const escape = (v) => String(v ?? "").replace(/\t/g, " ").replace(/\r?\n/g, " ");
   fs.writeFileSync(file, [cols.join("\t"), ...rows.map((row) => cols.map((col) => escape(row[col])).join("\t"))].join("\n"));
 }
-
 async function loadExisting(pool) {
   const { rows } = await pool.query(
     `SELECT id, carrier_code, pol, container_type, cost_category, rate, note
@@ -356,7 +390,6 @@ async function loadExisting(pool) {
   }
   return map;
 }
-
 function makePlan(parsedRows, existing, skipCounts) {
   const plan = { inserts: [], updates: [], unchanged: [], duplicates: [] };
   for (const row of parsedRows) {
@@ -370,7 +403,6 @@ function makePlan(parsedRows, existing, skipCounts) {
   addSkip(skipCounts, "existing_duplicate_keys", plan.duplicates.length);
   return plan;
 }
-
 async function reconcile(rows, skipCounts) {
   let pgMod;
   try {
@@ -400,27 +432,25 @@ async function reconcile(rows, skipCounts) {
     await pool.end().catch(() => {});
   }
 }
-
 function argValue(name) {
   const exact = process.argv.find((arg) => arg.startsWith(`${name}=`));
   if (exact) return exact.slice(name.length + 1);
   const idx = process.argv.indexOf(name);
   return idx >= 0 ? process.argv[idx + 1] : null;
 }
-
 async function main() {
   if (process.argv.includes("--commit")) throw new Error("--commit 已禁用；本脚本只做 dry-run 解析和只读对账");
   const xlsxFile = argValue("--file") || SOURCE_FILE;
   const outFile = argValue("--out");
   if (!fs.existsSync(xlsxFile)) throw new Error(`xlsx not found: ${xlsxFile}`);
-
   const ExcelJS = (await loadPackage("exceljs")).default || (await loadPackage("exceljs"));
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(xlsxFile);
-
   const skipCounts = new Map();
   const badCarrierSheets = [];
   const parsedRaw = [];
+  const duplicateColumns = [];
+  const fills = [];
   for (const ws of workbook.worksheets.slice(1)) {
     const carrier = parseCarrierCode(ws.name);
     if (!carrier) {
@@ -431,8 +461,9 @@ async function main() {
     const result = parseSheet(ws);
     for (const skip of result.skips) addSkip(skipCounts, skip.reason, skip.count || 1);
     parsedRaw.push({ sheet: ws.name, rows: result.rows, skips: result.skips });
+    duplicateColumns.push(...(result.duplicateColumns || []));
+    fills.push(...(result.fills || []));
   }
-
   const deduped = [];
   const conflicts = [];
   for (const item of parsedRaw) {
@@ -440,13 +471,16 @@ async function main() {
     deduped.push({ sheet: item.sheet, rows: result.rows, skips: item.skips });
     conflicts.push(...result.conflicts);
   }
-  const allRows = deduped.flatMap((item) => item.rows);
+  const normalized = normalizeFeeRows(deduped.flatMap((item) => item.rows));
+  const allRows = normalized.rows;
   if (outFile) writeTsv(outFile, allRows);
   const recon = await reconcile(allRows, skipCounts);
-
   console.log(`模式: dry-run | 文件: ${xlsxFile} | 运行日: ${localDate()}`);
   summarizeBySheet(deduped);
   printConflicts(conflicts);
+  printList("同名列冲突 全量", duplicateColumns, (r) => `${r.sheet}\t行${r.rowNo}\t${r.container_type}\t${r.category}\t${r.raw}`);
+  printList("跨柜型补值全量", fills, (r) => `${r.sheet}\t行${r.rowNo}\t从行${r.fromRow}\t${r.container_type}\t${r.category}\t${r.raw}`);
+  printList("费目名映射不上全量", normalized.unknown, (r) => `${r.sheet}\t${r.category}\t${r.count}`);
   printNonNumeric(parsedRaw.flatMap((item) => item.skips));
   printRows("COSCO 青岛解析结果:", allRows.filter((row) => row.carrier_code === "COSCO"));
   console.log("");
@@ -460,7 +494,6 @@ async function main() {
   if (recon.error) console.log(`DB只读对账失败，已跳过: ${recon.error}`);
   console.log("dry-run: 未写库；不会 DELETE。");
 }
-
 main().catch((error) => {
   console.error(error.stack || error.message);
   process.exitCode = 1;
