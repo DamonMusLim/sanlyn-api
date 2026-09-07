@@ -105,6 +105,29 @@ function printList(title, rows, format) {
   console.log(`${title}: ${rows.length}`);
   for (const row of rows) console.log(format(row));
 }
+function findDuplicateKeys(rows) {
+  const seen = new Map();
+  const duplicates = [];
+  for (const row of rows) {
+    const key = [row.carrier_code, row.container_type, row.cost_category, row.currency || "CNY"].join("\u0001");
+    const old = seen.get(key);
+    if (old) duplicates.push({ old, row });
+    else seen.set(key, row);
+  }
+  return duplicates;
+}
+function printDuplicateKeyCheck(duplicates) {
+  console.log("");
+  if (!duplicates.length) {
+    console.log("重复键自检: 无重复");
+    return;
+  }
+  console.log(`重复键自检: 发现 ${duplicates.length} 组`);
+  for (const item of duplicates) {
+    const r = item.row;
+    console.log(`${r.carrier_code}\t${r.container_type}\t${r.cost_category}\t${r.currency}\t行${item.old.rowNo}/行${r.rowNo}`);
+  }
+}
 function printNonNumeric(skips) {
   const bad = skips.filter((skip) => skip.reason === "non_numeric_rate");
   console.log("");
@@ -204,6 +227,7 @@ async function main() {
   const parsedRaw = [];
   const duplicateColumns = [];
   const fills = [];
+  const footnoteRates = [];
   for (const ws of workbook.worksheets.slice(1)) {
     const carrier = parseCarrierCode(ws.name);
     if (!carrier) {
@@ -216,6 +240,7 @@ async function main() {
     parsedRaw.push({ sheet: ws.name, rows: result.rows, skips: result.skips, seenFees: result.seenFees || [] });
     duplicateColumns.push(...(result.duplicateColumns || []));
     fills.push(...(result.fills || []));
+    footnoteRates.push(...(result.footnoteRates || []));
   }
   const deduped = [];
   const conflicts = [];
@@ -226,11 +251,18 @@ async function main() {
   }
   const normalized = normalizeFeeRows(deduped.flatMap((item) => item.rows));
   const allRows = normalized.rows;
+  const duplicateKeys = findDuplicateKeys(allRows);
+  if (duplicateKeys.length) {
+    printDuplicateKeyCheck(duplicateKeys);
+    throw new Error("重复键自检失败");
+  }
   if (outFile) writeTsv(outFile, allRows);
   const recon = await reconcile(allRows, skipCounts);
   console.log(`模式: dry-run | 文件: ${xlsxFile} | 运行日: ${localDate()}`);
   summarizeBySheet(deduped);
   printUnparsedFees(deduped);
+  printDuplicateKeyCheck(duplicateKeys);
+  printList("原表脚注含费率(需人工录入)", footnoteRates, (r) => `${r.sheet}\t行${r.rowNo}\t${r.text}`);
   printConflicts(conflicts);
   printList("同名列冲突 全量", duplicateColumns, (r) => `${r.sheet}\t行${r.rowNo}\t${r.container_type}\t${r.category}\t${r.raw}`);
   printList("跨柜型补值全量", fills, (r) => `${r.sheet}\t行${r.rowNo}\t从行${r.fromRow}\t${r.container_type}\t${r.category}\t${r.raw}`);
@@ -241,6 +273,9 @@ async function main() {
   printList("建议新增到 hgj_fee_master 的费目", normalized.suggested, (r) => `${r.category}\t${r.carriers.join("/")}\t${r.amounts}`);
   printNonNumeric(parsedRaw.flatMap((item) => item.skips));
   printRows("ONE 全量解析结果:", allRows.filter((row) => row.carrier_code === "ONE"));
+  printRows("YML THC 航区回归:", allRows.filter((row) => row.carrier_code === "YML" && row.cost_category.startsWith("THC")));
+  printRows("YML 封志费回归:", allRows.filter((row) => row.carrier_code === "YML" && row.cost_category.startsWith("封志费")));
+  printList("PIL 同名列回归", duplicateColumns.filter((row) => row.sheet.startsWith("PIL")), (r) => `${r.sheet}\t行${r.rowNo}\t${r.container_type}\t${r.category}\t${r.raw}`);
   printRows("COSCO 青岛解析结果:", allRows.filter((row) => row.carrier_code === "COSCO"));
   console.log("");
   console.log(`合计解析行: ${allRows.length}`);

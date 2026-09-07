@@ -43,8 +43,16 @@ const MASTER_ALIASES = [
   ["订舱费", "DCF", "订舱费"],
   ["舱单费", "CDF", "舱单费"],
   ["THC", "THC", "THC"],
-  ["THC台湾", "THC", "THC"],
 ];
+
+const AREA_WORDS = ["台湾", "臺灣", "东南亚", "東南亞", "韩国", "韓國", "美加", "欧地", "歐地", "拉非", "亚太", "亞太", "欧线", "美线", "航线", "航区"];
+const AREA_CANONICAL = new Map([
+  ["臺灣", "台湾"],
+  ["東南亞", "东南亚"],
+  ["韓國", "韩国"],
+  ["歐地", "欧地"],
+  ["亞太", "亚太"],
+]);
 
 const TRADITIONAL_MAP = new Map([
   ["單", "单"],
@@ -131,16 +139,34 @@ function normalizePendingName(name) {
   return String(name || "").trim();
 }
 
+function areaDisplay(word) {
+  return AREA_CANONICAL.get(word) || word;
+}
+
+function extractAreaWords(name) {
+  let lookup = String(name || "");
+  const areas = [];
+  for (const word of AREA_WORDS) {
+    if (!lookup.includes(word)) continue;
+    areas.push(areaDisplay(word));
+    lookup = lookup.split(word).join("");
+  }
+  return { lookup: lookup.trim(), areas: [...new Set(areas)] };
+}
+
 export function normalizeFeeName(rawName) {
   const { base, suffix } = splitProtectedSuffix(rawName);
   const simplified = toSimplified(base);
   const codeResult = stripCodeParens(simplified);
   const unitResult = stripUnit(codeResult.name);
   const cleaned = unitResult.name.replace(/\s+/g, "").trim();
+  const areaResult = extractAreaWords(cleaned);
+  const areaSuffix = areaResult.areas.length ? `(${areaResult.areas.join("/")})` : "";
   const notes = [];
   if (unitResult.unit) notes.push(`计价单位:${unitResult.unit}`);
   if (codeResult.codes.length) notes.push(`原名:${rawName}`);
-  return { lookupName: cleaned, displayName: `${cleaned}${suffix}`, suffix, notes };
+  for (const area of areaResult.areas) notes.push(`航区:${area}`);
+  return { lookupName: areaResult.lookup || cleaned, displayName: `${areaResult.lookup || cleaned}${suffix}${areaSuffix}`, suffix: `${suffix}${areaSuffix}`, notes };
 }
 
 export function normalizeFeeRows(rows) {

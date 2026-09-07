@@ -1,5 +1,7 @@
 const TYPES = ["20GP", "40GP", "40HQ"];
 const SOURCE_NOTE = "来源:船司人民币收费标准完整版.xlsx(微信 2026-07)";
+const AREA_WORD_RE = /台湾|臺灣|东南亚|東南亞|韩国|韓國|美加|欧地|歐地|拉非|亚太|亞太|欧线|美线|航线|航区/;
+const MONEY_WORD_RE = /(?:RMB|CNY|USD|￥|¥|\$)\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?\s*(?:RMB|CNY|USD|￥|¥|\$)/i;
 export const POL = "青岛";
 
 export function compact(value) { return String(value || "").replace(/[\s'’"＇]/g, "").toUpperCase(); }
@@ -195,6 +197,7 @@ function parseWideSheet(ws, headers) {
   const rows = [];
   const skips = [];
   const seenFees = new Map();
+  const dataRows = new Set();
   for (let h = 0; h < headers.length; h += 1) {
     const header = headers[h];
     const endRow = h + 1 < headers.length ? headers[h + 1].rowNo - 1 : ws.rowCount;
@@ -228,9 +231,10 @@ function parseWideSheet(ws, headers) {
       }
       const key = `${ws.name}\u0001${rowNo}\u0001${category}`;
       if (seenFees.has(key)) seenFees.get(key).parsed = parsedAny;
+      if (parsedAny) dataRows.add(rowNo);
     }
   }
-  return { rows, skips, seenFees: [...seenFees.values()] };
+  return { rows, skips, seenFees: [...seenFees.values()], dataRows: [...dataRows] };
 }
 
 function rowContainerType(row, header) {
@@ -262,6 +266,7 @@ function fillNoteForCell(cell, rowNo) {
 
 function parseMatrixSheet(ws, headers) {
   const rows = [], skips = [], duplicateColumns = [], fills = [], seenFees = new Map();
+  const dataRows = new Set();
   for (let h = 0; h < headers.length; h += 1) {
     const header = headers[h];
     const headerRow = ws.getRow(header.rowNo);
@@ -302,10 +307,35 @@ function parseMatrixSheet(ws, headers) {
         const parsed = pushRows(rows, skips, { sheet: ws.name, rowNo, carrier_code: parseCarrierCode(ws.name), container_type: containerType, station }, category, raw, notes);
         const key = `${ws.name}\u0001${rowNo}\u0001${category}`;
         if (seenFees.has(key) && parsed) seenFees.get(key).parsed = true;
+        if (parsed) dataRows.add(rowNo);
       }
     }
   }
-  return { rows, skips, duplicateColumns, fills, seenFees: [...seenFees.values()] };
+  return { rows, skips, duplicateColumns, fills, seenFees: [...seenFees.values()], dataRows: [...dataRows] };
+}
+
+function rowPlainText(row) {
+  const parts = [];
+  row.eachCell({ includeEmpty: false }, (cell) => {
+    const text = cleanText(cellText(cell));
+    if (text) parts.push(text);
+  });
+  return parts.join(" ");
+}
+
+function findFootnoteRates(ws, dataRows = []) {
+  const blocked = new Set(dataRows);
+  const found = [];
+  for (let rowNo = 1; rowNo <= ws.rowCount; rowNo += 1) {
+    if (blocked.has(rowNo)) continue;
+    const text = rowPlainText(ws.getRow(rowNo));
+    if (AREA_WORD_RE.test(text) && MONEY_WORD_RE.test(text)) found.push({ sheet: ws.name, rowNo, text });
+  }
+  return found;
+}
+
+function withFootnotes(ws, result) {
+  return { ...result, footnoteRates: findFootnoteRates(ws, result.dataRows || []) };
 }
 
 export function parseSheet(ws) {
@@ -313,8 +343,8 @@ export function parseSheet(ws) {
   const matrixHeaders = findMatrixHeaders(ws);
   if (wideHeaders.length > 0) {
     const wide = parseWideSheet(ws, wideHeaders);
-    if (wide.rows.length > 0 || matrixHeaders.length === 0) return wide;
+    if (wide.rows.length > 0 || matrixHeaders.length === 0) return withFootnotes(ws, wide);
   }
-  if (matrixHeaders.length > 0) return parseMatrixSheet(ws, matrixHeaders);
-  return { rows: [], skips: [{ reason: "header_missing", sheet: ws.name, count: 1 }], seenFees: [] };
+  if (matrixHeaders.length > 0) return withFootnotes(ws, parseMatrixSheet(ws, matrixHeaders));
+  return withFootnotes(ws, { rows: [], skips: [{ reason: "header_missing", sheet: ws.name, count: 1 }], seenFees: [], dataRows: [] });
 }
