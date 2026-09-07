@@ -2,14 +2,11 @@ import fs from "fs";
 import path from "path";
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
+import { normalizeFeeRows } from "./lib/fee-normalize.mjs";
 const SOURCE_FILE = "/tmp/carrier_tariff.xlsx";
 const SOURCE_NOTE = "来源:船司人民币收费标准完整版.xlsx(微信 2026-07)";
 const POL = "青岛";
 const TYPES = ["20GP", "40GP", "40HQ"];
-const FEE_MASTER = new Map("场站=222,场站费|场站费=222,场站费|电放=333,电放费|电放费=333,电放费|提箱费=444,提箱费|出口服务费=2010,出口服务费|订舱=DCF,订舱费|订舱费=DCF,订舱费|港杂费=GZF,港杂费|港杂=GZF,港杂费|舱单费=CDF,舱单费|文件费=WJF,文件费|封志费=FZF,封志费|铅封=FZF,封志费|铅封费=FZF,封志费|设备交接费=SBJJDF,设备交接单费|设备交接=SBJJDF,设备交接单费|设备交接单费=SBJJDF,设备交接单费|安保费=666,安保费|THC=THC,THC|VGM=VGM,VGM|燃油附加费=1050,燃油附加费".split("|").map((s) => {
-  const [alias, value] = s.split("=");
-  return [alias, value.split(",")];
-}));
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 async function loadPackage(name) {
@@ -322,21 +319,6 @@ function dedupeParsed(rows, skipCounts) {
   }
   return { rows: [...seen.values()].map((row) => ({ ...row, note: mergeNote(row) })), conflicts };
 }
-function normalizeFeeRows(rows) {
-  const unknown = new Map(), split = (name) => {
-    const m = String(name).match(/^(.+?)([（(].+[）)])$/);
-    return m ? [m[1], m[2].replace(/^（/, "(").replace(/）$/, ")")] : [name, ""];
-  };
-  const mapped = rows.map((row) => {
-    const [base, suffix] = split(row.cost_category), hit = FEE_MASTER.get(base);
-    if (hit) return { ...row, fee_code: hit[0], cost_category: `${hit[1]}${suffix}` };
-    const k = `${row.sheet}\u0001${base}`;
-    if (!unknown.has(k)) unknown.set(k, { sheet: row.sheet, category: base, count: 0 });
-    unknown.get(k).count += 1;
-    return { ...row, fee_code: "", cost_category: row.cost_category };
-  });
-  return { rows: mapped, unknown: [...unknown.values()] };
-}
 function summarizeBySheet(parsed) {
   for (const item of parsed) {
     const categories = new Set(item.rows.map((row) => row.cost_category)).size;
@@ -481,6 +463,10 @@ async function main() {
   printList("同名列冲突 全量", duplicateColumns, (r) => `${r.sheet}\t行${r.rowNo}\t${r.container_type}\t${r.category}\t${r.raw}`);
   printList("跨柜型补值全量", fills, (r) => `${r.sheet}\t行${r.rowNo}\t从行${r.fromRow}\t${r.container_type}\t${r.category}\t${r.raw}`);
   printList("费目名映射不上全量", normalized.unknown, (r) => `${r.sheet}\t${r.category}\t${r.count}`);
+  console.log("");
+  console.log(`fee_code 已映射: ${normalized.stats.mappedRows} 行 (${normalized.stats.mappedCategories} 个费目)`);
+  console.log(`fee_code 留空:   ${normalized.stats.blankRows} 行 → 全部属于「待新增」清单`);
+  printList("建议新增到 hgj_fee_master 的费目", normalized.suggested, (r) => `${r.category}\t${r.carriers.join("/")}\t${r.amounts}`);
   printNonNumeric(parsedRaw.flatMap((item) => item.skips));
   printRows("COSCO 青岛解析结果:", allRows.filter((row) => row.carrier_code === "COSCO"));
   console.log("");
