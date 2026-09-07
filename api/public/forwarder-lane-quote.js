@@ -340,7 +340,16 @@ async function upsertRate(client, line, rfqItemId, code) {
   return ins.rows[0].id;
 }
 
-function buildLines(body, token, company, validFrom, validTo) {
+function lineValidTo(line, bodyValidTo, defaultValidTo) {
+  var etd = cleanDate(line && line.etd);
+  var weekTo = cleanDate(line && line.week_to);
+  if (etd) return { value: etd, source: "etd", etd: etd, week_to: weekTo };
+  if (weekTo) return { value: weekTo, source: "week_to", etd: etd, week_to: weekTo };
+  if (bodyValidTo) return { value: bodyValidTo, source: "body", etd: etd, week_to: weekTo };
+  return { value: defaultValidTo, source: "default_14d", etd: etd, week_to: weekTo };
+}
+
+function buildLines(body, token, company, validFrom, bodyValidTo, defaultValidTo) {
   var pol = normalizePort(body.pol);
   var pod = normalizePort(body.pod);
   var rawLines = Array.isArray(body.lines) ? body.lines : [];
@@ -372,6 +381,11 @@ function buildLines(body, token, company, validFrom, validTo) {
       out.skipped.push({ carrier: carrier, container_type: ct, reason: "unguaranteed_usd_not_positive" });
       return;
     }
+    var resolvedValidTo = lineValidTo(line, bodyValidTo, defaultValidTo);
+    if (validFrom > resolvedValidTo.value) {
+      out.skipped.push({ carrier: carrier, container_type: ct, reason: "sailing_already_departed" });
+      return;
+    }
     out.lines.push({
       pol: pol,
       pod: pod,
@@ -383,13 +397,14 @@ function buildLines(body, token, company, validFrom, validTo) {
       deposit_cny: nullableNumber(line && line.deposit_cny),
       week_idx: line && line.week_idx == null ? null : nullableNumber(line && line.week_idx),
       week_from: cleanDate(line && line.week_from),
-      week_to: cleanDate(line && line.week_to),
-      etd: cleanDate(line && line.etd),
+      week_to: resolvedValidTo.week_to,
+      etd: resolvedValidTo.etd,
       vessel: text(line && line.vessel),
       voyage: text(line && line.voyage),
       transit_days: nullableNumber(line && line.transit_days),
       valid_from: validFrom,
-      valid_to: validTo,
+      valid_to: resolvedValidTo.value,
+      valid_to_source: resolvedValidTo.source,
       forwarder_company_id: token.company_id,
       forwarder_company_code: company.company_code,
       forwarder_name: company.name_cn,
@@ -415,10 +430,9 @@ export default async function handler(req, res) {
   var today = new Date();
   var body = req.body || {};
   var validFrom = cleanDate(body.valid_from) || ymd(today);
-  // 2026-09-06 Damon 定 14 天(原 7 天):DeepSeek 与 GPT 独立评审均判「30天是旧运价表维护习惯不该延续、7天货代嫌烦会弃用或乱填」,
-  // GPT 给 14、DeepSeek 给 11,取 14 —— 目的是推动货代常态更新,又不至于满屏过期价。货代可手改。
-  var validTo = cleanDate(body.valid_to) || ymd(addDays(today, 14));
-  var prepared = buildLines(body, loaded.token, company, validFrom, validTo);
+  var bodyValidTo = cleanDate(body.valid_to);
+  var defaultValidTo = ymd(addDays(today, 14));
+  var prepared = buildLines(body, loaded.token, company, validFrom, bodyValidTo, defaultValidTo);
   if (!prepared.lines.length) {
     return send(res, 400, { ok: false, error: "no_valid_lines", saved: [], skipped: prepared.skipped });
   }
@@ -440,6 +454,8 @@ export default async function handler(req, res) {
         freight_rate_id: freightRateId,
         week_idx: line.week_idx,
         etd: line.etd,
+        valid_to: line.valid_to,
+        valid_to_source: line.valid_to_source,
       });
     }
     await client.query("COMMIT");
