@@ -10,30 +10,70 @@
     .page{min-height:100vh;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto}
     .bar{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--hgj-card);border-bottom:1px solid var(--hgj-line)}
     .title{min-width:130px;color:var(--hgj-title);font-weight:700}
-    .module-select{width:220px;height:32px;border:1px solid var(--hgj-line);border-radius:0;background:var(--hgj-card);color:var(--hgj-text);padding:0 8px}
+    .module-select{width:220px;height:32px;border:1px solid var(--hgj-line);border-radius:4px;background:var(--hgj-card);color:var(--hgj-text);padding:0 8px}
     .search{display:flex;align-items:center;gap:6px;min-width:240px;max-width:420px;flex:1}
-    .search input{width:100%;height:32px;border:1px solid var(--hgj-line);border-radius:0;background:var(--hgj-card);color:var(--hgj-text);padding:0 9px}
-    .btn{height:32px;border:1px solid var(--hgj-line);border-radius:0;background:var(--hgj-card);color:var(--hgj-text);cursor:pointer}
-    .btn.primary{border-color:var(--hgj-primary);background:var(--hgj-primary-bg);color:var(--hgj-primary)}
+    .search input{width:100%;height:32px;border:1px solid var(--hgj-line);border-radius:4px;background:var(--hgj-card);color:var(--hgj-text);padding:0 9px}
+    .btn{height:32px;border:1px solid var(--hgj-line);border-radius:4px;background:var(--hgj-card);color:var(--hgj-text);cursor:pointer}
+    .btn.primary{border-color:var(--hgj-primary, #006AFF);background:var(--hgj-primary-bg);color:var(--hgj-primary, #006AFF)}
     .status{display:flex;justify-content:space-between;gap:10px;padding:7px 12px;color:var(--hgj-muted);font-size:12px}
     .stamp{white-space:nowrap}
-    .connectivity{display:grid;gap:8px;padding:10px 12px;background:var(--hgj-card);border-top:1px solid var(--hgj-line);border-bottom:1px solid var(--hgj-line);color:var(--hgj-muted);font-size:12px}
-    .connectivity.ready{display:none}.connectivity b{color:var(--hgj-warn);font-size:14px}.connectivity .chips{display:flex;gap:6px;flex-wrap:wrap}.connectivity span{border:1px solid var(--hgj-line);padding:2px 6px;color:var(--hgj-text)}
-    .grid-wrap{min-width:0;overflow:auto;background:var(--hgj-card);border-top:1px solid var(--hgj-line);border-bottom:1px solid var(--hgj-line)}
+    .grid-wrap{min-width:0;overflow:auto;background:var(--hgj-card,#fff);border-top:1px solid var(--hgj-line,#d4dee3);border-bottom:1px solid var(--hgj-line,#d4dee3)}
     table{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0}
-    th,td{height:36px;max-width:360px;border-right:1px solid var(--hgj-line);border-bottom:1px solid var(--hgj-line);padding:0 9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    th{position:sticky;top:0;z-index:1;background:var(--hgj-card);color:var(--hgj-title);font-weight:700;text-align:left}
+    th,td{height:36px;max-width:360px;border-right:1px solid var(--hgj-line,#d4dee3);border-bottom:1px solid var(--hgj-line,#d4dee3);padding:0 9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    th{position:sticky;top:0;z-index:1;background:var(--hgj-card,#fff);color:var(--hgj-title);font-weight:700;text-align:left}
     td.num,th.num{text-align:right}
     td.mid,th.mid{text-align:center}
-    .foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;background:var(--hgj-card)}
+    /* 行详情入口靠整行点击触发，用指针反馈避免老板看到“只能看不能点”。 */
+    tbody tr.data-row{cursor:pointer}
+    tbody tr.data-row:hover td{background:var(--hgj-primary-bg)}
+    .foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;background:var(--hgj-card,#fff)}
     .pager{display:flex;align-items:center;gap:6px}
-    .pager input{width:64px;height:32px;border:1px solid var(--hgj-line);border-radius:0;background:var(--hgj-card);color:var(--hgj-text);text-align:center}
+    .pager input{width:64px;height:32px;border:1px solid var(--hgj-line,#d4dee3);border-radius:4px;background:var(--hgj-card,#fff);color:var(--hgj-text);text-align:center}
     .cols{position:relative}
-    .menu{position:absolute;right:0;top:36px;width:260px;max-height:420px;overflow:auto;padding:8px;background:var(--hgj-card);border:1px solid var(--hgj-line);box-shadow:none;display:none}
+    .menu{position:absolute;right:0;top:36px;width:260px;max-height:420px;overflow:auto;padding:8px;background:var(--hgj-card,#fff);border:1px solid var(--hgj-line,#d4dee3);box-shadow:0 8px 24px rgba(0,0,0,.12);display:none}
     .cols.open .menu{display:block}
     .menu label{display:flex;align-items:center;gap:8px;padding:5px 4px;color:var(--hgj-text)}
     .empty{padding:24px;color:var(--hgj-muted)}
-    @media(max-width:720px){.bar{flex-wrap:wrap}.title{width:100%}.search{min-width:0;max-width:none}.foot{flex-wrap:wrap}}
+    .muted{color:var(--hgj-muted);font-size:12px}
+    .action-cell{white-space:nowrap}
+    .row-action{margin:0 2px;padding:0 8px}
+    .row-action:disabled,.settle-use:disabled{opacity:.55;cursor:default}
+    .modal{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.38);padding:16px}
+    .modal.hidden{display:none}
+    .modal-panel{width:min(860px,100%);max-height:min(680px,90vh);overflow:auto;background:var(--hgj-card,#fff);border:1px solid var(--hgj-line,#d4dee3);border-radius:6px;box-shadow:0 18px 42px rgba(0,0,0,.22)}
+    .modal-head{position:sticky;top:0;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;background:var(--hgj-card,#fff);border-bottom:1px solid var(--hgj-line,#d4dee3)}
+    .candidate-list{display:grid;gap:8px;padding:10px}
+    .candidate{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px;border:1px solid var(--hgj-line,#d4dee3);border-radius:6px}
+    .candidate-info{display:flex;gap:10px;align-items:center;min-width:0}
+    .candidate-info span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hgj-muted)}
+    .candidate-use{display:flex;gap:6px;align-items:center}
+    .candidate-use input{width:120px;height:32px;border:1px solid var(--hgj-line,#d4dee3);border-radius:4px;background:var(--hgj-card,#fff);color:var(--hgj-text);padding:0 8px;text-align:right}
+    /* 详情抽屉固定在列表右侧，关闭后仍停留原页码，不打断现有表格工作流。 */
+    .drawer-mask{position:fixed;inset:0;z-index:15;background:rgba(15,23,42,.28)}
+    .drawer-mask.hidden{display:none}
+    .drawer{position:absolute;top:0;right:0;width:min(760px,96vw);height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto;background:var(--hgj-card,#fff);border-left:1px solid var(--hgj-line,#d4dee3);box-shadow:-12px 0 34px rgba(0,0,0,.18)}
+    .drawer-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px;border-bottom:1px solid var(--hgj-line,#d4dee3)}
+    .drawer-title{font-weight:700;color:var(--hgj-title);line-height:32px}
+    .drawer-tools{display:flex;align-items:center;gap:8px}
+    .drawer-body{overflow:auto;padding:12px;background:var(--hgj-card,#fff)}
+    .drawer-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-top:1px solid var(--hgj-line,#d4dee3);background:var(--hgj-card,#fff)}
+    .detail-error{color:#b42318;font-size:12px;white-space:pre-wrap}
+    .detail-section{margin:0 0 14px;border:1px solid var(--hgj-line,#d4dee3);border-radius:6px;background:var(--hgj-card,#fff)}
+    .detail-section-title{padding:9px 10px;border-bottom:1px solid var(--hgj-line,#d4dee3);color:var(--hgj-title);font-weight:700}
+    .detail-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;padding:10px}
+    .detail-field{min-width:0;grid-column:span 2}
+    .detail-field.span-1{grid-column:span 1}
+    .detail-field.span-2{grid-column:span 2}
+    .detail-field.span-3{grid-column:span 3}
+    .detail-field.span-4{grid-column:span 4}
+    .detail-field.span-5{grid-column:span 5}
+    .detail-field.span-6{grid-column:span 6}
+    .detail-label{display:block;margin-bottom:4px;color:var(--hgj-muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .detail-readonly{min-height:32px;padding:6px 8px;border:1px solid var(--hgj-line,#d4dee3);border-radius:4px;background:var(--hgj-bg);white-space:pre-wrap;word-break:break-word}
+    .detail-input{box-sizing:border-box;width:100%;min-height:32px;border:1px solid var(--hgj-line,#d4dee3);border-radius:4px;background:var(--hgj-card,#fff);color:var(--hgj-text);padding:5px 8px;font:inherit}
+    textarea.detail-input{min-height:74px;resize:vertical}
+    .detail-input.changed{border-color:var(--hgj-primary, #006AFF);box-shadow:0 0 0 1px var(--hgj-primary, #006AFF)}
+    @media(max-width:720px){.bar{flex-wrap:wrap}.title{width:100%}.search{min-width:0;max-width:none}.foot{flex-wrap:wrap}.drawer{width:100vw}.detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-field,.detail-field.span-1,.detail-field.span-2,.detail-field.span-3,.detail-field.span-4,.detail-field.span-5,.detail-field.span-6{grid-column:span 2}}
   </style>
 </head>
 <body>
@@ -50,8 +90,7 @@
         <div id="colsMenu" class="menu"></div>
       </div>
     </header>
-    <div class="status"><span id="status">加载中</span><span id="stamp" class="stamp">v2026.08.28-1 · 生成时间 --</span></div>
-    <section id="connectivity" class="connectivity ready"></section>
+    <div class="status"><span id="status">加载中</span><span id="stamp" class="stamp">v2026.09.07-1 · 生成时间 --</span></div>
     <section id="grid" class="grid-wrap"></section>
     <footer class="foot">
       <span id="summary"></span>
@@ -63,6 +102,24 @@
       </div>
     </footer>
   </main>
+  <div id="detailDrawer" class="drawer-mask hidden" aria-hidden="true">
+    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+      <header class="drawer-head">
+        <div>
+          <div id="detailTitle" class="drawer-title">行详情</div>
+          <div id="detailMeta" class="muted"></div>
+        </div>
+        <div class="drawer-tools">
+          <button id="detailClose" class="btn" type="button">关闭</button>
+        </div>
+      </header>
+      <section id="detailBody" class="drawer-body"></section>
+      <footer class="drawer-foot">
+        <span id="detailError" class="detail-error"></span>
+        <button id="detailSave" class="btn primary" type="button">保存</button>
+      </footer>
+    </aside>
+  </div>
   <script src="/hy/grid.js"></script>
 </body>
 </html>
