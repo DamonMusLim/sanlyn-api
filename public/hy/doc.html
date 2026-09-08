@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>单据</title>
+  <link rel="stylesheet" href="/public/hgj-ui.css">
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--hgj-bg);color:var(--hgj-text);font:14px/1.5 var(--hgj-font)}
+    .page{height:100vh;min-height:0;display:grid;grid-template-rows:auto auto minmax(0,1fr)}
+    .bar{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--hgj-card);border-bottom:1px solid var(--hgj-line)}
+    .title{color:var(--hgj-title);font-weight:700}
+    .bl{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hgj-muted)}
+    .tabs{display:flex;align-items:center;gap:6px}
+    .spacer{flex:1}
+    .btn{height:32px;border:1px solid var(--hgj-line);border-radius:4px;background:var(--hgj-card);color:var(--hgj-text);padding:0 10px;cursor:pointer;font:inherit}
+    .btn[aria-selected="true"],.btn.primary{border-color:var(--hgj-primary, #006AFF);background:var(--hgj-primary-bg);color:var(--hgj-primary, #006AFF)}
+    .btn:disabled{opacity:.55;cursor:default}
+    .status{min-height:32px;padding:7px 12px;color:var(--hgj-muted);font-size:12px;border-bottom:1px solid var(--hgj-line);background:var(--hgj-card)}
+    .status.error{color:#b42318}
+    .status a{color:var(--hgj-primary, #006AFF)}
+    .viewer{min-height:0;background:var(--hgj-card)}
+    .viewer.empty{display:flex;align-items:flex-start;padding:24px;color:var(--hgj-muted)}
+    iframe{display:block;width:100%;height:100%;border:0;background:var(--hgj-card)}
+    @media(max-width:720px){
+      .bar{flex-wrap:wrap}
+      .tabs{order:3;width:100%;overflow:auto}
+      .spacer{flex:1 0 auto}
+      .bl{max-width:calc(100vw - 92px)}
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="bar">
+      <div class="title">单据</div>
+      <div id="blText" class="bl"></div>
+      <div id="tabs" class="tabs" role="tablist" aria-label="单据类型">
+        <button class="btn" type="button" data-type="fob_portcharge" role="tab">港杂单</button>
+        <button class="btn" type="button" data-type="fob_invoice" role="tab">海运费单</button>
+        <button class="btn" type="button" data-type="exw_invoice" role="tab">EXW全费用单</button>
+      </div>
+      <div class="spacer"></div>
+      <button id="printBtn" class="btn" type="button">打印</button>
+      <button id="pdfBtn" class="btn primary" type="button">下载PDF</button>
+    </header>
+    <div id="status" class="status"></div>
+    <section id="viewer" class="viewer"></section>
+  </main>
+  <script src="/hy/doc.js"></script>
+</body>
+</html>

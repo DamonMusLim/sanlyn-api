@@ -22,21 +22,21 @@ function blNo(row){
   }
   return "";
 }
-function docUrl(bl,type,t){
-  var url="/api/db/shipping-plan-pdf?bl="+encodeURIComponent(bl)+"&type="+encodeURIComponent(type);
-  if(t)url+="&token="+encodeURIComponent(t);
-  return url;
+// 开 hy 自己的单据页(它从 localStorage 取 token),⛔ URL 里不带 token —— 少一处 token 出现在地址栏。
+function docUrl(bl,type){
+  return "/hy/doc.html?bl="+encodeURIComponent(bl)+"&type="+encodeURIComponent(type);
 }
-function link(label,bl,type,t){
-  return '<div class="detail-field span-3"><a target="_blank" rel="noopener" href="'+esc(docUrl(bl,type,t))+'">'+esc(label)+"（"+esc(bl)+"）</a></div>";
+function link(label,bl,type){
+  return '<div class="detail-field span-2"><a target="_blank" rel="noopener" href="'+esc(docUrl(bl,type))+'">'+esc(label)+"</a></div>";
 }
 function section(row,opts){
   var bl=blNo(row),t=clean(opts&&opts.token),html;
   if(!bl)return "";
   html='<section class="detail-section"><div class="detail-section-title">单据</div><div class="detail-grid">';
-  html+=link("海运费单",bl,"fob_invoice",t);
-  html+=link("港杂单",bl,"fob_portcharge",t);
-  if(!t)html+='<div class="detail-field span-6 muted">未登录可能打不开</div>';
+  html+=link("港杂单",bl,"fob_portcharge");
+  html+=link("海运费单",bl,"fob_invoice");
+  html+=link("EXW全费用单",bl,"exw_invoice");
+  html+='<div class="detail-field span-6 muted">提单号 '+esc(bl)+'</div>';
   return html+"</div></section>";
 }
 window.HyGridDocs={section:section};
