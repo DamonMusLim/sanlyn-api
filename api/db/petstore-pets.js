@@ -43,7 +43,7 @@ export default async function handler(req, res) {
     args.push(size, (page - 1) * size);
     const { rows } = await pool.query(
       `SELECT p.id, p.pet_code, p.name, p.avatar_url, p.species, p.breed, p.gender, p.birth_date, p.neutered,
-              p.owner_name, p.owner_phone, p.cert_no, p.tags, p.staple_food, p.coat_note, p.temperament,
+              p.owner_name, p.owner_phone, p.medical_card_no, p.cert_no, p.tags, p.staple_food, p.coat_note, p.temperament,
               p.color, p.height_cm, p.dog_license, p.pet_status,
               p.deworm_interval_months, p.deworm_times_per_interval,
               COALESCE(vaccine.next_due_at, p.next_vaccine_at) AS next_vaccine_at,
