@@ -60,6 +60,11 @@ function emptyDemoBody(token){
   };
 }
 
+function normBox(v){
+  var b = text(v).toUpperCase().replace(/\s+/g, "").replace("HC", "HQ");
+  return b || null;
+}
+
 function shipment(row, events, today){
   var etd = dateFromOffset(today, row.etd_offset_days) || row.etd || null;
   var eta = dateFromOffset(today, row.eta_offset_days) || row.eta || null;
@@ -75,6 +80,7 @@ function shipment(row, events, today){
     etd:etd,
     delivery_date:delivery,
     container_qty:numOrNull(row.container_qty),
+    container_type:normBox(row.container_type),
     gross_weight_kg:numOrNull(row.gross_weight_kg),
     cargo_description:text(row.cargo_description) || null,
     booked_carrier:etd ? (text(row.carrier_code).toUpperCase() || null) : null,
@@ -83,7 +89,10 @@ function shipment(row, events, today){
     booked_eta:eta,
     booking_state:state,
     arrived:false,
-    is_pending:true,
+    // 2026-09-08:只有「货好未发」(etd 现算不出来)才算待发货;原来 18 票全 true,
+    // 把 Damon 要看的那 5 票问题货淹没了。语义与真实路径 isPendingShipment 对齐。
+    is_pending:!etd,
+    delivery_state:etd ? "shipped_planned" : "pending_booking",
     bill_settled:false,
     closed:false,
     delivery_change_count:delayCount,
@@ -140,7 +149,7 @@ function addCarrier(lane, row, etd){
     prices:{},
     charge:null,
   });
-  var ct = text(row.container_type).toUpperCase().replace(/\s+/g, "").replace("HC", "HQ");
+  var ct = normBox(row.container_type);
   if (ct) carrier.boxes[ct] = true;
   if (etd && (!carrier.latest || etd > carrier.latest.v)) carrier.latest = { v:etd };
   var n = numOrNull(row.freight_cost);
@@ -228,7 +237,7 @@ function groupLanes(rows, today){
     lane.order_count += 1;
     lane.pending_orders += 1;
     var qty = numOrNull(row.container_qty);
-    var ct = text(row.container_type).toUpperCase().replace(/\s+/g, "").replace("HC", "HQ");
+    var ct = normBox(row.container_type);
     if (qty != null) {
       lane.total_containers += qty;
       lane.pending_containers += qty;
@@ -256,6 +265,18 @@ export async function handleDemoGet(pool, token, res){
   today.setHours(0, 0, 0, 0);
   var plans = await loadDemoPlans(pool, token.demo_set_id, today);
   var lanes = await attachLaneWeeks(pool, token.company_id, groupLanes(plans, today));
+  // 2026-09-08:补本三周窗口的报价/待报价船司计数,口径与真实路径一致,
+  // 否则演示号上「本周待报价 N 家」徽章不显示。
+  lanes.forEach(function(lane){
+    var done = 0, pend = 0;
+    (lane.carriers || []).forEach(function(c){
+      var weeks = (c && c.weeks) || [];
+      var quoted = weeks.some(function(w){ return w && (w.quoted === true || (w.prices && Object.keys(w.prices).length > 0)); });
+      if (quoted) done += 1; else pend += 1;
+    });
+    lane.week_quoted_carriers = done;
+    lane.week_pending_carriers = pend;
+  });
   return send(res, 200, {
     ok:true,
     demo:true,
