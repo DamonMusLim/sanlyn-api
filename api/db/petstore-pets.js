@@ -59,6 +59,30 @@ export default async function handler(req, res) {
               CASE WHEN rabies.next_due_at IS NULL THEN NULL ELSE (rabies.next_due_at::date - CURRENT_DATE) END AS next_rabies_days_left,
               CASE WHEN deworm_internal.next_due_at IS NULL THEN NULL ELSE (deworm_internal.next_due_at::date - CURRENT_DATE) END AS next_deworm_internal_days_left,
               CASE WHEN deworm_external.next_due_at IS NULL THEN NULL ELSE (deworm_external.next_due_at::date - CURRENT_DATE) END AS next_deworm_external_days_left,
+              CASE
+                WHEN COALESCE(vaccine.next_due_at, p.next_vaccine_at) IS NULL THEN '无计划'
+                WHEN COALESCE(vaccine.next_due_at, p.next_vaccine_at)::date < CURRENT_DATE THEN '已逾期'
+                WHEN COALESCE(vaccine.next_due_at, p.next_vaccine_at)::date <= CURRENT_DATE + 30 THEN '即将到期'
+                ELSE '正常'
+              END AS next_vaccine_state,
+              CASE
+                WHEN rabies.next_due_at IS NULL THEN '无计划'
+                WHEN rabies.next_due_at::date < CURRENT_DATE THEN '已逾期'
+                WHEN rabies.next_due_at::date <= CURRENT_DATE + 30 THEN '即将到期'
+                ELSE '正常'
+              END AS next_rabies_state,
+              CASE
+                WHEN deworm_internal.next_due_at IS NULL THEN '无计划'
+                WHEN deworm_internal.next_due_at::date < CURRENT_DATE THEN '已逾期'
+                WHEN deworm_internal.next_due_at::date <= CURRENT_DATE + 30 THEN '即将到期'
+                ELSE '正常'
+              END AS next_deworm_internal_state,
+              CASE
+                WHEN deworm_external.next_due_at IS NULL THEN '无计划'
+                WHEN deworm_external.next_due_at::date < CURRENT_DATE THEN '已逾期'
+                WHEN deworm_external.next_due_at::date <= CURRENT_DATE + 30 THEN '即将到期'
+                ELSE '正常'
+              END AS next_deworm_external_state,
               p.remark, p.created_at
          FROM pet_profiles p
          LEFT JOIN LATERAL (
