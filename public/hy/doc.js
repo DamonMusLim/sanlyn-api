@@ -17,9 +17,9 @@ function validBl(v){
 }
 
 var TYPES={
-  fob_invoice:"海运费单",
   fob_portcharge:"港杂单",
-  si:"SI"
+  fob_invoice:"海运费单",
+  exw_invoice:"EXW全费用单"
 };
 
 var state={
