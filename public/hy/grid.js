@@ -253,9 +253,10 @@ function renderDetail(){
   els.detailError.textContent="";
   els.detailSave.style.display=readonly?"none":"";
   els.detailSave.disabled=false;
-  els.detailBody.innerHTML=groups.map(function(g){
+  var docsHtml=(window.HyGridDocs&&window.HyGridDocs.section)?window.HyGridDocs.section(row,{token:token()}):"";
+  els.detailBody.innerHTML=docsHtml+(groups.map(function(g){
     return '<section class="detail-section"><div class="detail-section-title">'+esc(g.label)+'</div><div class="detail-grid">'+g.fields.map(function(f){return renderDetailField(f,row,readonly)}).join("")+'</div></section>';
-  }).join("")||'<div class="empty">没有字段</div>';
+  }).join("")||'<div class="empty">没有字段</div>');
 }
 function sectionGroups(){
   var map={},list=[];
