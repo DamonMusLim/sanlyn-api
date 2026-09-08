@@ -30,7 +30,8 @@ function width(f){return Math.max(90,Math.min(360,Number(f.col_span||1)*86))}
 function fieldName(f){return clean(f.field_key).toLowerCase()}
 function priority(f){
   var name=fieldName(f);
-  if(/(^|_)id($|_)|(^|_)uuid($|_)/.test(name))return 9;
+  // tax_id 是税号(业务数据)不是代理键,别因为以 _id 结尾就丢到最后一档。
+  if(/(^|_)id($|_)|(^|_)uuid($|_)/.test(name)&&!/tax_id$/.test(name))return 9;
   if(/bl_no|shipment_no|order_no|contract_no|提单|单号|编号/.test(name))return 1;
   if(/customer|company|客户|单位|供应商/.test(name))return 2;
   if(/pol|pod|port|港|etd|eta|日期|时间/.test(name))return 3;
