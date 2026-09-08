@@ -132,8 +132,9 @@ function replaceUrl(){
     if(state.bl)p.set("bl",state.bl);
     else p.delete("bl");
     p.set("type",state.type);
-    if(state.token)p.set("token",state.token);
-    else p.delete("token");
+    // ⛔ 绝不把 token 写回地址栏 —— 会进浏览器历史、截图、以及任何被转发的链接。
+    // token() 已从 query 读过一次(兼容带 token 的旧链接),这里一律抹掉,后续靠 localStorage。
+    p.delete("token");
     history.replaceState(null,"",location.pathname+(p.toString()?"?"+p.toString():""));
   }catch(e){}
 }
