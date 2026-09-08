@@ -95,6 +95,49 @@ async function loadSellerStamp(pool) {
   }
 }
 
+let sellerStampDataUriCache = { url: "", value: "" };
+
+// 公章内联成 data URI:外链在邮件/离线/沙箱/转PDF 时会变成空框,客户收到没章的账单。
+// 失败一律降级回外链,且【失败不写缓存】——一次瞬时失败不能让整个进程永久降级。
+async function loadSellerStampDataUri(pool) {
+  const stampUrl = await loadSellerStamp(pool);
+  if (!stampUrl) return "";
+  const fallbackValue = encodeURI(stampUrl);
+
+  if (sellerStampDataUriCache.url === stampUrl
+      && typeof sellerStampDataUriCache.value === "string"
+      && sellerStampDataUriCache.value.startsWith("data:")) {
+    return sellerStampDataUriCache.value;
+  }
+
+  const maxBytes = 2 * 1024 * 1024;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    if (typeof fetch !== "function") return fallbackValue;
+    const resp = await fetch(fallbackValue, { signal: controller.signal });
+    if (!resp.ok) return fallbackValue;
+    if (Number(resp.headers.get("content-length") || 0) > maxBytes) return fallbackValue;
+    const ab = await resp.arrayBuffer();
+    if (ab.byteLength > maxBytes) return fallbackValue;
+
+    let mime = String(resp.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    if (!mime.startsWith("image/")) {
+      const ext = String(stampUrl).split("?")[0].split("#")[0].split(".").pop().toLowerCase();
+      mime = { jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp",
+               gif: "image/gif", svg: "image/svg+xml" }[ext] || "image/png";
+    }
+    const dataUri = `data:${mime};base64,${Buffer.from(ab).toString("base64")}`;
+    sellerStampDataUriCache = { url: stampUrl, value: dataUri };
+    return dataUri;
+  } catch (e) {
+    console.error("loadSellerStampDataUri: inline failed, fall back to url", e && e.message);
+    return fallbackValue;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -1046,7 +1089,7 @@ ${printBtn}
       // TODO: companies 当前没有银行地址真源字段, 不再打印来源不明的 Bank Addr; 将来有字段再恢复输出。
       const fobBankAddressLine = fobSellerBank.bank_address_en ? `Bank Addr: ${esc(fobSellerBank.bank_address_en)}<br>` : "";
       const fobWarningHtml = fobWarnings.length ? `<div style="background:#fff7ed;border:1px solid #fb923c;color:#9a3412;border-radius:4px;padding:7px 10px;margin-bottom:10px;font-size:10px;font-weight:800">${esc(fobWarnings.join("；"))}</div>` : "";
-      const fobSellerStampUrl = await loadSellerStamp(pool);
+      const fobSellerStampUrl = await loadSellerStampDataUri(pool);
       const fobSellerStampHtml = fobSellerStampUrl ? `<div class="seal-area"><img class="company-seal" src="${esc(fobSellerStampUrl)}"><div class="seal-label">盖章 / Company Seal</div></div>` : "";
       const fobChargeRowsHtml = fobChargeRows.map(r => {
         const qty = r.qty == null || r.qty === "" ? 1 : Number(r.qty);
@@ -1134,7 +1177,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 <div class="page">
   <div class="hdr">
     <div class="hdr-l">
-      <div class="co-en">SHANGHAI OCEAN BABY INT'L LOGISTICS CO., LTD.</div>
+      <div class="co-en">${esc(fobSellerBank.name_en || "SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.")}</div>
       <div class="co-cn">上海洋宝宝国际物流有限公司</div>
       <div style="font-size:9px;color:#555;margin-top:2px">${esc(fobSellerBank.address_en || "")}</div>
       <div class="tag">Ocean Freight · Air Freight · Express · Integrated Logistics Solutions</div>
@@ -1528,7 +1571,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       const pcSellerAddressLine = pcSellerBank.address_en ? `Seller Addr: ${esc(pcSellerBank.address_en)}<br>` : "";
       // TODO: companies 当前没有银行地址真源字段, 不再打印来源不明的 Bank Addr; 将来有字段再恢复输出。
       const pcBankAddressLine = pcSellerBank.bank_address_en ? `Bank Addr: ${esc(pcSellerBank.bank_address_en)}<br>` : "";
-      const pcSellerStampUrl = await loadSellerStamp(pool);
+      const pcSellerStampUrl = await loadSellerStampDataUri(pool);
       const pcSellerStampHtml = pcSellerStampUrl ? `<div class="seal-area"><img class="company-seal" src="${esc(pcSellerStampUrl)}"><div class="seal-label">盖章 / Company Seal</div></div>` : "";
 
       const fobPortchargeHtml = `<!DOCTYPE html>
@@ -1592,7 +1635,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 <div class="page">
   <div class="hdr">
     <div class="hdr-l">
-      <div class="co-en">SHANGHAI OCEAN BABY INT'L LOGISTICS CO., LTD.</div>
+      <div class="co-en">${esc(pcSellerBank.name_en || "SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.")}</div>
       <div class="co-cn">上海洋宝宝国际物流有限公司</div>
       <div style="font-size:9px;color:#555;margin-top:2px">${esc(pcSellerBank.address || "")}</div>
       <div class="tag">Ocean Freight · Air Freight · Express · Integrated Logistics Solutions</div>
