@@ -157,7 +157,7 @@ export async function loadCompany(pool, nameOrCode) {
   const key = clean(nameOrCode, 120);
   if (!key) return {};
   const r = await pool.query(
-    `SELECT code, name_cn, name_en, factory_name, tax_id
+    `SELECT code, name_cn, name_en, factory_name, tax_id, einvoice_email, contact_phone
        FROM companies
       WHERE code=$1 OR name_cn=$1 OR name_en=$1 OR factory_name=$1
          OR name_cn ILIKE '%'||$1||'%' OR factory_name ILIKE '%'||$1||'%'
@@ -201,6 +201,13 @@ function normalizeInvoices(input, defaults, mode) {
       amount_ex_tax: ex, tax_amount: tax, total_with_tax: money(ex + tax) };
   });
   return rows.every(Boolean) ? rows : null;
+}
+
+// 没存过草稿时,「财务邮箱」默认带出该公司已登记的电票邮箱(companies.einvoice_email),客户可自行改。
+// ⛔ 只放一个、不按逗号拆 —— 免得把脏数据当成多个收件人。
+function defaultFinanceEmails(buyer, sp) {
+  const e = clean(buyer?.einvoice_email || sp?.party_company?.einvoice_email, 120);
+  return e ? [e] : [];
 }
 
 async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
@@ -264,7 +271,7 @@ async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
     bill_kind: oceanBill ? "ocean" : "port_charge",              // 前端据此显示"海运费账单"标题+"如需发票再展开"
     port_charge_invoice_total: money(sp.port_charge_invoice_total || 0), // 打折目标(客户该付价,非敏感);前端据此出优惠行+应付合计
     invoices: mode === "other" ? (normalizeInvoices(saved?.payload?.invoices, autoInvoices, mode) || autoInvoices) : autoInvoices,
-    contacts: saved?.payload?.contacts || { finance: [], ops: [], business: [] },
+    contacts: saved?.payload?.contacts || { finance: defaultFinanceEmails(buyer, sp), ops: [], business: [] },
     save_as_default: saved?.payload?.save_as_default ?? true,
     updated_at: saved?.updated_at || null,
   };
