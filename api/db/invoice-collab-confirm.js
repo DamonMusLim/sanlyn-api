@@ -7,6 +7,7 @@ import {
   classifyFobScope,
   defaultLines,
   defaultInvoices,
+  invoiceRemarkSystem,
   oceanInvoice,
   matchFactory,
   money,
@@ -157,7 +158,7 @@ export async function loadCompany(pool, nameOrCode) {
   const key = clean(nameOrCode, 120);
   if (!key) return {};
   const r = await pool.query(
-    `SELECT code, name_cn, name_en, factory_name, tax_id, einvoice_email, contact_phone, invoice_item_name
+    `SELECT code, name_cn, name_en, factory_name, tax_id, einvoice_email, contact_phone, invoice_item_name, invoice_remark_extra
        FROM companies
       WHERE code=$1 OR name_cn=$1 OR name_en=$1 OR factory_name=$1
          OR name_cn ILIKE '%'||$1||'%' OR factory_name ILIKE '%'||$1||'%'
@@ -485,6 +486,43 @@ async function handlePost(req, res, pool, ctx) {
     [ref, KIND, ctx.shipmentId, JSON.stringify(ctx.scope), status, JSON.stringify(payload), ctx.scope.label]
   );
   if (status === "external_confirmed") await lockLocalChargeBaseline(pool, sp, payload, ctx);
+
+  // 「存为该客户默认开票模版」—— 把客户这次用的品名/备注附加段存回 companies,下一票自动带。
+  // ⛔ 整段 try/catch:存偏好失败绝不能影响主流程(客户的确认已经写库成功了)。
+  if (payload.save_as_default === true) {
+    try {
+      const company = await loadCompany(pool, ctx.scope.label);
+      if (company?.code) {
+        const firstInvoice = payload.invoices?.[0] || {};
+        const invoiceItemName = clean(firstInvoice.item_name, 200);
+        const submittedRemark = clean(firstInvoice.remark, 400);
+        // 用唯一那份生成器反解,别自己再拼一遍格式
+        const remarkSystem = invoiceRemarkSystem({ banks: BANKS, currency, bl, cntr });
+        let remarkExtra = submittedRemark.startsWith(remarkSystem)
+          ? submittedRemark.slice(remarkSystem.length).replace(/^\s*·\s*/, "")
+          : submittedRemark;
+        // 客户若把系统段删了/改了,整串当附加段 —— 但必须剔掉「提单号 XXX」,
+        // 否则会把某一票的提单号存成该客户的永久默认,污染以后每一张票。
+        remarkExtra = clean(
+          remarkExtra
+            .replace(/(?:^|[ ·,，;；])提单号\s*[^·,，;；\r\n]*/g, " ")
+            .replace(/\s*·\s*/g, " · ")
+            .replace(/^(?:·\s*)+|(?:\s*·)+$/g, "")
+            .replace(/\s+/g, " "),
+          200
+        );
+        const sets = [], params = [];
+        if (invoiceItemName) { params.push(invoiceItemName); sets.push(`invoice_item_name=$${params.length}`); }
+        if (remarkExtra)     { params.push(remarkExtra);     sets.push(`invoice_remark_extra=$${params.length}`); }
+        if (sets.length) {
+          params.push(company.code);
+          await pool.query(`UPDATE companies SET ${sets.join(", ")} WHERE code=$${params.length}`, params);
+        }
+      }
+    } catch (err) {
+      console.error("[invoice-collab-confirm] 存客户默认开票模版失败(不影响本次确认)", err);
+    }
+  }
   return res.json({ ok: true, draft: r.rows[0] });
 }
 

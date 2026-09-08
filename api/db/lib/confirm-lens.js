@@ -324,10 +324,20 @@ function redactInvoice(invoice) {
 // 港杂开票:默认全部代理港杂费@1%一张(Damon规则:没特意要求就1%港杂费);只有显式设了 taxed_port_charge(>0)
 // 才拆成 ①代理港杂费(带税1%) ②国际货代服务费(免税) 两张。0金额的票删掉(不给对方看空票)。banks由调用方传(避免循环依赖)
 // 🔴含税口径[Damon 0731]:港杂账单总额=价税合计(恒安付的就是账单总额),1%从含税倒推 不含税=总额/1.01,不是总额×1.01外加
+// 发票备注的【系统段】。⛔ 唯一生成处 —— 确认页渲染和「存为默认」反解都必须用它,别各写一份(会漂移)。
+export function invoiceRemarkSystem({ banks = {}, currency = "CNY", bl = "", cntr = "" }) {
+  const bank = banks.bank || "", accounts = banks.accounts || {};
+  return `开户行 ${bank} · ${currency === "USD" ? "美金账号" : "人民币账号"} ${accounts[currency] || accounts.CNY} · 提单号 ${bl}${cntr ? " · " + cntr : ""}`;
+}
+
 export function defaultInvoices(sp, total, currency, bl, cntr, mode = "self", banks = {}) {
   const SELLER_BANK = banks.bank || "", ACCOUNTS = banks.accounts || {};
   const invoiceTotal = money(sp.port_charge_invoice_total || total);
-  const remark = `开户行 ${SELLER_BANK} · ${currency === "USD" ? "美金账号" : "人民币账号"} ${ACCOUNTS[currency] || ACCOUNTS.CNY} · 提单号 ${bl}${cntr ? " · " + cntr : ""}`;
+  // 系统段每次重新生成 —— 提单号是港杂发票对回成本的唯一钥匙(见记忆 reference_port_charge_invoice_reconcile),
+  // 客户改备注时绝不能丢。客户自己要加的话存在 companies.invoice_remark_extra,只能追加在后面。
+  const remarkSystem = invoiceRemarkSystem({ banks, currency, bl, cntr });
+  const remarkExtra = clean(sp?.party_company?.invoice_remark_extra, 200);
+  const remark = remarkSystem + (remarkExtra ? ` · ${remarkExtra}` : "");
   // 发票项目名称按客户开票偏好(companies.invoice_item_name)走;没登记才回落系统默认。
   // 依据:恒安真开出去的两张数电票用的是「*生产生活服务*国际货运代理服务费」,不是默认的「代理港杂费」。
   // sp.party_company 是加载票时就带出来的(见 invoice-collab-confirm.js),所以不用改本函数签名、不用动任何调用点。
