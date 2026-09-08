@@ -33,14 +33,64 @@ export default async function handler(req, res) {
     const args = [storeCode];
     let where = "store_code = $1 AND is_active";
     if (kw) { args.push("%" + kw + "%"); where += ` AND (name ILIKE $${args.length} OR owner_phone ILIKE $${args.length} OR pet_code ILIKE $${args.length})`; }
+    const petWhere = where
+      .replace(/\bstore_code\b/g, "p.store_code")
+      .replace(/\bis_active\b/g, "p.is_active")
+      .replace(/\bname\b/g, "p.name")
+      .replace(/\bowner_phone\b/g, "p.owner_phone")
+      .replace(/\bpet_code\b/g, "p.pet_code");
     const total = (await pool.query(`SELECT count(*)::int n FROM pet_profiles WHERE ${where}`, args)).rows[0].n;
     args.push(size, (page - 1) * size);
     const { rows } = await pool.query(
-      `SELECT id, pet_code, name, avatar_url, species, breed, gender, birth_date, neutered,
-              owner_name, owner_phone, cert_no, tags, staple_food, coat_note, temperament,
-              next_vaccine_at, remark, created_at
-         FROM pet_profiles WHERE ${where}
-        ORDER BY updated_at DESC, id DESC
+      `SELECT p.id, p.pet_code, p.name, p.avatar_url, p.species, p.breed, p.gender, p.birth_date, p.neutered,
+              p.owner_name, p.owner_phone, p.cert_no, p.tags, p.staple_food, p.coat_note, p.temperament,
+              p.color, p.height_cm, p.dog_license, p.pet_status,
+              p.deworm_interval_months, p.deworm_times_per_interval,
+              COALESCE(vaccine.next_due_at, p.next_vaccine_at) AS next_vaccine_at,
+              CASE WHEN vaccine.next_due_at IS NULL AND p.next_vaccine_at IS NOT NULL THEN 'manual'
+                   WHEN vaccine.next_due_at IS NOT NULL THEN 'computed'
+                   ELSE NULL END AS next_vaccine_src,
+              rabies.next_due_at AS next_rabies_at,
+              deworm_internal.next_due_at AS next_deworm_internal_at,
+              deworm_external.next_due_at AS next_deworm_external_at,
+              CASE WHEN COALESCE(vaccine.next_due_at, p.next_vaccine_at) IS NULL THEN NULL
+                   ELSE (COALESCE(vaccine.next_due_at, p.next_vaccine_at)::date - CURRENT_DATE)
+              END AS next_vaccine_days_left,
+              CASE WHEN rabies.next_due_at IS NULL THEN NULL ELSE (rabies.next_due_at::date - CURRENT_DATE) END AS next_rabies_days_left,
+              CASE WHEN deworm_internal.next_due_at IS NULL THEN NULL ELSE (deworm_internal.next_due_at::date - CURRENT_DATE) END AS next_deworm_internal_days_left,
+              CASE WHEN deworm_external.next_due_at IS NULL THEN NULL ELSE (deworm_external.next_due_at::date - CURRENT_DATE) END AS next_deworm_external_days_left,
+              p.remark, p.created_at
+         FROM pet_profiles p
+         LEFT JOIN LATERAL (
+           SELECT v.next_due_at
+             FROM pet_vaccinations v
+            WHERE v.store_code = p.store_code AND v.pet_id = p.id AND v.kind = '疫苗'
+            ORDER BY COALESCE(v.executed_at, v.planned_at, v.next_due_at) DESC NULLS LAST, v.id DESC
+            LIMIT 1
+         ) vaccine ON true
+         LEFT JOIN LATERAL (
+           SELECT v.next_due_at
+             FROM pet_vaccinations v
+            WHERE v.store_code = p.store_code AND v.pet_id = p.id AND v.kind = '狂犬'
+            ORDER BY COALESCE(v.executed_at, v.planned_at, v.next_due_at) DESC NULLS LAST, v.id DESC
+            LIMIT 1
+         ) rabies ON true
+         LEFT JOIN LATERAL (
+           SELECT v.next_due_at
+             FROM pet_vaccinations v
+            WHERE v.store_code = p.store_code AND v.pet_id = p.id AND v.kind = '体内驱虫'
+            ORDER BY COALESCE(v.executed_at, v.planned_at, v.next_due_at) DESC NULLS LAST, v.id DESC
+            LIMIT 1
+         ) deworm_internal ON true
+         LEFT JOIN LATERAL (
+           SELECT v.next_due_at
+             FROM pet_vaccinations v
+            WHERE v.store_code = p.store_code AND v.pet_id = p.id AND v.kind = '体外驱虫'
+            ORDER BY COALESCE(v.executed_at, v.planned_at, v.next_due_at) DESC NULLS LAST, v.id DESC
+            LIMIT 1
+         ) deworm_external ON true
+        WHERE ${petWhere}
+        ORDER BY p.updated_at DESC, p.id DESC
         LIMIT $${args.length - 1} OFFSET $${args.length}`, args);
     return res.status(200).json({ rows, total, page, pageSize: size, writable: gate.writable });
   } catch (e) {
