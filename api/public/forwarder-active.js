@@ -1,7 +1,7 @@
 import { getPool, setCors } from "../db.js";
 import { addPendingPlan, attachLaneWeeks, finishPendingLane, isPendingShipment, localNormalizePort } from "./_lane-weeks.js";
 import { handleDemoGet } from "./_forwarder-demo-active.js";
-import { cleanText, countWeekQuotedCarriers, dateTime, numOrNull, perContainerCharge, publicCargoName } from "./_forwarder-active-shared.js";
+import { cleanText, countWeekQuotedCarriers, dateTime, isUsablePortCharge, numOrNull, perContainerCharge, portChargeBoxGroup, publicCargoName } from "./_forwarder-active-shared.js";
 
 function cleanCode(req){
   var p = req.params && req.params.code;
@@ -318,7 +318,8 @@ function addCarrier(lane, row){
     boxes:{},
     latest:null,
     prices:{},
-    charge:null,
+    charges:{},
+    chargeSkipped:{},
   });
   var ct = boxType(row.container_type);
   if (ct) carrier.boxes[ct] = true;
@@ -337,8 +338,14 @@ function addCarrier(lane, row){
   var thc = pos(row.thc_fee), seal = pos(row.seal_fee), vgm = pos(row.vgm_fee), doc = pos(row.doc_fee), eir = pos(row.eir_fee);
   var sum = (thc||0)+(seal||0)+(vgm||0)+(doc||0)+(eir||0);
   var perBox = perContainerCharge(row, sum > 0 ? sum : null);
-  if (ct && perBox && (!carrier.charge || tk >= carrier.charge.t)) {
-    carrier.charge = { t:tk, box:ct, total:perBox.amount, qty:perBox.qty };
+  var chargeGroup = portChargeBoxGroup(ct);
+  if (chargeGroup && perBox) {
+    if (isUsablePortCharge(perBox.amount)) {
+      var charge = carrier.charges[chargeGroup];
+      if (!charge || tk >= charge.t) carrier.charges[chargeGroup] = { t:tk, total:perBox.amount, qty:perBox.qty, src_plan_id:row.id };
+    } else {
+      carrier.chargeSkipped[chargeGroup] = (carrier.chargeSkipped[chargeGroup] || 0) + 1;
+    }
   }
 }
 
@@ -370,11 +377,20 @@ function finishCarriers(lane){
       quoted:Object.keys(prices).length > 0,
     };
     // 港杂历史价:现数据多为40柜,填对应柜型;缺则留空由前端显"待填"
-    var ch = carrier.charge;
-    if (ch) {
-      if (/40/.test(ch.box)) out.port_charge_40 = ch.total; else out.port_charge_20 = ch.total;
-      out.port_charge_basis = "per_container"; out.port_charge_src_qty = ch.qty;
+    var ch20 = carrier.charges["20"], ch40 = carrier.charges["40"];
+    if (ch20 || ch40) out.port_charge_basis = "per_container";
+    if (ch20) {
+      out.port_charge_20 = ch20.total;
+      out.port_charge_20_src_qty = ch20.qty;
+      out.port_charge_20_src_plan_id = ch20.src_plan_id;
     }
+    if (ch40) {
+      out.port_charge_40 = ch40.total;
+      out.port_charge_40_src_qty = ch40.qty;
+      out.port_charge_40_src_plan_id = ch40.src_plan_id;
+    }
+    if (carrier.chargeSkipped["20"]) out.port_charge_20_skipped = carrier.chargeSkipped["20"];
+    if (carrier.chargeSkipped["40"]) out.port_charge_40_skipped = carrier.chargeSkipped["40"];
     return out;
   });
 }

@@ -21,6 +21,18 @@ export function perContainerCharge(row, fallbackTotal){
   return total > 0 ? { amount:total / qty, qty:qty } : null;
 }
 
+export function portChargeBoxGroup(boxType){
+  var s = cleanText(boxType).toUpperCase();
+  if (/^20/.test(s)) return "20";
+  if (/^(40|45)/.test(s)) return "40";
+  return "";
+}
+
+export function isUsablePortCharge(amount){
+  var n = numOrNull(amount);
+  return n != null && n > 0 && n <= 20000;
+}
+
 function stripSpec(label){
   return cleanText(label)
     .replace(/[（(][^（）()]*[）)]/g, " ")
