@@ -1,6 +1,8 @@
 import { getPool, setCors } from "../db.js";
 import { normalizePort } from "../db/_official-port-charges.js";
 import { addPendingPlan, attachLaneWeeks, finishPendingLane, isPendingShipment } from "./_lane-weeks.js";
+import { handleDemoGet } from "./_forwarder-demo-active.js";
+import { cleanText, dateTime, numOrNull } from "./_forwarder-active-shared.js";
 
 function cleanCode(req){
   var p = req.params && req.params.code;
@@ -12,22 +14,6 @@ function cleanCode(req){
 function send(res, status, body){
   res.status(status).json(body);
 }
-
-function cleanText(v){
-  return String(v == null ? "" : v).trim();
-}
-
-function numOrNull(v){
-  var n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
-function dateTime(v){
-  if (!v) return null;
-  var d = new Date(v);
-  return Number.isFinite(d.getTime()) ? d.getTime() : null;
-}
-
 
 // ── 船司清单(我们真实跑过的)+ 每个船司自己的航线 ────────────────────
 // Damon 2026-08-04:新增船司要给「我们的」选择;选了船司要能直接出航线,其余他自己补。
@@ -75,7 +61,7 @@ async function loadCarrierCatalog(pool){
 async function loadToken(pool, code){
   if (!code) return { error:404, body:{ ok:false, error:"not_found" } };
   const { rows } = await pool.query(
-    "SELECT code, forwarder_co, company_id, expires_at FROM forwarder_portal_tokens WHERE code = $1 LIMIT 1",
+    "SELECT code, forwarder_co, company_id, expires_at, portal_mode, demo_set_id FROM forwarder_portal_tokens WHERE code = $1 LIMIT 1",
     [code]
   );
   if (!rows.length) return { error:404, body:{ ok:false, error:"not_found" } };
@@ -496,5 +482,6 @@ export default async function handler(req, res) {
   const code = cleanCode(req);
   const loaded = await loadToken(pool, code);
   if (loaded.error) return send(res, loaded.error, loaded.body);
+  if (loaded.token.portal_mode === "demo") return handleDemoGet(pool, loaded.token, res);
   return handleGet(pool, loaded.token, res);
 }
