@@ -34,6 +34,25 @@ function mergePayStatus(current, next){
   return current || s;
 }
 
+var BOOKED_STATES = { booked:"已订舱", arrived:"已到港", shipped:"已开船", departed:"已开船", loaded:"已装船", customs:"报关中" };
+function bookingState(row){
+  var cn = cleanText(row.current_status_cn);
+  if (cn) return cn;
+  var ss = cleanText(row.shipping_status).toLowerCase();
+  return BOOKED_STATES[ss] || (ss ? "已订舱" : "");
+}
+function isBooked(row){
+  var ss = cleanText(row.shipping_status).toLowerCase();
+  if (ss && ss !== "planned" && ss !== "draft" && ss !== "pending") return true;
+  if (cleanText(row.vessel) || cleanText(row.booking_no) || cleanText(row.forwarder_booking_no)) return true;
+  var stage = cleanText(row.booking_stage).toLowerCase();
+  return !!(stage && stage !== "none" && stage !== "pending");
+}
+function isArrived(row){
+  var ss = cleanText(row.shipping_status).toLowerCase();
+  return ss === "arrived" || /到港|到达/.test(cleanText(row.current_status_cn));
+}
+
 async function loadToken(pool, code){
   if (!code) return { error:404, body:{ ok:false, error:"not_found" } };
   const { rows } = await pool.query(
@@ -115,14 +134,18 @@ function groupBills(rows){
 
 function planPayload(row){
   if (!row) return {};
+  var booked = isBooked(row);
   return {
     pol:row.pol || "",
     pod:row.pod || "",
     etd:row.etd || null,
-    customer_en:row.customer_en || "",
     vessel:row.vessel || "",
     voyage:row.voyage || "",
     container_qty:row.container_qty == null ? null : Number(row.container_qty),
+    booked_etd:booked ? (row.etd || null) : null,
+    booked_eta:booked ? (row.eta || null) : null,
+    booking_state:booked ? (bookingState(row) || null) : null,
+    arrived:booked && isArrived(row),
   };
 }
 
@@ -133,13 +156,14 @@ async function attachPlans(pool, companyId, byBl){
     Object.keys(byBl[bl]._planIds || {}).forEach(function(id){ planIds.push(id); });
   });
   planIds = Array.from(new Set(planIds));
-  if (!blNos.length && !planIds.length) return;
-
   const { rows } = await pool.query(
-    `SELECT id::text AS id_text, _id, bl_no, pol, pod, etd, customer_en, vessel, voyage, container_qty
+    `SELECT id::text AS id_text, _id, bl_no, pol, pod, etd, eta, vessel, voyage, container_qty,
+            shipping_status, current_status_cn, booking_no, forwarder_booking_no, booking_stage
        FROM shipping_plans
       WHERE forwarder_company_id = $3
         AND (
+          (bl_no IS NOT NULL AND bl_no <> '')
+          OR
           id::text = ANY($1::text[])
           OR _id = ANY($1::text[])
           OR bl_no = ANY($2::text[])
@@ -149,6 +173,7 @@ async function attachPlans(pool, companyId, byBl){
   var byPlanId = {};
   var byPlanBl = {};
   rows.forEach(function(row){
+    if (row.bl_no && !byBl[row.bl_no]) byBl[row.bl_no] = makeBucket(row.bl_no);
     if (row.id_text) byPlanId[row.id_text] = row;
     if (row._id) byPlanId[row._id] = row;
     if (row.bl_no && !byPlanBl[row.bl_no]) byPlanBl[row.bl_no] = row;

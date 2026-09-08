@@ -137,7 +137,7 @@ async function loadPlans(pool, companyId){
             sp.freight_cost, sp.thc_fee, sp.seal_fee, sp.vgm_fee, sp.doc_fee, sp.eir_fee, sp.port_surcharge_total,
             COALESCE(sp.gross_weight_kg, li.gross_weight_kg) AS gross_weight_kg,
             COALESCE(NULLIF(BTRIM(sp.cargo_description), ''), li.cargo_description) AS cargo_description,
-            sp.vessel, sp.voyage, sp.customer_en, sp.eta,
+            sp.vessel, sp.voyage, sp.eta,
             sp.shipping_status, sp.status, sp.current_status_cn, sp.booking_no, sp.forwarder_booking_no, sp.booking_stage,
             sp.pol_port_id, sp.pod_port_id, sp.pod_terminal_unconfirmed, sp.port_resolution_status,
             pod_p.name_en AS pod_canon_en, pod_p.name_cn AS pod_canon_cn, pod_p.code AS pod_code, pod_p.requires_terminal AS pod_requires_terminal,
@@ -272,7 +272,7 @@ function shipment(row, closed){
     booked_eta:booked ? (row.eta || null) : null,
     booking_state:booked ? (bookingState(row) || null) : null,
     arrived:booked && isArrived(row),
-    is_pending:isPendingShipment(row), closed:!!(bl && closed[bl]),
+    is_pending:isPendingShipment(row), bill_settled:!!(bl && closed[bl]), closed:!!bl,
   };
 }
 
@@ -291,7 +291,7 @@ function makeLane(row){
     nearest_etd:null,
     total_containers:0,
     box_summary:null,
-    cargo_types:[],
+    cargo_types:[], summary_text:null,
     gw_total:0,
     hot:false,
     countdown_hint:null,
@@ -313,7 +313,7 @@ function markMissing(lane, key, yes){
 
 function addPlan(lane, row, closed){
   var s = shipment(row, closed);
-  if (s.closed) return;
+  if (s.closed) { addCarrier(lane, row); return; }
   lane.shipments.push(s);
   lane.order_count += 1;
 
@@ -412,6 +412,7 @@ function finishCarriers(lane){
 }
 
 function finishLane(lane){
+  if (!lane.order_count) lane.summary_text = "本航线暂无在途货,可继续报价";
   var boxKeys = Object.keys(lane._box);
   if (boxKeys.length) {
     boxKeys.sort();
@@ -455,7 +456,6 @@ function groupActivePlans(rows, closed){
     addPlan(lane, row, closed);
   });
   return Object.keys(lanes).map(function(k){ return finishLane(lanes[k]); })
-    .filter(function(lane){ return lane.shipments.length > 0; })
     .sort(function(a, b){
       var at = dateTime(a.nearest_etd);
       var bt = dateTime(b.nearest_etd);
