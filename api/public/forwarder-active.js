@@ -1,7 +1,7 @@
 import { getPool, setCors } from "../db.js";
 import { addPendingPlan, attachLaneWeeks, finishPendingLane, isPendingShipment, localNormalizePort } from "./_lane-weeks.js";
 import { handleDemoGet } from "./_forwarder-demo-active.js";
-import { cleanText, countWeekQuotedCarriers, dateTime, numOrNull, perContainerCharge } from "./_forwarder-active-shared.js";
+import { cleanText, countWeekQuotedCarriers, dateTime, numOrNull, perContainerCharge, publicCargoName } from "./_forwarder-active-shared.js";
 
 function cleanCode(req){
   var p = req.params && req.params.code;
@@ -194,26 +194,6 @@ function cargoCategory(v){
 // 正值否则null(0.00/空 视为无值)
 function pos(v){ var n = Number(v); return Number.isFinite(n) && n > 0 ? n : null; }
 
-// 剥规格括号/内联重量,归纳成短品名(WANPY三规格→一条+截断),避免整串SKU铺进装货表
-function stripSpec(label){
-  return cleanText(label)
-    .replace(/[（(][^（）()]*[）)]/g, " ")
-    .replace(/\s\d+(\.\d+)?\s*(KG|G|ML|L)\b/gi, " ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-function shortCargo(v){
-  var s = cleanText(v);
-  if (!s) return null;
-  var parts = s.split(/\s\/\s/).map(stripSpec).filter(Boolean);
-  var seen = {}, base = [];
-  parts.forEach(function(p){ var k = p.toUpperCase(); if (!seen[k]) { seen[k] = 1; base.push(p); } });
-  if (!base.length) return null;
-  var head = base.slice(0, 2).join(" / ");
-  if (head.length > 40) head = head.slice(0, 39) + "…";
-  return head + (base.length > 2 ? " 等" + base.length + "项" : "");
-}
-
 // 接单状态:有船名/订舱号/shipping_status进入booked+ 即视为已接单
 var BOOKED_STATES = { booked:"已订舱", arrived:"已到港", shipped:"已开船", departed:"已开船", loaded:"已装船", customs:"报关中" };
 function bookingState(row){
@@ -249,7 +229,7 @@ function shipment(row, closed){
     etd:row.etd || null,
     container_qty:numOrNull(row.container_qty),
     gross_weight_kg:numOrNull(row.gross_weight_kg),
-    cargo_description:shortCargo(row.cargo_description),
+    cargo_description:publicCargoName(row.cargo_description),
     // customer_en 已移除(2026-08-03):Lens 红线,客户名绝不出货代门户
     booked_carrier:booked ? (cleanText(row.carrier_code).toUpperCase() || null) : null,
     booking_voyage:booked ? (cleanText(row.voyage) || cleanText(row.vessel) || null) : null,
@@ -298,6 +278,7 @@ function markMissing(lane, key, yes){
 function addPlan(lane, row, closed){
   var s = shipment(row, closed);
   if (s.closed) { addCarrier(lane, row); return; }
+  if (s.is_pending) return;
   lane.shipments.push(s);
   lane.order_count += 1;
 

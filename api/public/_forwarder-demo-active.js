@@ -1,4 +1,5 @@
 import { attachLaneWeeks } from "./_lane-weeks.js";
+import { publicCargoName } from "./_forwarder-active-shared.js";
 
 function send(res, status, body){
   res.status(status).json(body);
@@ -82,7 +83,7 @@ function shipment(row, events, today){
     container_qty:numOrNull(row.container_qty),
     container_type:normBox(row.container_type),
     gross_weight_kg:numOrNull(row.gross_weight_kg),
-    cargo_description:text(row.cargo_description) || null,
+    cargo_description:publicCargoName(row.cargo_description),
     booked_carrier:etd ? (text(row.carrier_code).toUpperCase() || null) : null,
     booking_voyage:etd ? ([text(row.vessel), text(row.voyage)].filter(Boolean).join(" ") || null) : null,
     booked_etd:etd,
@@ -233,6 +234,7 @@ function groupLanes(rows, today){
     if (key === "::") return;
     var lane = lanes[key] || (lanes[key] = makeLane(row));
     var s = shipment(row, row._events || [], today);
+    if (s.is_pending) return;
     lane.shipments.push(s);
     lane.order_count += 1;
     lane.pending_orders += 1;

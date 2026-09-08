@@ -21,6 +21,41 @@ export function perContainerCharge(row, fallbackTotal){
   return total > 0 ? { amount:total / qty, qty:qty } : null;
 }
 
+function stripSpec(label){
+  return cleanText(label)
+    .replace(/[（(][^（）()]*[）)]/g, " ")
+    .replace(/\bHS\s*(?:码\s*)?[\d.\s]{4,}/gi, " ")
+    .replace(/\s\d+(\.\d+)?\s*(KG|G|ML|L)\b/gi, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function dropChineseDuplicate(label){
+  var s = cleanText(label);
+  if (!/[A-Za-z]{3,}/.test(s) || !/[\u4e00-\u9fff]{2,}/.test(s)) return s;
+  return s
+    .replace(/\s*[\u4e00-\u9fff]{2,}\s*/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+export function publicCargoName(v){
+  var s = cleanText(v);
+  if (!s) return null;
+  var parts = s.split(/\s\/\s/).map(function(part){
+    return dropChineseDuplicate(stripSpec(part));
+  }).filter(Boolean);
+  var seen = {}, base = [];
+  parts.forEach(function(p){
+    var k = p.toUpperCase();
+    if (!seen[k]) { seen[k] = 1; base.push(p); }
+  });
+  if (!base.length) return null;
+  var head = base.slice(0, 2).join(" / ");
+  if (head.length > 40) head = head.slice(0, 39) + "…";
+  return head + (base.length > 2 ? " 等" + base.length + "项" : "");
+}
+
 export function countWeekQuotedCarriers(carriers){
   return (carriers || []).filter(function(carrier){
     return (carrier.weeks || []).some(function(week){
