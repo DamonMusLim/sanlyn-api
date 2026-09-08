@@ -1,9 +1,9 @@
 import { getPool, setCors } from "../db.js";
 import { normalizePort } from "../db/_official-port-charges.js";
+import { loadFreeDays, resolvePortCode } from "../db/_free-days.js";
 
 const BOXES = ["20GP", "40GP", "40HQ"];
 const FREE_DAYS_SOURCE = "维运网滞箱费计算器(船司官方标准)";
-const FREE_DAYS_CARRIER_ALIAS = { MSK: "MAERSK" };
 
 function cleanCode(req) {
   var p = req.params && req.params.code;
@@ -42,14 +42,6 @@ function emptyNotes() {
   return { "20GP": null, "40GP": null, "40HQ": null };
 }
 
-function emptyFreeDays() {
-  return { "20GP": null, "40GP": null, "40HQ": null };
-}
-
-function freeDaysCarrier(carrier) {
-  return FREE_DAYS_CARRIER_ALIAS[carrier] || carrier;
-}
-
 async function loadToken(pool, code) {
   if (!code) return { error: 404, body: { ok: false, error: "not_found" } };
   const { rows } = await pool.query(
@@ -68,30 +60,6 @@ async function loadToken(pool, code) {
     return { error: 403, body: { ok: false, error: "token missing company_id" } };
   }
   return { token: token };
-}
-
-async function resolvePort(pool, pol) {
-  var wanted = normalizePort(pol);
-  if (!wanted) return { normalized: "", code: null, name_cn: "" };
-  const { rows } = await pool.query(
-    `SELECT code, name_cn, name_en
-       FROM public.ports`
-  );
-  for (var i = 0; i < rows.length; i++) {
-    var row = rows[i];
-    if (
-      normalizePort(row.code) === wanted ||
-      normalizePort(row.name_cn) === wanted ||
-      normalizePort(row.name_en) === wanted
-    ) {
-      return {
-        normalized: wanted,
-        code: text(row.code).toUpperCase() || null,
-        name_cn: text(row.name_cn) || text(row.name_en) || text(pol),
-      };
-    }
-  }
-  return { normalized: wanted, code: null, name_cn: text(pol) };
 }
 
 function groupedFee(rows, feeKind) {
@@ -164,81 +132,6 @@ async function loadOfficialFees(pool, carrier, polNormalized) {
   };
 }
 
-function fillFreeDays(rows) {
-  var freeDays = emptyFreeDays();
-  rows.forEach(function(row) {
-    var box = normBox(row.container_type);
-    if (Object.prototype.hasOwnProperty.call(freeDays, box)) {
-      freeDays[box] = amountOrNull(row.free_days);
-    }
-  });
-  return freeDays;
-}
-
-async function queryFreeDays(pool, carrier, portCode) {
-  const { rows } = await pool.query(
-    `SELECT container_type, free_days, port_code
-       FROM public.carrier_free_days
-      WHERE UPPER(TRIM(carrier_code)) = $1
-        AND UPPER(TRIM(port_code)) = $2
-        AND direction = $3
-      ORDER BY container_type`,
-    [carrier, portCode, "出口"]
-  );
-  return rows;
-}
-
-async function queryFreeDayRules(pool, carrier) {
-  const { rows } = await pool.query(
-    `SELECT DISTINCT port_code
-       FROM public.carrier_free_days
-      WHERE UPPER(TRIM(carrier_code)) = $1
-        AND direction = $2
-        AND (port_code LIKE '%除%外%' OR port_code LIKE '%限于%')
-      ORDER BY port_code`,
-    [carrier, "出口"]
-  );
-  return rows;
-}
-
-async function loadFreeDays(pool, carrier, portCode, rawPol, portName) {
-  var lookupCarrier = freeDaysCarrier(carrier);
-  if (!portCode) {
-    return {
-      free_days: emptyFreeDays(),
-      free_days_match: "未命中",
-      free_days_reason: "未能把 " + text(rawPol) + " 解析成五字码",
-      free_days_carrier: lookupCarrier !== carrier ? lookupCarrier : null,
-    };
-  }
-  var rows = await queryFreeDays(pool, lookupCarrier, portCode);
-  var out = {
-    free_days: emptyFreeDays(),
-    free_days_match: "未命中",
-    free_days_carrier: lookupCarrier !== carrier ? lookupCarrier : null,
-  };
-  if (rows.length) {
-    out.free_days = fillFreeDays(rows);
-    out.free_days_match = "五字码 " + portCode;
-    return out;
-  }
-  rows = await queryFreeDays(pool, lookupCarrier, "全中国");
-  if (rows.length) {
-    out.free_days = fillFreeDays(rows);
-    out.free_days_match = "全中国";
-    return out;
-  }
-  var rules = await queryFreeDayRules(pool, lookupCarrier);
-  if (rules.length) {
-    var ruleText = rules.map(function(row) { return text(row.port_code); }).filter(Boolean).join("/");
-    out.free_days_match = "区域规则(未判定)";
-    out.free_days_reason = lookupCarrier + " 只有区域规则(" + ruleText + "),暂无法判定 " + text(portName || rawPol) + " 属于哪一档,需人工确认";
-    return out;
-  }
-  out.free_days_reason = lookupCarrier + " 在 " + portCode + " 未命中免柜期";
-  return out;
-}
-
 async function handleGet(pool, req, res) {
   var carrier = normCarrier(req.query && req.query.carrier);
   var rawPol = text(req.query && req.query.pol);
@@ -246,9 +139,9 @@ async function handleGet(pool, req, res) {
     return send(res, 400, { ok: false, error: "pol_carrier_required" });
   }
 
-  var port = await resolvePort(pool, rawPol);
+  var port = await resolvePortCode(pool, rawPol);
   var feeParts = await loadOfficialFees(pool, carrier, port.normalized);
-  var freeDayParts = await loadFreeDays(pool, carrier, port.code, rawPol, port.name_cn);
+  var freeDayParts = await loadFreeDays(pool, carrier, port.code, port.name_cn || rawPol);
   var body = {
     ok: true,
     carrier: carrier,

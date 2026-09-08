@@ -387,6 +387,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/change-password",      () => import("./api/db/change-password.js"));      // self-service pwd change
   mount("/api/db/accounts-team",        () => import("./api/db/accounts-team.js"));        // team invite/manage
   mount("/api/db/company-departments",  () => import("./api/db/company-departments.js")); // group / dept management
+  mount("/api/db/company-tab-config",   () => import("./api/db/company-tab-config.js")); // 每客户合规页签覆盖(原 localStorage 搬进库 2026-09-08)
   mount("/api/db/seed-zc-group",        () => import("./api/db/seed-zc-group.js"));       // one-time: ZC group seed
   mount("/api/db/fix-wp-brands",        () => import("./api/db/fix-wp-brands.js"));       // one-time: fix WP order brand tags
   mount("/api/db/orders-status",     () => import("./api/db/orders-status.js"));    // v3 state machine
@@ -433,6 +434,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/public/forwarder-history/:code", () => import("./api/public/forwarder-history.js")); // 货代门户历史业务(只读账单)
   mount("/api/public/forwarder-carrier-history/:code", () => import("./api/public/forwarder-carrier-history.js")); // 货代门户本航线船司历史+下一班船期
   mount("/api/public/forwarder-port-charge-basis/:code", () => import("./api/public/forwarder-port-charge-basis.js")); // 港杂弹窗官方底稿(官方港杂+官方免柜期)
+  mount("/api/public/forwarder-free-days/:code", () => import("./api/public/forwarder-free-days.js")); // 货代门户航线卡批量免柜期
   mount("/api/public/forwarder-active/:code", () => import("./api/public/forwarder-active.js")); // 货代门户活跃业务(真实海运计划)
   mount("/api/db/etd-delay-notify", () => import("./api/db/etd-delay-notify.js")); // ETD delay WeCom notify
   // ── /api/jdy/* endpoints ──
