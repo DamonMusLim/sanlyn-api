@@ -8,7 +8,9 @@
   <style>
     *{box-sizing:border-box}
     body{margin:0;background:var(--hgj-bg);color:var(--hgj-text);font:14px/1.5 var(--hgj-font)}
-    .page{height:100vh;min-height:0;display:grid;grid-template-rows:auto auto minmax(0,1fr)}
+    .page{height:100vh;min-height:0;display:grid;grid-template-rows:auto auto auto minmax(0,1fr)}
+    #loginHint:empty{display:none}
+    #status:empty{display:none}
     .bar{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--hgj-card);border-bottom:1px solid var(--hgj-line)}
     .title{color:var(--hgj-title);font-weight:700}
     .bl{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hgj-muted)}
@@ -46,6 +48,7 @@
       <button id="pdfBtn" class="btn primary" type="button">下载PDF</button>
     </header>
     <div id="status" class="status"></div>
+    <div id="loginHint" class="status"></div>
     <section id="viewer" class="viewer"></section>
   </main>
   <script src="/hy/doc.js"></script>
