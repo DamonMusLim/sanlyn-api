@@ -265,7 +265,7 @@ function makeLane(row){
   var polKey = localNormalizePort(row.pol || row.pol_canon_en || row.pol_canon_cn);
   var podKey = localNormalizePort(row.pod || row.pod_canon_en || row.pod_canon_cn);
   var polDisp = cleanText(row.pol_canon_en) || cleanText(row.pol_canon_cn) || cleanText(row.pol) || "";
-  var podDisp = cleanText(row.pod_canon_en) || cleanText(row.pod_canon_cn) || cleanText(row.pod) || "";
+  var podDisp = isBarePortKlangPod(row) ? cleanText(row.pod) : (cleanText(row.pod_canon_en) || cleanText(row.pod_canon_cn) || cleanText(row.pod) || "");
   return {
     lane_key:polKey + "::" + podKey,
     pol:polDisp,
@@ -428,6 +428,10 @@ function finishLane(lane){
   return lane;
 }
 
+function isBarePortKlangPod(row){
+  return localNormalizePort(row && row.pod) === "PORTKLANG";
+}
+
 function groupActivePlans(rows, closed){
   var lanes = {};
   (rows || []).forEach(function(row){
@@ -439,7 +443,7 @@ function groupActivePlans(rows, closed){
     if (key === "::") return;
     var lane = lanes[key] || (lanes[key] = makeLane(row));
     // 该 lane 任一票码头未确认(裸母港)→整条标待确认
-    if (row.pod_terminal_unconfirmed || row.pod_requires_terminal) lane.pod_terminal_unconfirmed = true;
+    if (row.pod_terminal_unconfirmed || row.pod_requires_terminal || isBarePortKlangPod(row)) lane.pod_terminal_unconfirmed = true;
     addPlan(lane, row, closed);
   });
   return Object.keys(lanes).map(function(k){ return finishLane(lanes[k]); })
