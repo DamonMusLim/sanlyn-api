@@ -1625,10 +1625,10 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 .box-tt .title,.box-bk .title{font-size:8.8px;font-weight:900;color:#111;letter-spacing:.04em;margin-bottom:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:2px}
 .box-bk strong{font-size:12px}
 .seal-area{grid-column:2;justify-self:end;text-align:center;margin-top:4px;width:98px;break-inside:avoid;page-break-inside:avoid}
-.pay-box.cny{display:flex;justify-content:space-between;align-items:center;gap:14px;break-inside:avoid;page-break-inside:avoid}
+.pay-box.cny{position:relative;break-inside:avoid;page-break-inside:avoid}
 .pay-box.cny .pay-copy{min-width:0}
-.pay-box.cny .seal-area{flex:0 0 84px;width:84px;margin-top:0;text-align:center;justify-self:auto;break-inside:avoid;page-break-inside:avoid}
-.pay-box.cny .company-seal{width:82px;height:82px}
+.pay-box.cny .seal-area{position:absolute;right:18px;top:50%;transform:translateY(-50%) rotate(-12deg);width:104px;height:104px;margin-top:0;text-align:center;justify-self:auto;pointer-events:none;break-inside:avoid;page-break-inside:avoid}
+.pay-box.cny .company-seal{width:100px;height:100px;opacity:.85;mix-blend-mode:multiply;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .pay-box.cny .seal-label{display:none}
 .company-seal{display:block;width:90px;height:90px;object-fit:contain;border-radius:50%;opacity:.88;margin:0 0 2px auto}
 .seal-label{font-size:8px;color:#666;font-weight:700;line-height:1.2}
