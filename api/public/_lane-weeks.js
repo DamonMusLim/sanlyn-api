@@ -9,7 +9,7 @@ function pos(v) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-const LOCAL_PORT_ALIASES = {
+export const LOCAL_PORT_ALIASES = {
   QINGDAO: ["QINGDAO", "青岛"],
   XIAMEN: ["XIAMEN", "厦门"],
   NINGBO: ["NINGBO", "宁波"],
@@ -24,7 +24,7 @@ const LOCAL_PORT_ALIASES = {
   CHITTAGONG: ["CHITTAGONG", "吉大港"],
 };
 
-const MARKET_CARRIER_ALIASES = {
+export const MARKET_CARRIER_ALIASES = {
   "IAL运达航运": "IAL",
   "ESL阿联酋": "ESL",
   "GFS格飞驰": "GFS",
@@ -84,11 +84,11 @@ function normCarrier(v) {
   return text(v).toUpperCase().replace(/\s+/g, " ");
 }
 
-function normScheduleCarrier(v) {
+export function normScheduleCarrier(v) {
   return text(v).toUpperCase().replace(/\s+/g, "");
 }
 
-function marketCarrierCode(v) {
+export function marketCarrierCode(v) {
   var direct = normScheduleCarrier(v);
   if (MARKET_CARRIER_ALIASES[direct]) return normScheduleCarrier(MARKET_CARRIER_ALIASES[direct]);
   var aliases = Object.keys(MARKET_CARRIER_ALIASES);
@@ -99,7 +99,7 @@ function marketCarrierCode(v) {
   return /^[A-Za-z0-9-]+$/.test(first) ? normScheduleCarrier(first) : "";
 }
 
-function marketCarrierAliasKeys(codes) {
+export function marketCarrierAliasKeys(codes) {
   var wanted = {};
   (codes || []).forEach(function(code) {
     var normalized = normScheduleCarrier(code);
@@ -162,7 +162,7 @@ export function finishPendingLane(lane) {
   return lane;
 }
 
-function localNormalizePort(v) {
+export function localNormalizePort(v) {
   var official = normalizePort(v);
   var direct = text(v).toUpperCase().replace(/\s+/g, "");
   var keys = Object.keys(LOCAL_PORT_ALIASES);

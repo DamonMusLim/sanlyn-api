@@ -1,3 +1,5 @@
+import { localNormalizePort, marketCarrierCode, normScheduleCarrier } from "../api/public/_lane-weeks.js";
+
 const DEMO_SET_ID = "demoset-0908";
 const FACTORIES = ["Demo Atlas Foods", "Demo Harbor Packing", "Demo Northstar Goods"];
 const SCENE_ORDER = ["normal", "normal", "delayed", "unsent", "normal", "normal", "unsent", "normal", "delayed", "normal", "unsent", "normal", "delayed", "unsent", "normal", "normal", "unsent", "normal"];
@@ -61,9 +63,21 @@ function diffDays(a, b){ return Math.round((dateOnly(a) - dateOnly(b)) / 8640000
 
 function num(v, fallback){ if (v == null || v === "") return fallback; var n = Number(v); return Number.isFinite(n) ? n : fallback; }
 
-function normCarrier(v){ return text(v).toUpperCase().replace(/\s+/g, ""); }
+function normCarrier(v){ return normScheduleCarrier(v); }
 
-function routeKey(pol, pod, carrier){ return [text(pol), text(pod), normCarrier(carrier)].join("\u0001"); }
+function routeKey(pol, pod, carrier){ return [localNormalizePort(pol), localNormalizePort(pod), normCarrier(carrier)].join("\u0001"); }
+
+function routeLabel(row, route){
+  var polNorm = localNormalizePort(row.pol);
+  var podNorm = localNormalizePort(row.pod);
+  var carrierNorm = marketCarrierCode(row.carrier_code) || normCarrier(row.carrier_code);
+  return "源单 id=" + row.id
+    + "  pol='" + text(row.pol) + "'→归一 " + polNorm
+    + "  pod='" + text(row.pod) + "'→归一 " + podNorm
+    + "  carrier='" + text(row.carrier_code) + "'→归一 " + carrierNorm
+    + "   market_sailings 未来21天命中 " + (route ? route.sailing_count : 0)
+    + " 班  首班 " + (route && route.first_etd ? route.first_etd : "NULL");
+}
 
 function factoryFor(seq){
   if (seq <= 5) return FACTORIES[0];
@@ -79,7 +93,7 @@ async function shippingCount(pool){
 async function loadMarketRoutes(pool, today){
   const { rows } = await pool.query(
     `SELECT pol_name AS pol, pod_name AS pod,
-            upper(substring(btrim(COALESCE(carrier, '')) from '^[A-Za-z0-9-]+')) AS carrier_code,
+            carrier,
             count(*)::int AS sailing_count,
             min(etd)::date::text AS first_etd,
             max(etd)::date::text AS last_etd,
@@ -91,15 +105,26 @@ async function loadMarketRoutes(pool, today){
         AND COALESCE(pol_name, '') <> ''
         AND COALESCE(pod_name, '') <> ''
         AND COALESCE(carrier, '') <> ''
-      GROUP BY pol_name, pod_name, upper(substring(btrim(COALESCE(carrier, '')) from '^[A-Za-z0-9-]+'))
+      GROUP BY pol_name, pod_name, carrier
       ORDER BY min(etd), pol_name, pod_name`,
     [ymd(today), ymd(addDays(today, 21))]
   );
   var routes = new Map();
   rows.forEach(r => {
-    var key = routeKey(r.pol, r.pod, r.carrier_code);
-    routes.set(key, { pol:text(r.pol), pod:text(r.pod), carrier_code:normCarrier(r.carrier_code), sailing_count:r.sailing_count, first_etd:r.first_etd, last_etd:r.last_etd, sailings:Array.isArray(r.sailings) ? r.sailings : [] });
+    var carrierCode = marketCarrierCode(r.carrier) || normCarrier(r.carrier);
+    if (!carrierCode) return;
+    var key = routeKey(r.pol, r.pod, carrierCode);
+    var existing = routes.get(key);
+    if (existing) {
+      existing.sailing_count += r.sailing_count;
+      existing.first_etd = existing.first_etd && existing.first_etd < r.first_etd ? existing.first_etd : r.first_etd;
+      existing.last_etd = existing.last_etd && existing.last_etd > r.last_etd ? existing.last_etd : r.last_etd;
+      existing.sailings = existing.sailings.concat(Array.isArray(r.sailings) ? r.sailings : []);
+      return;
+    }
+    routes.set(key, { pol:text(r.pol), pod:text(r.pod), carrier_code:carrierCode, sailing_count:r.sailing_count, first_etd:r.first_etd, last_etd:r.last_etd, sailings:Array.isArray(r.sailings) ? r.sailings : [] });
   });
+  routes.forEach(route => route.sailings.sort((a, b) => text(a.etd).localeCompare(text(b.etd))));
   if (!routes.size) throw new Error("market_sailings future 21-day routes = 0; cannot seed demo lanes");
   return routes;
 }
@@ -193,15 +218,15 @@ function buildPlans(rows, routes){
   var fixes = [];
   for (const row of rows) {
     if (plans.length >= 18) break;
-    var carrier = normCarrier(row.carrier_code);
+    var carrier = marketCarrierCode(row.carrier_code) || normCarrier(row.carrier_code);
     var key = routeKey(row.pol, row.pod, carrier);
     var route = routes.get(key);
     if (!carrier) {
-      skipped.push({ source_id:row.id, source_etd:row.source_etd, reason:"carrier_code empty" });
+      skipped.push({ source_id:row.id, source_etd:row.source_etd, reason:"carrier_code empty", diagnostic:routeLabel(row, null) });
       continue;
     }
     if (!route) {
-      skipped.push({ source_id:row.id, source_etd:row.source_etd, reason:"no future 21-day market_sailings for pol/pod/carrier" });
+      skipped.push({ source_id:row.id, source_etd:row.source_etd, reason:"no future 21-day market_sailings for pol/pod/carrier", diagnostic:routeLabel(row, null) });
       continue;
     }
     var seq = plans.length + 1;
@@ -235,15 +260,16 @@ function buildPlans(rows, routes){
         factory:factoryFor(seq), scene, route_confirmed_by:"market_sailings",
         sanitized_fields:["bl_no", "booking_no", "forwarder_booking_no", "factory"], date_forced:offsets.forced },
     };
+    plan.route_diagnostic = routeLabel(row, route);
     plan.events = scene === "delayed" ? buildEvents(plan, 3 + ((seq - 1) % 3)) : [];
     plans.push(plan);
   }
-  if (plans.length !== 18) throw new Error("selected demo rows " + plans.length + " < 18 after route filtering");
   return { plans, skipped, fixes };
 }
 
 function printPlan(plan){
   var route = plan.pol + " -> " + plan.pod + " / " + plan.carrier_code;
+  console.log(plan.route_diagnostic);
   console.log([plan.demo_plan_id, plan.factory, SCENES[plan.scene], "source_id=" + plan.source_id,
     "source_etd=" + plan.source_etd, route, plan.container_type, plan.gross_weight_kg + "kg",
     plan.cargo_description, "delivery_offset=" + plan.delivery_offset_days,
@@ -289,11 +315,18 @@ async function insertPlans(client, plans){
 
 function printSummary(plans, skipped, fixes, before, after, dry){
   var counts = plans.reduce((m, p) => { m[p.scene] = (m[p.scene] || 0) + 1; return m; }, {});
+  var skipReasons = skipped.reduce((m, s) => { m[s.reason] = (m[s.reason] || 0) + 1; return m; }, {});
+  var skipReasonText = Object.keys(skipReasons).sort().map(r => r + "=" + skipReasons[r]).join("; ") || "候选行耗尽";
   console.log("mode=" + (dry ? "dry" : "commit") + " demo_set_id=" + DEMO_SET_ID);
   console.log("public.shipping_plans count before=" + before + " after=" + after);
   console.log("scene_counts normal=" + (counts.normal || 0) + " unsent=" + (counts.unsent || 0) + " delayed=" + (counts.delayed || 0));
   console.log("skipped_rows=" + skipped.length);
-  skipped.forEach(s => console.log("- skipped source_id=" + s.source_id + " source_etd=" + s.source_etd + " reason=" + s.reason));
+  Object.keys(skipReasons).sort().forEach(r => console.log("- skipped_reason count=" + skipReasons[r] + " reason=" + r));
+  skipped.forEach(s => {
+    if (s.diagnostic) console.log(s.diagnostic);
+    console.log("- skipped source_id=" + s.source_id + " source_etd=" + s.source_etd + " reason=" + s.reason);
+  });
+  if (plans.length < 18) console.log("只凑到 " + plans.length + " 票,原因: " + skipReasonText);
   console.log("date_forced_fixes=" + fixes.length);
   fixes.forEach(f => console.log("- fixed " + f.demo_plan_id + " source_id=" + f.source_id + " fixes=" + f.fixes.join(",")));
   console.log("plans:");
