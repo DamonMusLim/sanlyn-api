@@ -107,7 +107,11 @@ var PAGES = {
       (c.pct||0)+'%),其中有货 '+(c.matched_instock||0)+' 个。'+
       '<b>剩下的 '+((c.all_sku||0)-(c.matched_sku||0)).toLocaleString("zh-CN")+
       ' 个不是「没问题」,是「没看过」。</b>'+
-      ' 采于 <b>'+esc(c.captured||"?")+'</b>'+(c.stale_days>3?'(已停采 '+c.stale_days+' 天)':'')+'</div>';
+      ' 采于 <b>'+esc(c.captured||"?")+'</b>'+(c.stale_days>3?'(已停采 '+c.stale_days+' 天)':'')+
+      // 0908:匹配是自动跑的,v2 抽样 5 条错 1 条(跨品类,如猫粮配成主食罐)。
+      // ⛔ 不许让人以为这些行是核过的 —— 拿去定价前必须点开看一眼。
+      '<br><b>⚠️ 对上的这些是机器自动配的,抽样约 1/5 会配错品类</b>(例:猫粮配成主食罐)。'+
+      '拿去定价前点开核一眼,别直接信。</div>';
 
     h += '<div class="chan">'+(d.channels||[]).map(function(x){
       var bad = x.status.indexOf("未开")>=0;
