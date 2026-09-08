@@ -1,8 +1,7 @@
 import { getPool, setCors } from "../db.js";
-import { normalizePort } from "../db/_official-port-charges.js";
-import { addPendingPlan, attachLaneWeeks, finishPendingLane, isPendingShipment } from "./_lane-weeks.js";
+import { addPendingPlan, attachLaneWeeks, finishPendingLane, isPendingShipment, localNormalizePort } from "./_lane-weeks.js";
 import { handleDemoGet } from "./_forwarder-demo-active.js";
-import { cleanText, dateTime, numOrNull } from "./_forwarder-active-shared.js";
+import { cleanText, countWeekQuotedCarriers, dateTime, numOrNull, perContainerCharge } from "./_forwarder-active-shared.js";
 
 function cleanCode(req){
   var p = req.params && req.params.code;
@@ -263,9 +262,8 @@ function shipment(row, closed){
 }
 
 function makeLane(row){
-  // 规范优先分组:有 port_id 按 id 归一(裸Port Klang三写法→合并母港);无则文本兜底防回归
-  var polKey = row.pol_port_id ? "P" + row.pol_port_id : normalizePort(row.pol);
-  var podKey = row.pod_port_id ? "P" + row.pod_port_id : normalizePort(row.pod);
+  var polKey = localNormalizePort(row.pol || row.pol_canon_en || row.pol_canon_cn);
+  var podKey = localNormalizePort(row.pod || row.pod_canon_en || row.pod_canon_cn);
   var polDisp = cleanText(row.pol_canon_en) || cleanText(row.pol_canon_cn) || cleanText(row.pol) || "";
   var podDisp = cleanText(row.pod_canon_en) || cleanText(row.pod_canon_cn) || cleanText(row.pod) || "";
   return {
@@ -357,9 +355,9 @@ function addCarrier(lane, row){
   // 历史港杂(CNY):优先port_surcharge_total,否则各费求和;取最近一条有值的
   var thc = pos(row.thc_fee), seal = pos(row.seal_fee), vgm = pos(row.vgm_fee), doc = pos(row.doc_fee), eir = pos(row.eir_fee);
   var sum = (thc||0)+(seal||0)+(vgm||0)+(doc||0)+(eir||0);
-  var pcTotal = pos(row.port_surcharge_total) != null ? pos(row.port_surcharge_total) : (sum > 0 ? sum : null);
-  if (ct && pcTotal != null && (!carrier.charge || tk >= carrier.charge.t)) {
-    carrier.charge = { t:tk, box:ct, total:pcTotal };
+  var perBox = perContainerCharge(row, sum > 0 ? sum : null);
+  if (ct && perBox && (!carrier.charge || tk >= carrier.charge.t)) {
+    carrier.charge = { t:tk, box:ct, total:perBox.amount, qty:perBox.qty };
   }
 }
 
@@ -392,7 +390,10 @@ function finishCarriers(lane){
     };
     // 港杂历史价:现数据多为40柜,填对应柜型;缺则留空由前端显"待填"
     var ch = carrier.charge;
-    if (ch) { if (/40/.test(ch.box)) out.port_charge_40 = ch.total; else out.port_charge_20 = ch.total; }
+    if (ch) {
+      if (/40/.test(ch.box)) out.port_charge_40 = ch.total; else out.port_charge_20 = ch.total;
+      out.port_charge_basis = "per_container"; out.port_charge_src_qty = ch.qty;
+    }
     return out;
   });
 }
@@ -434,7 +435,7 @@ function groupActivePlans(rows, closed){
     if (!isBooked(row)) return;
     // 结束(终态)移出活跃→归历史
     if (isEnded(row)) return;
-    var key = (row.pol_port_id ? "P" + row.pol_port_id : normalizePort(row.pol)) + "::" + (row.pod_port_id ? "P" + row.pod_port_id : normalizePort(row.pod));
+    var key = localNormalizePort(row.pol || row.pol_canon_en || row.pol_canon_cn) + "::" + localNormalizePort(row.pod || row.pod_canon_en || row.pod_canon_cn);
     if (key === "::") return;
     var lane = lanes[key] || (lanes[key] = makeLane(row));
     // 该 lane 任一票码头未确认(裸母港)→整条标待确认
@@ -462,6 +463,10 @@ async function handleGet(pool, token, res){
   var closed = await loadClosedMap(pool, supplierName);
   var plans = await loadPlans(pool, token.company_id);
   var lanes = await attachLaneWeeks(pool, token.company_id, groupActivePlans(plans, closed));
+  lanes.forEach(function(lane){
+    lane.week_quoted_carriers = countWeekQuotedCarriers(lane.carriers);
+    lane.week_pending_carriers = (lane.carriers || []).length - lane.week_quoted_carriers;
+  });
   var preferredCarriers = (await pool.query("SELECT COALESCE(preferred_carriers, '{}'::text[]) AS preferred_carriers FROM companies WHERE id = $1 LIMIT 1", [token.company_id])).rows[0]?.preferred_carriers || [];
 
   return send(res, 200, {
