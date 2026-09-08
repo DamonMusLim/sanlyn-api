@@ -93,6 +93,124 @@ var PAGES = {
   //    效期 warn_status 是果冻橙标的,实测「快过期」只有12%准、「已过期」50% ——
   //    页面上必须写成「待核」,⛔不许当结论
   //    成本红线:本接口不返回任何成本/毛利字段,页面也不留位置
+  // ── 比价罗盘 ──
+  l7: async function(){
+    var d = await get("db/petstore-price-compass");
+    if (d.error || d.ok===false) return verdict("🔴 "+(d.error||d.message||"取数失败"),"red"), "";
+    var c = d.coverage||{};
+    verdict(d.verdict, /^🔴/.test(d.verdict) ? "red" : "ok");
+    var money = function(x){ return "¥"+Number(x||0).toLocaleString("zh-CN"); };
+    var TIER = {red:"d-red", yellow:"d-yel", green:"d-grn", gray:"d-gry"};
+
+    // 覆盖率和渠道摆在最上面 —— ⛔ 不许让人以为这 65 个能代表全店
+    var h = '<div class="cov bad">对标覆盖 <b>'+(c.matched_sku||0)+'/'+(c.all_sku||0)+'</b>('+
+      (c.pct||0)+'%),其中有货 '+(c.matched_instock||0)+' 个。'+
+      '<b>剩下的 '+((c.all_sku||0)-(c.matched_sku||0)).toLocaleString("zh-CN")+
+      ' 个不是「没问题」,是「没看过」。</b>'+
+      ' 采于 <b>'+esc(c.captured||"?")+'</b>'+(c.stale_days>3?'(已停采 '+c.stale_days+' 天)':'')+'</div>';
+
+    h += '<div class="chan">'+(d.channels||[]).map(function(x){
+      var bad = x.status.indexOf("未开")>=0;
+      return '<span class="ch'+(bad?" off":"")+'"><b>'+esc(x.name)+'</b> '+esc(x.status)+
+             '<i>'+esc(x.detail)+'</i></span>'; }).join("")+'</div>';
+
+    if (d.shops && d.shops.length) h += '<p class="why">在采的附近门店:'+
+      d.shops.map(function(s){ return esc(s.competitor_name)+'('+s["品"]+'品)'; }).join(" · ")+'</p>';
+
+    (d.groups||[]).forEach(function(g){
+      if (!g.count) return;
+      h += '<div class="grp"><h3><span class="dot '+(TIER[g.tier]||"d-gry")+'"></span>'+esc(g.label)+
+        '<span class="c">'+g.count+'</span>'+
+        '<span class="amt">'+(Number(g.amount_by_price)>0?'占款 '+money(g.amount_by_price):'')+'</span></h3>'+
+        '<p class="gwhy">'+esc(g.why)+'</p>';
+      h += '<div class="tw"><table class="g"><tr>'+
+        ['商品编码','品名','规格','我方价','附近最低','价差','我月销','对手月销','库存','货位','状态','采于']
+          .map(function(x){return '<th>'+x+'</th>'}).join("")+'</tr>'+
+        g.rows.map(function(r, ri){
+          var gp = r.gap_pct;
+          var gcls = gp==null ? "" : (gp > 20 ? "hi" : (gp < -20 ? "lo" : ""));
+          var key = g.key + "-" + ri;
+          if (!window.__CMP) window.__CMP = {};
+          window.__CMP[key] = r;
+          return '<tr class="cmprow" data-k="'+key+'">'+
+            '<td class="mono"><span class="cx">▸</span>'+esc(r.product_code)+'</td>'+
+            '<td class="nm" title="'+esc(r.product_name||"")+'">'+esc(r.product_name)+'</td>'+
+            '<td>'+esc(r.spec_text||"")+'</td>'+
+            '<td class="r">¥'+esc(r.store_price)+'</td>'+
+            '<td class="r">¥'+esc(r.lo)+'</td>'+
+            '<td class="r '+gcls+'">'+(gp==null?'<span class="na">—</span>':(gp>0?'+':'')+gp+'%')+'</td>'+
+            '<td class="r">'+(r.my_sales==null?'<span class="na">—</span>':r.my_sales)+'</td>'+
+            '<td class="r">'+(r.rival_sales_max==null
+                 ?'<span class="todo" title="这几家竞店连月销都没采到">无</span>':r.rival_sales_max)+'</td>'+
+            '<td class="r">'+esc(r.stk)+'</td>'+
+            '<td class="mono">'+(r.shelf_code?esc(r.shelf_code):'<span class="todo">无</span>')+'</td>'+
+            '<td>'+(r.product_status==="UP"?'<span class="pill2 p-up">在售</span>'
+                  :'<span class="pill2 p-dn">'+esc(r.product_status||"—")+'</span>')+'</td>'+
+            '<td class="na">'+esc(r.captured||"")+'</td></tr>';
+        }).join("")+'</table></div>';
+      if (g.truncated) h += '<p class="gwhy">只列了前 '+g.shown+' 条(共 '+g.count+' 条)。</p>';
+      h += '</div>';
+    });
+    h += '<div class="blind"><b>这张罗盘能信到什么程度</b><ul>'+
+      (d.caveats||[]).map(function(x){return '<li>'+esc(x)+'</li>'}).join("")+'</ul></div>';
+    return h;
+  },
+
+  // ── 第6层 问题商品 ──
+  l6: async function(){
+    var d = await get("db/petstore-problem-goods");
+    if (d.error || d.ok===false) return verdict("🔴 "+(d.error||d.message||"取数失败"),"red"), "";
+    verdict(d.verdict + " · 全店 "+(d.total||0).toLocaleString("zh-CN")+" 个规格,有货 "+(d.in_stock||0),
+      /^🔴/.test(d.verdict) ? "red" : "ok");
+    var money = function(x){ return "¥"+Number(x||0).toLocaleString("zh-CN"); };
+    var TIER = {red:"d-red", yellow:"d-yel", green:"d-grn"};
+    var na = '<span class="na">—</span>';
+    var h = "";
+    (d.groups||[]).forEach(function(g){
+      if (!g.count) return;
+      h += '<div class="grp"><h3><span class="dot '+(TIER[g.tier]||"d-gry")+'"></span>'+esc(g.label)+
+        '<span class="c">'+g.count+'</span>'+
+        '<span class="amt">'+(Number(g.amount_by_price)>0?'占款 '+money(g.amount_by_price)+' · ':'')+
+        '该做:'+esc(g.todo)+'</span></h3><p class="gwhy">'+esc(g.why)+'</p>';
+      h += '<div class="tw"><table class="g"><tr>'+
+        ['商品编码','品名','规格','货位','状态','库存<sup>快照/在册</sup>','品类','到期日期','月销','占款']
+          .map(function(x){return '<th>'+x+'</th>'}).join("")+'</tr>'+
+        g.rows.map(function(r){
+          var a=r.stock_num, b=r.cur_stock;
+          var stk = (a===null&&b===null) ? na
+            : (Number(a||0)!==Number(b||0)
+               ? '<span class="diff">'+(a===null?"—":a)+' <b>/</b> '+(b===null?"—":b)+'</span>'
+               : (Number(a||0)<0 ? '<span class="neg">'+a+'</span>' : String(a===null?0:a)));
+          return '<tr>'+
+            '<td class="mono">'+esc(r.product_code)+'</td>'+
+            '<td class="nm" title="'+esc(r.product_name||"")+'">'+esc(r.product_name)+'</td>'+
+            '<td>'+(r.spec_text?esc(r.spec_text):na)+'</td>'+
+            '<td class="mono">'+(r.shelf_code?esc(r.shelf_code):'<span class="todo">无货位</span>')+'</td>'+
+            '<td>'+(r.product_status==="UP"?'<span class="pill2 p-up">在售</span>'
+                  :(r.product_status?'<span class="pill2 p-dn">'+esc(r.product_status)+'</span>'
+                  :'<span class="pill2 p-none">无状态</span>'))+'</td>'+
+            '<td class="r">'+stk+'</td>'+
+            '<td>'+(r.category_l1?esc(r.category_l1):na)+'</td>'+
+            '<td class="mono">'+(r.expiration_date?esc(String(r.expiration_date).slice(0,10))
+                  :'<span class="todo">未录</span>')+'</td>'+
+            '<td class="r">'+(r.month_sale==null?na:esc(r.month_sale))+'</td>'+
+            '<td class="r">'+money(r.amount_by_price)+'</td></tr>';
+        }).join("")+'</table></div>';
+      if (g.truncated) h += '<p class="gwhy">只列了前 '+g.shown+' 条(共 '+g.count+' 条) —— 这一档该批量处理。</p>';
+      h += '</div>';
+    });
+    // ⛔「没问题」和「没查」必须分得开 —— 查过是 0 的也要显示出来
+    if (d.clean && d.clean.length) {
+      h += '<div class="grp"><h3><span class="dot d-grn"></span>查过 · 当前没问题'+
+        '<span class="c">'+d.clean.length+'</span></h3><div class="okrow">'+
+        d.clean.map(function(c){ return '<span class="ok'+(c.count?" bad":"")+'">'+
+          (c.count?"🔴 ":"✅ ")+esc(c.label)+' '+c.count+'</span>'; }).join("")+'</div></div>';
+    }
+    h += '<div class="blind"><b>这层怎么算的</b><ul>'+
+      (d.caveats||[]).map(function(c){return '<li>'+esc(c)+'</li>'}).join("")+'</ul></div>';
+    return h;
+  },
+
   // ── 第5层 效期风险 ──
   l5: async function(){
     var d = await get("db/petstore-expiry-risk");
@@ -240,7 +358,7 @@ var PAGES = {
 
 async function show(p){
   document.querySelectorAll(".snav").forEach(function(a){a.classList.toggle("on", a.dataset.p===p)});
-  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
+  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
   $("body").innerHTML = '<div class="verdict">读取中…</div>';
   try { $("body").innerHTML = await PAGES[p](); }
   catch(e){ verdict("🔴 "+e.message,"red"); $("body").innerHTML=""; }
@@ -370,7 +488,7 @@ async function renderList(mode){
     h += '<div class="tw"><table class="g"><tr>'+
       // 列序:日期是主角,放第一屏(0907 截图实测「剩余」原来被挤出屏幕外)
       ['商品编码','条码','品名','规格','状态','@@STK@@',
-       '生产日期','到期日期','剩余','线下价','美团','饿了么','月销',
+       '生产日期','到期日期','剩余','线下价','美团','饿了么','月销','附近怎么卖',
        '一级类','二级类','效期标(待核)','货位','供应商','外卖','SPU','最后改动']
         .map(function(x){ return x==="@@STK@@"
              ? '<th class="two">库存<small>快照 / 在册</small></th>' : '<th>'+x+'</th>'; }).join("")+'</tr>'+
@@ -389,6 +507,7 @@ async function renderList(mode){
           '<td class="r">'+money(r.mt_price)+'</td>'+
           '<td class="r">'+money(r.ele_price)+'</td>'+
           '<td class="r">'+v(r.month_sale)+'</td>'+
+          '<td class="mkt" data-code="'+esc(r.product_code)+'"><span class="na">…</span></td>'+
           '<td>'+v(r.category_l1)+'</td>'+
           '<td>'+v(r.category_l2)+'</td>'+
           '<td>'+ws(r.warn_status)+'</td>'+
@@ -416,6 +535,7 @@ async function renderList(mode){
       '只当待核信号,别拿它下架 —— 有真日期时以日期为准。<b>成本/毛利不出库</b>,本页不设该列。</p>';
 
     setTimeout(function(){
+      fillMarket(rows);
       var go=function(){ q.keyword=$("fq").value.trim(); q.category=$("fc").value.trim();
         q.product_status=$("fs").value; q.page=1; re(); };
       $("fgo").onclick=go;
@@ -450,3 +570,120 @@ async function renderInto(mode){
   catch(e){ verdict("🔴 "+e.message,"red"); $("body").innerHTML=""; }
 }
 
+// ── 商品行下面那一排「附近怎么卖」(0908) ──
+// 口径由 deepseek 按实测数据定的,⛔改口径前先看 api/db/petstore-market-row.js 顶部注释:
+//   价格只给区间不给点(同编码混过不同规格) · 每家竞店只取最新一条(⛔不 sum)
+//   「验证低价」= 月销≥50 的店里的最低价(⛔不用「最高月销那家的价」,月销200疑似封顶)
+//   没数据显示「未采集」—— ⛔不隐藏(会让人以为没竞品而瞎定价),⛔不拿同品类中位价顶替
+async function fillMarket(rows){
+  var cells = document.querySelectorAll("td.mkt[data-code]");
+  if (!cells.length) return;
+  var codes = Array.prototype.map.call(cells, function(c){ return c.dataset.code; });
+  var uniq = codes.filter(function(v,i){ return codes.indexOf(v)===i; });
+  var d = await get("db/petstore-market-row?codes=" + encodeURIComponent(uniq.join(",")));
+  if (!d || d.ok === false || d.error) {
+    Array.prototype.forEach.call(cells, function(c){ c.innerHTML = '<span class="na">—</span>'; });
+    return;
+  }
+  var mine = {};
+  (rows||[]).forEach(function(r){ mine[r.product_code] = r.out_price; });
+  window.__MKT = d.rows;
+
+  Array.prototype.forEach.call(cells, function(c){
+    var m = d.rows[c.dataset.code];
+    if (!m || !m.has_data) { c.innerHTML = '<span class="todo" title="这个品还没采到附近门店的价">未采集</span>'; return; }
+    var band = m.price_min === m.price_max ? ("¥" + m.price_min)
+             : ("¥" + m.price_min + "~" + m.price_max);
+    // 我方 vs 验证低价:只有在有验证低价时才下结论,⛔没有就不下
+    var pos = "";
+    var my = Number(mine[c.dataset.code]);
+    if (m.verified_low != null && isFinite(my) && my > 0) {
+      var gap = Math.round((my - m.verified_low) * 100) / 100;
+      pos = gap > 0 ? '<b class="hi">高¥' + gap + '</b>'
+          : (gap < 0 ? '<b class="lo">低¥' + (-gap) + '</b>' : '<b class="eq">持平</b>');
+    }
+    c.innerHTML = '<span class="mktcell" title="点开看各家">' +
+      '<b>' + m.shops + '家</b> ' + band +
+      (m.verified_low != null ? ' · 验证 ¥' + m.verified_low : '') +
+      (pos ? ' · ' + pos : '') + '</span>';
+  });
+}
+
+// 点「附近」格 → 在这一行【下面】展开各家明细(Damon 要的那一排)
+document.addEventListener("click", function(e){
+  var c = e.target.closest && e.target.closest("td.mkt[data-code]");
+  if (!c) return;
+  var tr = c.closest("tr");
+  if (tr.nextElementSibling && tr.nextElementSibling.classList.contains("mktrow")) {
+    tr.nextElementSibling.remove(); return;
+  }
+  var m = (window.__MKT || {})[c.dataset.code];
+  var td = document.createElement("tr");
+  td.className = "mktrow";
+  var cols = tr.querySelectorAll("td").length;
+  var body;
+  if (!m || !m.has_data) {
+    body = '<span class="todo">未采集</span> —— 附近门店还没采到这个品。' +
+           '⛔ 别把「没采到」当成「附近没人卖」。';
+  } else {
+    body = '<table class="mini"><tr><th>竞店</th><th>售价</th><th>月销</th><th>每100g</th></tr>' +
+      (m.detail||[]).map(function(x){
+        return '<tr><td>' + esc(x.shop) + '</td><td class="r">¥' + x.price + '</td>' +
+          '<td class="r">' + (x.sales == null ? '—' : x.sales) +
+          (x.sales >= 200 ? ' <span class="cap" title="平台可能显示的是200+,真实更高">封顶</span>' : '') + '</td>' +
+          '<td class="r">' + (x.unit_100g == null ? '—' : '¥' + x.unit_100g) + '</td></tr>';
+      }).join("") + '</table>' +
+      '<div class="mktnote">总月销 <b>' + m.sales_total + '</b>' +
+      (m.sales_capped ? '(有店月销封顶,真实更高,只能当下限看)' : '') +
+      ' · 采于 <b>' + esc(m.captured) + '</b>' +
+      (m.verified_low != null
+        ? ' · <b>验证低价 ¥' + m.verified_low + '</b>(月销≥50 的 ' + m.verified_shops + ' 家里最低,'
+          + '高于它要有理由,低于它是白让利)'
+        : ' · <b>没有验证低价</b> —— 这几家月销都不到 50,谁的价都不算被市场验证过') +
+      '</div>';
+  }
+  td.innerHTML = '<td colspan="' + cols + '"><div class="mktbox">' + body + '</div></td>';
+  tr.parentNode.insertBefore(td, tr.nextSibling);
+});
+
+// 比价罗盘:点一行 → 往【下面】展开各家明细。
+// 🔴 必须显示竞店原始标题 —— 判「是不是匹配错」只能靠它。
+document.addEventListener("click", function(e){
+  var tr = e.target.closest && e.target.closest("tr.cmprow");
+  if (!tr) return;
+  var nx = tr.nextElementSibling;
+  if (nx && nx.classList.contains("cmpdet")) {
+    nx.remove(); tr.querySelector(".cx").textContent = "▸"; return;
+  }
+  var r = (window.__CMP || {})[tr.dataset.k];
+  if (!r) return;
+  tr.querySelector(".cx").textContent = "▾";
+  var cols = tr.querySelectorAll("td").length;
+  var det = (r.shops_detail || []);
+  var body = '<table class="mini"><tr><th>竞店</th><th>它卖的是什么(原始标题)</th>'
+    + '<th class="r">价</th><th class="r">月销</th><th class="r">克重</th><th class="r">每100g</th>'
+    + '<th>匹配规则</th><th>采于</th></tr>'
+    + det.map(function(x){
+        return '<tr><td>'+esc(x.shop)+'</td>'+
+          '<td class="ttl" title="'+esc(x.title||"")+'">'+esc(x.title||"—")+'</td>'+
+          '<td class="r">¥'+x.price+'</td>'+
+          '<td class="r">'+(x.sales==null?'<span class="na">无</span>':x.sales)+
+            (x.sales>=200?' <span class="cap">封顶</span>':'')+'</td>'+
+          '<td class="r">'+(x.qty_g==null?'<span class="na">—</span>':Math.round(x.qty_g)+'g')+'</td>'+
+          '<td class="r">'+(x.unit_100g==null?'<span class="na">—</span>':'¥'+x.unit_100g)+'</td>'+
+          '<td class="na">'+esc(x.rule||"—")+'</td>'+
+          '<td class="na">'+esc(x.captured||"")+'</td></tr>';
+      }).join("") + '</table>';
+  body += '<div class="mktnote">我方 <b>¥'+r.store_price+'</b>('+esc(r.spec_text||"")+')'
+    + ' vs 附近最低 <b>¥'+r.lo+'</b>'
+    + (r.gap_pct!=null ? ' → <b>'+(r.gap_pct>0?'+':'')+r.gap_pct+'%</b>' : '')
+    + ' · 我月销 '+(r.my_sales==null?'—':r.my_sales)
+    + ' / 对手最高月销 '+(r.rival_sales_max==null?'无数据':r.rival_sales_max)
+    + (r.verified_low!=null ? ' · 验证低价 ¥'+r.verified_low+'(月销≥50 的 '+r.verified_shops+' 家)' : '')
+    + '<br>👉 <b>先看上面那列「它卖的是什么」</b> —— 规格对不上就是匹配错了,'
+    + '⛔ 别按这个价差改价,去修匹配。</div>';
+  var d = document.createElement("tr");
+  d.className = "cmpdet";
+  d.innerHTML = '<td colspan="'+cols+'"><div class="mktbox">'+body+'</div></td>';
+  tr.parentNode.insertBefore(d, tr.nextSibling);
+});
