@@ -328,10 +328,14 @@ export function defaultInvoices(sp, total, currency, bl, cntr, mode = "self", ba
   const SELLER_BANK = banks.bank || "", ACCOUNTS = banks.accounts || {};
   const invoiceTotal = money(sp.port_charge_invoice_total || total);
   const remark = `开户行 ${SELLER_BANK} · ${currency === "USD" ? "美金账号" : "人民币账号"} ${ACCOUNTS[currency] || ACCOUNTS.CNY} · 提单号 ${bl}${cntr ? " · " + cntr : ""}`;
+  // 发票项目名称按客户开票偏好(companies.invoice_item_name)走;没登记才回落系统默认。
+  // 依据:恒安真开出去的两张数电票用的是「*生产生活服务*国际货运代理服务费」,不是默认的「代理港杂费」。
+  // sp.party_company 是加载票时就带出来的(见 invoice-collab-confirm.js),所以不用改本函数签名、不用动任何调用点。
+  const agencyItemName = clean(sp?.party_company?.invoice_item_name, 120) || "*经纪代理服务*代理港杂费";
   const agency = (inclTotal) => {
     const exTax = money(inclTotal / 1.01); // 含税倒推不含税
     return { id: "invoice-agency", currency, title: "增值税普通发票", mode,
-      item_name: "*经纪代理服务*代理港杂费", unit: "项", qty: 1,
+      item_name: agencyItemName, unit: "项", qty: 1,
       amount_ex_tax: exTax, tax_rate: 0.01, tax_amount: money(inclTotal - exTax), total_with_tax: money(inclTotal), remark };
   };
   // 有特意要求(显式设了带税含税额)才拆免税;否则整票走代理港杂费@1%

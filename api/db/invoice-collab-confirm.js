@@ -157,7 +157,7 @@ export async function loadCompany(pool, nameOrCode) {
   const key = clean(nameOrCode, 120);
   if (!key) return {};
   const r = await pool.query(
-    `SELECT code, name_cn, name_en, factory_name, tax_id, einvoice_email, contact_phone
+    `SELECT code, name_cn, name_en, factory_name, tax_id, einvoice_email, contact_phone, invoice_item_name
        FROM companies
       WHERE code=$1 OR name_cn=$1 OR name_en=$1 OR factory_name=$1
          OR name_cn ILIKE '%'||$1||'%' OR factory_name ILIKE '%'||$1||'%'
