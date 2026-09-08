@@ -212,7 +212,7 @@ tr.ctn-row td.ctn-seal{font-family:monospace;color:#555}
 <div class="page">
   <div class="hdr">
     <div class="hdr-l">
-      <div class="co-en">SHANGHAI OCEAN BABY INT'L LOGISTICS CO., LTD.</div>
+      <div class="co-en">SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.</div>
       <div class="co-cn">上海洋宝宝国际物流有限公司</div>
       <div class="tag">Ocean Freight · Air Freight · Express · Integrated Logistics Solutions</div>
     </div>

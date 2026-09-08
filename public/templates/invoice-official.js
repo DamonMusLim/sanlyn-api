@@ -1,7 +1,7 @@
 (function(){
   const STYLE_ID="invoice-official-style";
   const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
-  const num=v=>Number.isFinite(Number(String(v??"").replace(/,/g,"")))?Number(String(v).replace(/,/g,"")):0;
+  const num=v=>Number.isFinite(Number(String(v??"").replace(/,/g,"")))?Number(String(v??"").replace(/,/g,"")):0;
   const money=n=>num(n).toLocaleString("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
   const qty=n=>num(n).toLocaleString("zh-CN",{maximumFractionDigits:3});
   const rate=n=>num(n)>0?`${(num(n)*100).toLocaleString("zh-CN",{maximumFractionDigits:2})}%`:"免税";
