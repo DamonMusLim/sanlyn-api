@@ -3,7 +3,7 @@ import { localNormalizePort } from "./_lane-weeks.js";
 var RATE_SERVICES = ["truck", "customs"];
 
 export const SERVICE_STATUS_SQL = `
-SELECT service, factory, port, container_type, rate_cny, updated_at
+SELECT service, factory, port, container_type, tier, rate_cny, updated_at
   FROM forwarder_service_rates
  WHERE forwarder_company_id = $1
    AND service = ANY($2::text[])
@@ -55,7 +55,7 @@ function ymd(v) {
   if (typeof v === "string") return v.slice(0, 10);
   var d = new Date(v);
   if (Number.isNaN(d.getTime())) return null;
-  return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0");
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
 
 function planIds(lane) {
@@ -80,6 +80,10 @@ function rateKey(row) {
 
 function comboKey(combo) {
   return [combo.port, combo.factory, combo.box].join("\u0001");
+}
+
+function portKey(port) {
+  return [port, "", ""].join("\u0001");
 }
 
 function factoryName(row) {
@@ -116,6 +120,20 @@ function combosForLane(ids, rows, lanePort) {
   return out;
 }
 
+function portsForLane(ids, rows, lanePort) {
+  var idSet = {};
+  ids.forEach(function(id) { idSet[id] = true; });
+  var seen = {};
+  (rows || []).forEach(function(row) {
+    var id = Number(row.id);
+    if (!idSet[id]) return;
+    var port = planPort(row, lanePort);
+    if (!port || (lanePort && port !== lanePort)) return;
+    seen[port] = true;
+  });
+  return Object.keys(seen);
+}
+
 function buildRateMap(rows) {
   var map = {};
   (rows || []).forEach(function(row) {
@@ -126,32 +144,81 @@ function buildRateMap(rows) {
     if (!key || rate == null || rate <= 0) return;
     var bySvc = map[svc] || (map[svc] = {});
     if (!bySvc[key]) {
-      bySvc[key] = { rate_cny:rate, updated_at:ymd(row.updated_at) };
+      bySvc[key] = { rate_cny:rate, rate_cny_max:rate, updated_at:ymd(row.updated_at) };
+      return;
     }
+    bySvc[key].rate_cny = Math.min(bySvc[key].rate_cny, rate);
+    bySvc[key].rate_cny_max = Math.max(bySvc[key].rate_cny_max, rate);
   });
   return map;
 }
 
-function statusFor(svc, combos, rates) {
-  var bySvc = rates[svc] || {};
+function mergeHit(best, hit) {
+  if (!hit) return best;
+  if (!best) return { rate_cny:hit.rate_cny, rate_cny_max:hit.rate_cny_max, updated_at:hit.updated_at };
+  best.rate_cny = Math.min(best.rate_cny, hit.rate_cny);
+  best.rate_cny_max = Math.max(best.rate_cny_max, hit.rate_cny_max);
+  return best;
+}
+
+function finishStatus(covered, total, best) {
+  var out = {
+    state:covered > 0 ? "has_rate" : "no_rate",
+    covered:covered,
+    total:total,
+  };
+  if (best) {
+    out.rate_cny = best.rate_cny;
+    if (best.rate_cny_max !== best.rate_cny) out.rate_cny_max = best.rate_cny_max;
+    out.updated_at = best.updated_at;
+  }
+  return out;
+}
+
+function statusForTruck(combos, rates) {
+  var bySvc = rates.truck || {};
   var covered = 0;
-  var first = null;
+  var best = null;
   combos.forEach(function(combo) {
     var hit = bySvc[comboKey(combo)];
     if (!hit) return;
     covered += 1;
-    if (!first) first = hit;
+    best = mergeHit(best, hit);
   });
-  var out = {
-    state:covered > 0 ? "has_rate" : "no_rate",
-    covered:covered,
-    total:combos.length,
-  };
-  if (first) {
-    out.rate_cny = first.rate_cny;
-    out.updated_at = first.updated_at;
-  }
-  return out;
+  return finishStatus(covered, combos.length, best);
+}
+
+function statusForCustoms(combos, ports, rates) {
+  var bySvc = rates.customs || {};
+  var portState = {};
+  (ports || []).forEach(function(port) {
+    if (port) portState[port] = { covered:false, best:null };
+  });
+  combos.forEach(function(combo) {
+    var port = combo && combo.port;
+    if (!port) return;
+    var entry = portState[port] || (portState[port] = { covered:false, best:null });
+    var hit = mergeHit(mergeHit(null, bySvc[comboKey(combo)]), bySvc[portKey(port)]);
+    if (!hit) return;
+    entry.covered = true;
+    entry.best = mergeHit(entry.best, hit);
+  });
+  Object.keys(portState).forEach(function(port) {
+    var entry = portState[port];
+    if (entry.covered) return;
+    entry.best = mergeHit(entry.best, bySvc[portKey(port)]);
+    entry.covered = Boolean(entry.best);
+  });
+  var total = Object.keys(portState).length;
+  var covered = 0;
+  var best = null;
+  Object.keys(portState).forEach(function(port) {
+    var entry = portState[port];
+    if (!entry.covered) return;
+    covered += 1;
+    best = mergeHit(best, entry.best);
+  });
+  return finishStatus(covered, total, best);
 }
 
 export async function attachForwarderServiceStatus(pool, token, lanes) {
@@ -179,9 +246,10 @@ export async function attachForwarderServiceStatus(pool, token, lanes) {
   (lanes || []).forEach(function(lane) {
     var lanePort = localNormalizePort(lane && lane.pol);
     var combos = combosForLane(lanePlans.get(lane) || [], planRows, lanePort);
+    var customsPorts = portsForLane(lanePlans.get(lane) || [], planRows, lanePort);
     lane.service_status = {
-      truck:statusFor("truck", combos, rates),
-      customs:statusFor("customs", combos, rates),
+      truck:statusForTruck(combos, rates),
+      customs:statusForCustoms(combos, customsPorts, rates),
     };
   });
   return lanes;
