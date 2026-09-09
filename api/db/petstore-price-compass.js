@@ -29,8 +29,6 @@ const STALE_WARN_DAYS = 3;
 const ACTIVE = "COALESCE(product_status <> 'LOWER' AND stk > 0,false)";
 const UNSETTLED = "(verdict IS NULL OR verdict = 'todo')";
 const SETTLED = "(verdict IS NOT NULL AND verdict <> 'todo' AND NOT needs_recheck)";
-const OWN_BRANDS = ["LUVSOME","SNIFFLY","CATSOME","DOGSOME","PETSOME","ENRICH","PiXELDOG","天王梦"];
-const OWN_BRAND_PATTERN = OWN_BRANDS.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
 
 function json(res, code, body) { return res.status(code).json(body); }
 
@@ -108,6 +106,22 @@ const BASE = `
   ), j AS (
     SELECT a.*, r.product_name, r.spec_text, r.shelf_code, r.product_status, r.store_price,
            k.month_sale AS my_sales, k.category_l1,
+           EXISTS(SELECT 1 FROM jsonb_array_elements(
+             CASE WHEN k.label_list IS NULL OR k.label_list::text IN ('','[]','null')
+                  THEN '[]'::jsonb ELSE k.label_list::jsonb END) l
+             WHERE l->>'labelName' = '自营') AS is_own_brand,
+           EXISTS(SELECT 1 FROM jsonb_array_elements(
+             CASE WHEN k.label_list IS NULL OR k.label_list::text IN ('','[]','null')
+                  THEN '[]'::jsonb ELSE k.label_list::jsonb END) l
+             WHERE l->>'labelName' = '倒闭款清仓') AS is_clearing,
+           EXISTS(SELECT 1 FROM jsonb_array_elements(
+             CASE WHEN k.label_list IS NULL OR k.label_list::text IN ('','[]','null')
+                  THEN '[]'::jsonb ELSE k.label_list::jsonb END) l
+             WHERE l->>'labelName' = '临期') AS is_expiring,
+           ARRAY(SELECT l->>'labelName' FROM jsonb_array_elements(
+             CASE WHEN k.label_list IS NULL OR k.label_list::text IN ('','[]','null')
+                  THEN '[]'::jsonb ELSE k.label_list::jsonb END) l
+             WHERE COALESCE(l->>'labelName','') <> '') AS labels,
            COALESCE(to_jsonb(k)->>'brand', to_jsonb(r)->>'brand', '') AS brand_txt,
            GREATEST(COALESCE(k.stock_num,0), COALESCE(r.cur_stock,0)) AS stk,
            v.verdict, v.note, v.decided_by, v.decided_at, v.lo_at_decision,
@@ -163,15 +177,17 @@ const BASE = `
                END),
              jsonb_build_object('key','movable','label','这个品能不能动价','state',
                CASE
+                 WHEN is_clearing THEN 'bad'
                  WHEN product_name ~ '鲜朗' OR brand_txt ~ '鲜朗' THEN 'bad'
-                 WHEN product_name ~ '${OWN_BRAND_PATTERN}' THEN 'bad'
+                 WHEN is_own_brand THEN 'bad'
                  WHEN my_sales IS NULL OR my_sales = 0 THEN 'warn'
                  ELSE 'ok'
                END,
                'detail',
                CASE
+                 WHEN is_clearing THEN '清仓品:只降不升,不补货,不报活动'
                  WHEN product_name ~ '鲜朗' OR brand_txt ~ '鲜朗' THEN '鲜朗控价,只能拉回官方价(临期才是例外)'
-                 WHEN product_name ~ '${OWN_BRAND_PATTERN}' THEN '自有品牌不比价,按目标毛利走'
+                 WHEN is_own_brand THEN '自有品牌不比价,按目标毛利走'
                  WHEN my_sales IS NULL OR my_sales = 0 THEN '月销0,先查货位和陈列,多半不是价格问题'
                  ELSE '可以动'
                END),
@@ -203,8 +219,9 @@ const BASE = `
                     ELSE '还没定' END)
            ) AS gates,
            CASE
+             WHEN is_clearing THEN '清仓品 —— 只降不升,卖完不补。⛔别拿附近价往上调'
              WHEN product_name ~ '鲜朗' OR brand_txt ~ '鲜朗' THEN '拉回官方零售价,不按公式'
-             WHEN product_name ~ '${OWN_BRAND_PATTERN}' THEN '自有品牌不比价 —— 按目标毛利定,卖不动是动销问题不是价格'
+             WHEN is_own_brand THEN '自有品牌不比价 —— 按目标毛利定,卖不动是动销问题不是价格'
              WHEN (lo IS NOT NULL AND store_price > 0 AND (store_price > lo * 3 OR store_price * 3 < lo))
                OR (basis_shops = 0 AND (excluded_brand > 0 OR excluded_price > 0 OR super_shops > 0)) THEN '定「不可比」收起来,别拿它定价'
              WHEN my_sales IS NULL OR my_sales = 0 THEN '先查货位和陈列,别急着降价'
@@ -259,7 +276,8 @@ const BUCKETS = [
 ];
 
 const ROW_SELECT = `product_code, product_name, spec_text, shelf_code, product_status, category_l1,
-  store_price, my_sales, stk, basis_shops, excluded_brand, excluded_price, price_min, price_max, lo, super_lo, super_shops,
+  store_price, my_sales, stk, is_own_brand, is_clearing, is_expiring, labels,
+  basis_shops, excluded_brand, excluded_price, price_min, price_max, lo, super_lo, super_shops,
   verified_low, verified_shops, shops_with_sales, sales_shops_with_data, rival_sales,
   rival_sales_max, sales_capped, gap, gap_pct, captured, shops_detail, nearest_peer_km,
   nearest_peer_name, nearest_peer_price, gates, next_step, verdict, note, decided_by,
@@ -349,6 +367,7 @@ async function build(pool) {
       "🔴 多件装没折算:竞店标题写「2.5kg/袋*2」但 qty_g 只抓到 2500(应是 5000)。所以「每100g」在多件装上会偏高一倍,⛔ 单位价也不能直接信,先看标题里有没有 *2。",
       "定价基准只取【同行 + 同品牌 + 可用价】;不同品牌、占位/钩子价、首件/爆品/新客价、低于原价2折的价都不进 lo。没有同品牌可用价时 lo 留空,不硬凑。",
       "即时零售 ≠ 电商:30 分钟送达值溢价,合理是电商价的 1.1~1.3 倍。⛔ 拿淘宝价直接对标必亏(而且现在也没有淘宝数据)。",
+      "自有品牌/清仓/临期 一律认【果冻橙标签】(petstore_skus.label_list),⛔不再硬编码品牌名单也不读 own_brand 字段(该字段 2936 个品全是 NULL)。老板在果冻橙后台改标签即刻生效。",
     ],
   };
 }
