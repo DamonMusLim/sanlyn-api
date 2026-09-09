@@ -10,6 +10,7 @@ const CITY_ALIASES = {
   "锦州": "锦州", "JINZHOU": "锦州",
   "连云港": "连云港", "LIANYUNGANG": "连云港",
   "日照": "日照", "RIZHAO": "日照",
+  "蛇口": "蛇口", "SHEKOU": "蛇口",
   "南沙": "南沙", "NANSHA": "南沙",
 };
 const ZONES = {
@@ -20,6 +21,7 @@ const ZONES = {
   "锦州": { zone_name: "锦州关区", scope: "锦州港" },
   "连云港": { zone_name: "连云港关区", scope: "连云港港区" },
   "日照": { zone_name: "日照关区", scope: "日照港" },
+  "蛇口": { zone_name: "深圳关区", scope: "蛇口港区" },
   "南沙": { zone_name: "南沙关区", scope: "南沙港区" },
 };
 
