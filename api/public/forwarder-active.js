@@ -117,7 +117,7 @@ async function loadClosedMap(pool, supplierName){
 async function loadPlans(pool, companyId){
   const { rows } = await pool.query(
     // TODO: Also keep lanes with future open freight_rfqs when that signal is needed.
-    `SELECT sp.id, sp.bl_no, sp.pol, sp.pod, sp.etd, sp.container_qty, sp.container_type,
+    `SELECT sp.id, sp.bl_no, sp.shipment_no, sp.contract_no, sp.pol, sp.pod, sp.etd, sp.container_qty, sp.container_type,
             sp.carrier_code,
             sp.freight_cost, sp.thc_fee, sp.seal_fee, sp.vgm_fee, sp.doc_fee, sp.eir_fee, sp.port_surcharge_total,
             COALESCE(sp.gross_weight_kg, li.gross_weight_kg) AS gross_weight_kg,
@@ -226,6 +226,8 @@ function shipment(row, closed){
   return {
     plan_id:row.id || row.plan_id || null,   // 协同链接按票签发要用(缺它「进入协同」是死的)
     bl_no:bl || null,
+    shipment_no:cleanText(row.shipment_no) || null,
+    contract_no:cleanText(row.contract_no) || null,
     etd:row.etd || null,
     container_qty:numOrNull(row.container_qty),
     gross_weight_kg:numOrNull(row.gross_weight_kg),

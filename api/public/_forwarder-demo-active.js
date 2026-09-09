@@ -78,6 +78,8 @@ function shipment(row, events, today){
     plan_id:row.id,
     demo_plan_id:row.demo_plan_id,
     bl_no:null,
+    shipment_no:text(row.demo_plan_id) || null,
+    contract_no:null,
     etd:etd,
     delivery_date:delivery,
     container_qty:numOrNull(row.container_qty),
