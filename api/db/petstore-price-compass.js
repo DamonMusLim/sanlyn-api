@@ -33,15 +33,18 @@ const BASE = `
   WITH latest AS (
     SELECT DISTINCT ON (q.product_code, q.competitor_name)
            q.product_code, q.competitor_name, q.price, q.monthly_sales, q.qty_g, q.captured_at,
-           q.title, q.match_rule
+           q.title, q.match_rule,
+           (q.competitor_name ~ '宠物|宠|猫粮|狗粮|猫砂|猫罐|猫条|喵|汪|犬|萌宠|萌鸟|爱宠|羊奶粉') AS is_peer
       FROM public.petstore_market_quotes_raw q
      WHERE q.match_status = 'MATCHED' AND q.price IS NOT NULL
      ORDER BY q.product_code, q.competitor_name, q.captured_at DESC
   ), agg AS (
     SELECT product_code,
-           count(*)::int AS shops,
+           count(*) FILTER (WHERE is_peer)::int AS peer_shops,
            round(min(price)::numeric,2) AS price_min,
-           round(min(price)::numeric,2) AS lo,          -- 主轴:附近最低价(不看销量,65个品全都有)
+           round(min(price) FILTER (WHERE is_peer)::numeric,2) AS lo,          -- 主轴:附近最低价(不看销量,65个品全都有)
+           round(min(price) FILTER (WHERE NOT is_peer)::numeric,2) AS super_lo,
+           count(*) FILTER (WHERE NOT is_peer)::int AS super_shops,
            count(*) FILTER (WHERE monthly_sales IS NOT NULL)::int AS shops_with_sales,
            round(max(price)::numeric,2) AS price_max,
            sum(COALESCE(monthly_sales,0))::int AS rival_sales,
@@ -53,7 +56,7 @@ const BASE = `
            -- 🔴 竞店原始标题必须带出去:判「是不是匹配错」只能靠它,
            --    光看价格和百分比人没法判(0908 Damon:「不然看不到更多消息」)
            jsonb_agg(jsonb_build_object(
-             'shop', competitor_name, 'title', title, 'rule', match_rule,
+             'shop', competitor_name, 'peer', is_peer, 'title', title, 'rule', match_rule,
              'price', round(price::numeric,2), 'sales', monthly_sales, 'qty_g', qty_g,
              'unit_100g', CASE WHEN qty_g > 0 THEN round((price/qty_g*100)::numeric,2) END,
              'captured', captured_at::date::text
@@ -74,6 +77,8 @@ const BASE = `
 
 // 分档互斥,相加必须等于总数(自校验)
 const BUCKETS = [
+  { key: "super_only", label: "⚠️ 附近只有超市在卖,没有同行报价 · 仅供参考不可定价", tier: "gray",
+    where: "lo IS NULL AND super_lo IS NOT NULL AND store_price > 0" },
   // 🔴 这一档必须排在最前面 —— 它是【数据可信度闸】,不是定价档。
   //    0908 实测 —— 展开看竞店原始标题后【修正了我最初的判断】:
   //    冠能那行商品其实【匹配对了】,竞店标题是「冠能 鸡肉配方成年期全价猫粮 2.5kg/袋*2」,同品牌同配方。
@@ -117,8 +122,8 @@ async function build(pool) {
     if (agg.rows[0].n > 0) {
       const r = await pool.query(`${BASE}
         SELECT product_code, product_name, spec_text, shelf_code, product_status, category_l1,
-               store_price, my_sales, stk, shops, price_min, price_max,
-               lo, verified_low, verified_shops, shops_with_sales,
+               store_price, my_sales, stk, peer_shops, price_min, price_max,
+               lo, super_lo, super_shops, verified_low, verified_shops, shops_with_sales,
                rival_sales, rival_sales_max, sales_capped, gap, gap_pct, captured, shops_detail
           FROM j WHERE ${b.where}
          ORDER BY (gap_pct IS NULL), abs(COALESCE(gap_pct,0)) DESC, product_code
