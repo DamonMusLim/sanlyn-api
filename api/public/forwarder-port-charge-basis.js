@@ -1,6 +1,7 @@
 import { getPool, setCors } from "../db.js";
-import { normalizePort } from "../db/_official-port-charges.js";
 import { loadFreeDays, resolvePortCode } from "../db/_free-days.js";
+import { normalizeCarrier } from "../db/lib/portcharge-close-loop.js";
+import { localNormalizePort } from "./_lane-weeks.js";
 
 const BOXES = ["20GP", "40GP", "40HQ"];
 const FREE_DAYS_SOURCE = "维运网滞箱费计算器(船司官方标准)";
@@ -21,7 +22,7 @@ function text(v) {
 }
 
 function normCarrier(v) {
-  return text(v).toUpperCase().replace(/\s+/g, " ");
+  return normalizeCarrier(v).replace(/\s+/g, " ");
 }
 
 function normBox(v) {
@@ -40,6 +41,45 @@ function emptyAmounts() {
 
 function emptyNotes() {
   return { "20GP": null, "40GP": null, "40HQ": null };
+}
+
+function unitBasisNote(v) {
+  var basis = text(v);
+  if (basis === "bill") return "计价单位:票";
+  if (basis === "container") return "按柜";
+  if (basis === "seal") return "按封";
+  return basis ? "计价单位:" + basis : "";
+}
+
+function feeCategory(row) {
+  var name = text(row.charge_item_name);
+  var route = text(row.route_scope);
+  return route ? name + "(" + route + ")" : name;
+}
+
+function feeNote(row) {
+  var parts = [];
+  var unit = unitBasisNote(row.unit_basis);
+  if (unit) parts.push(unit);
+  if (text(row.station_name)) parts.push("场站:" + text(row.station_name));
+  if (text(row.raw_item_name) && text(row.raw_item_name) !== text(row.charge_item_name)) {
+    parts.push("原名:" + text(row.raw_item_name));
+  }
+  return parts.join(" / ");
+}
+
+function tariffRows(rows) {
+  return rows.map(function(row) {
+    return {
+      container_type: row.container_type,
+      cost_category: feeCategory(row),
+      fee_code: row.charge_item_code,
+      rate: row.amount_cny,
+      currency: "CNY",
+      note: feeNote(row),
+      fee_kind: row.conditional_flag ? "conditional" : "fixed",
+    };
+  });
 }
 
 async function loadToken(pool, code) {
@@ -116,19 +156,48 @@ function duplicateFeeWarnings(feeParts) {
 }
 
 async function loadOfficialFees(pool, carrier, polNormalized) {
+  const statusStats = await pool.query(
+    `SELECT review_status, COUNT(*)::int AS count
+       FROM public.carrier_tariff_standards
+      GROUP BY review_status
+      ORDER BY review_status`
+  );
+  var hasConfirmed = statusStats.rows.some(function(row) {
+    return text(row.review_status) === "confirmed" && Number(row.count) > 0;
+  });
   const { rows } = await pool.query(
-    `SELECT carrier_code, pol, container_type, cost_category, fee_code, rate, currency, note, fee_kind
-       FROM public.freight_port_rates_official
-      WHERE UPPER(TRIM(carrier_code)) = $1
-      ORDER BY fee_kind, fee_code, cost_category, currency, note, container_type`,
-    [carrier]
+    `SELECT carrier, port, container_type, charge_item_code, charge_item_name,
+            raw_item_name, amount_cny, unit_basis, conditional_flag,
+            station_name, route_scope, version_id, valid_from, valid_to,
+            (valid_from IS NOT NULL
+             AND valid_from <= CURRENT_DATE
+             AND (valid_to IS NULL OR valid_to >= CURRENT_DATE)) AS effective_today
+       FROM public.carrier_tariff_standards
+      WHERE ($1::boolean IS FALSE OR review_status = 'confirmed')
+      ORDER BY valid_from DESC NULLS LAST, version_id DESC, charge_item_code,
+               charge_item_name, route_scope, station_name, container_type`,
+    [hasConfirmed]
   );
   var matched = rows.filter(function(row) {
-    return normalizePort(row.pol) === polNormalized;
+    return normCarrier(row.carrier) === carrier
+      && localNormalizePort(row.port) === polNormalized;
   });
+  var effective = matched.filter(function(row) { return row.effective_today === true; });
+  var warnings = [];
+  if (!hasConfirmed) warnings.push("标准价未经人工审核");
+  if (!effective.length && matched.length) {
+    var latest = matched[0];
+    effective = matched.filter(function(row) {
+      return row.version_id === latest.version_id && text(row.valid_from) === text(latest.valid_from);
+    });
+    warnings.push("标准价不在当前有效期，已取最新版本");
+  }
+  var feeRows = tariffRows(effective);
   return {
-    fees: groupedFee(matched, "fixed"),
-    conditional_fees: groupedFee(matched, "conditional"),
+    fees: groupedFee(feeRows, "fixed"),
+    conditional_fees: groupedFee(feeRows, "conditional"),
+    _warn: warnings,
+    _review_status_counts: statusStats.rows,
   };
 }
 
@@ -140,7 +209,7 @@ async function handleGet(pool, req, res) {
   }
 
   var port = await resolvePortCode(pool, rawPol);
-  var feeParts = await loadOfficialFees(pool, carrier, port.normalized);
+  var feeParts = await loadOfficialFees(pool, carrier, localNormalizePort(rawPol));
   var freeDayParts = await loadFreeDays(pool, carrier, port.code, port.name_cn || rawPol);
   var body = {
     ok: true,
@@ -154,7 +223,7 @@ async function handleGet(pool, req, res) {
     free_days_source: FREE_DAYS_SOURCE,
     conditional_fees: feeParts.conditional_fees,
   };
-  var warnings = duplicateFeeWarnings(feeParts);
+  var warnings = [].concat(feeParts._warn || [], duplicateFeeWarnings(feeParts));
   if (warnings.length) body._warn = warnings;
   if (freeDayParts.free_days_reason) body.free_days_reason = freeDayParts.free_days_reason;
   if (freeDayParts.free_days_carrier) body.free_days_carrier = freeDayParts.free_days_carrier;
