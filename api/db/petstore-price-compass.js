@@ -218,7 +218,10 @@ const BUCKETS = [
   { key: "no_basis", label: "⚠️ 没有同品牌的可比报价 · 无法定价", tier: "gray",
     where: "lo IS NULL AND (excluded_brand > 0 OR excluded_price > 0) AND store_price > 0" },
   { key: "super_only", label: "⚠️ 附近只有超市在卖,没有同行报价 · 仅供参考不可定价", tier: "gray",
-    where: "lo IS NULL AND super_lo IS NOT NULL AND store_price > 0" },
+    // 🔴 0909:必须排掉 no_basis 那批,否则「有同行但都不同品牌 + 也有超市在卖」的品
+    //    会被两档各算一次(实测分档合计 23 > 在架有货 21)。
+    //    super_only 的语义是【压根没有同行报价】,不是【没有可用的同行报价】。
+    where: "lo IS NULL AND super_lo IS NOT NULL AND excluded_brand = 0 AND excluded_price = 0 AND store_price > 0" },
   // 🔴 这一档必须排在最前面 —— 它是【数据可信度闸】,不是定价档。
   //    0908 实测 —— 展开看竞店原始标题后【修正了我最初的判断】:
   //    冠能那行商品其实【匹配对了】,竞店标题是「冠能 鸡肉配方成年期全价猫粮 2.5kg/袋*2」,同品牌同配方。
