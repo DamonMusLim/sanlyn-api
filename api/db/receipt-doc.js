@@ -70,17 +70,15 @@ function uniqueNonEmpty(values) {
   return [...new Set(values.map(nonEmptyText).filter(Boolean))];
 }
 
-function contractNosFromPlanRaw(plans) {
-  const pairs = [];
-  for (const pl of plans) {
-    const raw = asObject(pl.raw);
-    for (const [key, value] of Object.entries(raw)) {
-      if (!/contract/i.test(key)) continue;
-      const text = nonEmptyText(value);
-      if (text) pairs.push([key, text]);
-    }
-  }
-  return uniqueNonEmpty(pairs.sort(([a], [b]) => a.localeCompare(b)).map(([, value]) => value));
+// 🔴 2026-09-09 止血:原先这里扫 raw 里 key 含 contract 的项当合同号,是错的。
+// raw 里那些是【第三方之间的合同】,不是我方的:
+//   hengan_contract=HAHHV2604 → 恒安↔HARMONIOUS 的货物合同,跟我方收款无关
+//   contract_sq=MXIAS0000185  → 同样是外部合同
+// 而 orders.contract_no(FS2026...)才是我方销售合同(卖方 BABI/洋宝宝)。
+// Damon 0909 定:【没有我方销售合同时,交易合同号就用提单号】——运费服务贸易里提单本身即运输合同。
+// ⛔ 绝不把第三方合同号印到给银行的合规单据上。
+function contractNosFromBl(plans) {
+  return uniqueNonEmpty(plans.map(pl => nonEmptyText(pl.bl_no)));
 }
 
 function formatMoney(v) {
@@ -215,11 +213,11 @@ export async function renderReceiptDoc(pool, refs, overrides = {}) {
   const customerName = p.customer_cn || p.customer_en || p.customer || "";
   const orderContractNos = uniqueNonEmpty(orders.map(o => stripCompanyPrefix(o.contract_no)));
   const planContractNos = uniqueNonEmpty(plans.flatMap(pl => Array.isArray(pl.contract_nos) ? pl.contract_nos.map(stripCompanyPrefix) : []));
-  const rawContractNos = uniqueNonEmpty(contractNosFromPlanRaw(plans).map(stripCompanyPrefix));
+  const blContractNos = contractNosFromBl(plans);
   const contractNo = overrides.contract_no || (
     orderContractNos.length ? orderContractNos.join(", ")
       : planContractNos.length ? planContractNos.join(", ")
-        : rawContractNos.join(", ")
+        : blContractNos.join(", ")
   );
 
   const bankAmount = formatMoney(overrides.amount_total);
