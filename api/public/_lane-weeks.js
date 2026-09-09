@@ -37,7 +37,9 @@ export const LOCAL_PORT_ALIASES = {
 
 var localPortCache = null;
 var localPortCacheLoading = null;
+var lastPortCacheWarnAt = 0;
 
+// 与 forwarder-services.js:ensurePortCache 同源,改一处要改两处
 export async function ensureLocalPortCache(pool) {
   if (localPortCache) return localPortCache;
   if (!localPortCacheLoading) {
@@ -53,11 +55,16 @@ export async function ensureLocalPortCache(pool) {
         });
       });
       localPortCache = map;
+      localPortCacheLoading = null;
       return map;
     }).catch(function(e) {
-      console.warn("[_lane-weeks] ports cache unavailable; using static aliases", e && e.message);
-      localPortCache = {};
-      return localPortCache;
+      var now = Date.now();
+      if (now - lastPortCacheWarnAt > 60000) {
+        lastPortCacheWarnAt = now;
+        console.warn("[_lane-weeks] ports cache unavailable; using static aliases", e && e.message);
+      }
+      localPortCacheLoading = null;
+      return {};
     });
   }
   return localPortCacheLoading;

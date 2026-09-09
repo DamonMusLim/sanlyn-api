@@ -34,9 +34,11 @@ function bodyOf(req) { return req.body || {}; }
 
 let portAliasCache = null;
 let portAliasCacheLoading = null;
+let lastPortCacheWarnAt = 0;
 
 function portKey(v) { return clean(v).toUpperCase().replace(/\s+/g, ""); }
 
+// 与 _lane-weeks.js:ensureLocalPortCache 同源,改一处要改两处
 async function ensurePortCache(pool) {
   if (portAliasCache) return portAliasCache;
   if (!portAliasCacheLoading) {
@@ -54,11 +56,16 @@ async function ensurePortCache(pool) {
         });
       });
       portAliasCache = map;
+      portAliasCacheLoading = null;
       return map;
     }).catch(e => {
-      console.warn("[forwarder-services] ports cache unavailable; using static aliases", e && e.message);
-      portAliasCache = {};
-      return portAliasCache;
+      const now = Date.now();
+      if (now - lastPortCacheWarnAt > 60000) {
+        lastPortCacheWarnAt = now;
+        console.warn("[forwarder-services] ports cache unavailable; using static aliases", e && e.message);
+      }
+      portAliasCacheLoading = null;
+      return {};
     });
   }
   return portAliasCacheLoading;
