@@ -50,16 +50,15 @@ const BASE = `
              ELSE position(substring(r.product_name from '^[A-Za-z0-9一-鿿]{2,6}') in q.title) > 0
            END AS same_brand,
            CASE
-             WHEN q.price <= 0.5 THEN false
+             WHEN q.orig_price > 0 AND q.price < q.orig_price * 0.3 THEN false
              WHEN q.title ~ '第1件|首件|第一件|爆品价|新客|限购|券后' THEN false
-             WHEN q.orig_price > 0 AND q.price < q.orig_price*0.2 THEN false
              ELSE true
            END AS price_usable,
            CASE
-             WHEN q.price <= 0.5 THEN '占位/钩子价'
-             WHEN q.title ~ '第1件|首件|第一件|爆品价|新客|限购|券后' THEN '有门槛(首件/爆品/新客)'
-             WHEN q.orig_price > 0 AND q.price < q.orig_price*0.2 THEN '低于原价2折,多半是活动首件'
+             WHEN q.orig_price > 0 AND q.price < q.orig_price * 0.3 THEN '低于划线价3折,多半是首件神价/引流钩子'
+             WHEN q.title ~ '第1件|首件|第一件|爆品价|新客|限购|券后' THEN '有门槛(首件/爆品/新客/限购)'
            END AS price_why,
+           (q.orig_price IS NULL OR q.orig_price <= 0) AS price_unverifiable,
            (q.title ~ '\\*[0-9]|[0-9]\\s*袋|[0-9]\\s*包|[0-9]\\s*件装') AS multi_pack
       FROM public.petstore_market_quotes_raw q
       JOIN public.petstore_ops_row r ON r.product_code = q.product_code
@@ -70,18 +69,20 @@ const BASE = `
            count(*) FILTER (WHERE is_peer AND same_brand IS TRUE AND price_usable)::int AS basis_shops,
            count(*) FILTER (WHERE is_peer AND same_brand IS FALSE)::int AS excluded_brand,
            count(*) FILTER (WHERE is_peer AND same_brand IS TRUE AND NOT price_usable)::int AS excluded_price,
-           round(min(price)::numeric,2) AS price_min,
+           count(*) FILTER (WHERE NOT price_usable)::int AS excluded_hook,
+           count(*) FILTER (WHERE price_unverifiable)::int AS unverifiable_cnt,
+           round(min(price) FILTER (WHERE price_usable)::numeric,2) AS price_min,
            round(min(price) FILTER (WHERE is_peer AND same_brand IS TRUE AND price_usable)::numeric,2) AS lo,          -- 主轴:附近最低价(不看销量,65个品全都有)
            round(min(price) FILTER (WHERE NOT is_peer)::numeric,2) AS super_lo,
            count(*) FILTER (WHERE NOT is_peer)::int AS super_shops,
            count(*) FILTER (WHERE monthly_sales IS NOT NULL)::int AS shops_with_sales,
            count(*) FILTER (WHERE monthly_sales IS NOT NULL)::int AS sales_shops_with_data,
-           round(max(price)::numeric,2) AS price_max,
+           round(max(price) FILTER (WHERE price_usable)::numeric,2) AS price_max,
            sum(monthly_sales)::int AS rival_sales,
            max(monthly_sales)::int AS rival_sales_max,
            bool_or(monthly_sales >= 200) AS sales_capped,
-           round(min(price) FILTER (WHERE monthly_sales >= ${VERIFIED_SALES})::numeric,2) AS verified_low,
-           count(*) FILTER (WHERE monthly_sales >= ${VERIFIED_SALES})::int AS verified_shops,
+           round(min(price) FILTER (WHERE monthly_sales >= ${VERIFIED_SALES} AND price_usable)::numeric,2) AS verified_low,
+           count(*) FILTER (WHERE monthly_sales >= ${VERIFIED_SALES} AND price_usable)::int AS verified_shops,
            (array_agg(round(dist_km::numeric,3) ORDER BY (dist_km IS NULL), dist_km, price)
              FILTER (WHERE is_peer AND same_brand IS TRUE AND price_usable))[1] AS nearest_peer_km,
            (array_agg(competitor_name ORDER BY (dist_km IS NULL), dist_km, price)
@@ -99,7 +100,7 @@ const BASE = `
              'unit_100g', CASE WHEN qty_g > 0 THEN round((price/qty_g*100)::numeric,2) END,
              'dist_txt', dist_txt, 'dist_km', dist_km, 'shop_sales', shop_sales,
              'same_brand', same_brand, 'price_usable', price_usable,
-             'price_why', price_why, 'multi_pack', multi_pack,
+             'price_why', price_why, 'price_unverifiable', price_unverifiable, 'multi_pack', multi_pack,
              'captured', captured_at::date::text
            ) ORDER BY (dist_km IS NULL), dist_km, price) AS shops_detail
       FROM latest GROUP BY product_code
@@ -277,7 +278,8 @@ const BUCKETS = [
 
 const ROW_SELECT = `product_code, product_name, spec_text, shelf_code, product_status, category_l1,
   store_price, my_sales, stk, is_own_brand, is_clearing, is_expiring, labels,
-  basis_shops, excluded_brand, excluded_price, price_min, price_max, lo, super_lo, super_shops,
+  basis_shops, excluded_brand, excluded_price, excluded_hook, unverifiable_cnt,
+  price_min, price_max, lo, super_lo, super_shops,
   verified_low, verified_shops, shops_with_sales, sales_shops_with_data, rival_sales,
   rival_sales_max, sales_capped, gap, gap_pct, captured, shops_detail, nearest_peer_km,
   nearest_peer_name, nearest_peer_price, gates, next_step, verdict, note, decided_by,
@@ -368,6 +370,8 @@ async function build(pool) {
       "定价基准只取【同行 + 同品牌 + 可用价】;不同品牌、占位/钩子价、首件/爆品/新客价、低于原价2折的价都不进 lo。没有同品牌可用价时 lo 留空,不硬凑。",
       "即时零售 ≠ 电商:30 分钟送达值溢价,合理是电商价的 1.1~1.3 倍。⛔ 拿淘宝价直接对标必亏(而且现在也没有淘宝数据)。",
       "自有品牌/清仓/临期 一律认【果冻橙标签】(petstore_skus.label_list),⛔不再硬编码品牌名单也不读 own_brand 字段(该字段 2936 个品全是 NULL)。老板在果冻橙后台改标签即刻生效。",
+      "判钩子价看【折扣力度】不看绝对价格:低于自己划线价3折才算钩子。⛔别用「价格小于X元」一刀切 —— 实测45条≤¥0.5的报价里,8条7折以上是真实小单品(猫条15g卖¥0.29划线也¥0.29),按绝对价格切会误杀20条真实报价,反而让 lo 偏高、页面误报「我们贵了」。",
+      "🔴 更根本的问题:【列表页的价本来就都不可信】。美团列表的「第1件¥13.9起」是首件神价,必须点进商品选规格看划线价/到手价才是真实常规价(实证:邻小虎妮可露2.5kg 列表¥13.9,真实常规价划线¥31.69)。本页所有竞店价都是列表价,折扣力度只是【只有列表数据时的次优判据】,真解是进详情页核价。"
     ],
   };
 }
