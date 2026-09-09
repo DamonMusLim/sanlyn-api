@@ -19,7 +19,11 @@ function validBl(v){
 var TYPES={
   fob_portcharge:"港杂单",
   fob_invoice:"海运费单",
-  exw_invoice:"EXW全费用单"
+  exw_invoice:"EXW全费用单",
+  // 跨境业务人民币结算收款说明(2016版)。银行原版母版 receipt-master.docx,一格都不能改;
+  // 后端 receipt-doc.js 默认自动盖章(stamp_seal!==false)。银行到账金额未接入前「收款金额合计」留空,
+  // 绝不用系统报价顶替——那是交给银行的合规单据。见 skill cross-border-receipt-notice。
+  receipt:"收款证明"
 };
 
 var state={
