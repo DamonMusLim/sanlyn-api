@@ -35,7 +35,8 @@ async function listRows(req) {
   const sql = `
     WITH filtered AS (
       SELECT po_no, store_code, supplier, po_status, kind_count, qty_total,
-             total_amount, ali_order_no, ali_freight, purchase_account,
+             total_amount, doc_ref, doc_ref AS require_no, plan_no,
+             ali_order_no, ali_freight, purchase_account,
              logistics_no, logistics_status, purchased_at, expect_arrive_at
         FROM public.petstore_purchase_orders
        WHERE ($1::text IS NULL OR store_code = $1)
@@ -46,7 +47,8 @@ async function listRows(req) {
       SELECT COUNT(*)::int AS total FROM filtered
     ), page_rows AS (
       SELECT po_no, store_code, supplier, po_status, kind_count, qty_total,
-             total_amount, ali_order_no, ali_freight, purchase_account,
+             total_amount, doc_ref, require_no, plan_no,
+             ali_order_no, ali_freight, purchase_account,
              logistics_no, logistics_status, purchased_at, expect_arrive_at
         FROM filtered
        ORDER BY purchased_at DESC NULLS LAST, po_no DESC
