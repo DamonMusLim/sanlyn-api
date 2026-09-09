@@ -1,7 +1,7 @@
 import { getPool, setCors } from "../db.js";
 import { addPendingPlan, attachLaneWeeks, ensureLocalPortCache, finishPendingLane, isPendingShipment, localNormalizePort } from "./_lane-weeks.js";
 import { handleDemoGet } from "./_forwarder-demo-active.js";
-import { cleanText, dateTime, isUsablePortCharge, numOrNull, perContainerCharge, portChargeBoxGroup, publicCargoName, refreshLaneQuoteStats } from "./_forwarder-active-shared.js";
+import { addSupplierPortCharge, attachSupplierPortCharges, cleanText, dateTime, loadSupplierPortCharges, numOrNull, publicCargoName, refreshLaneQuoteStats } from "./_forwarder-active-shared.js";
 import { attachForwarderServiceStatus } from "./_forwarder-service-status.js";
 
 function cleanCode(req){
@@ -120,7 +120,7 @@ async function loadPlans(pool, companyId){
     // TODO: Also keep lanes with future open freight_rfqs when that signal is needed.
     `SELECT sp.id, sp.bl_no, sp.shipment_no, sp.contract_no, sp.pol, sp.pod, sp.etd, sp.container_qty, sp.container_type,
             sp.carrier_code,
-            sp.freight_cost, sp.thc_fee, sp.seal_fee, sp.vgm_fee, sp.doc_fee, sp.eir_fee, sp.port_surcharge_total,
+            sp.freight_cost,
             COALESCE(sp.gross_weight_kg, li.gross_weight_kg) AS gross_weight_kg,
             COALESCE(NULLIF(BTRIM(sp.cargo_description), ''), li.cargo_description) AS cargo_description,
             sp.vessel, sp.voyage, sp.eta,
@@ -337,19 +337,7 @@ function addCarrier(lane, row){
     var pv = carrier.history_prices[ct];
     if (!pv || tk >= pv.t) carrier.history_prices[ct] = { t:tk, usd:usd, as_of:row.etd || null };
   }
-  // 历史港杂(CNY):优先port_surcharge_total,否则各费求和;取最近一条有值的
-  var thc = pos(row.thc_fee), seal = pos(row.seal_fee), vgm = pos(row.vgm_fee), doc = pos(row.doc_fee), eir = pos(row.eir_fee);
-  var sum = (thc||0)+(seal||0)+(vgm||0)+(doc||0)+(eir||0);
-  var perBox = perContainerCharge(row, sum > 0 ? sum : null);
-  var chargeGroup = portChargeBoxGroup(ct);
-  if (chargeGroup && perBox) {
-    if (isUsablePortCharge(perBox.amount)) {
-      var charge = carrier.charges[chargeGroup];
-      if (!charge || tk >= charge.t) carrier.charges[chargeGroup] = { t:tk, total:perBox.amount, qty:perBox.qty, src_plan_id:row.id };
-    } else {
-      carrier.chargeSkipped[chargeGroup] = (carrier.chargeSkipped[chargeGroup] || 0) + 1;
-    }
-  }
+  addSupplierPortCharge(carrier, row, ct, tk);
 }
 
 function startOfToday(){
@@ -387,16 +375,15 @@ function finishCarriers(lane){
     if (ch20 || ch40) out.port_charge_basis = "per_container";
     if (ch20) {
       out.port_charge_20 = ch20.total;
-      out.port_charge_20_src_qty = ch20.qty;
       out.port_charge_20_src_plan_id = ch20.src_plan_id;
     }
     if (ch40) {
       out.port_charge_40 = ch40.total;
-      out.port_charge_40_src_qty = ch40.qty;
       out.port_charge_40_src_plan_id = ch40.src_plan_id;
     }
     if (carrier.chargeSkipped["20"]) out.port_charge_20_skipped = carrier.chargeSkipped["20"];
     if (carrier.chargeSkipped["40"]) out.port_charge_40_skipped = carrier.chargeSkipped["40"];
+    if (carrier.portChargeUnmappedCount) out.port_charge_unmapped_count = carrier.portChargeUnmappedCount;
     return out;
   });
 }
@@ -471,6 +458,7 @@ async function handleGet(pool, token, res){
 
   var closed = await loadClosedMap(pool, supplierName);
   var plans = await loadPlans(pool, token.company_id);
+  attachSupplierPortCharges(plans, await loadSupplierPortCharges(pool, token.company_id, supplierName));
   await ensureLocalPortCache(pool);
   var lanes = await attachLaneWeeks(pool, token.company_id, groupActivePlans(plans, closed));
   await attachForwarderServiceStatus(pool, token, lanes);

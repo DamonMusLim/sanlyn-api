@@ -13,14 +13,6 @@ export function dateTime(v){
   return Number.isFinite(d.getTime()) ? d.getTime() : null;
 }
 
-export function perContainerCharge(row, fallbackTotal){
-  var qty = numOrNull(row && row.container_qty);
-  var total = numOrNull(row && row.port_surcharge_total);
-  if (!(qty > 0)) return null;
-  if (!(total > 0)) total = fallbackTotal;
-  return total > 0 ? { amount:total / qty, qty:qty } : null;
-}
-
 export function portChargeBoxGroup(boxType){
   var s = cleanText(boxType).toUpperCase();
   if (/^20/.test(s)) return "20";
@@ -31,6 +23,105 @@ export function portChargeBoxGroup(boxType){
 export function isUsablePortCharge(amount){
   var n = numOrNull(amount);
   return n != null && n > 0 && n <= 20000;
+}
+
+export async function loadSupplierPortCharges(pool, companyId, supplierName){
+  const { rows } = await pool.query(
+    `WITH candidate AS (
+       SELECT sp.id AS sp_id, sp.carrier_code, sp.container_type, sp.etd,
+              b.id AS bill_id, b.bl_no, b.cost_category, b.amount, b.unit_price,
+              COALESCE(NULLIF(b.currency_norm, ''), b.currency) AS currency,
+              b.charge_basis,
+              CASE
+                WHEN b.link_plan_id = sp.id::text THEN 1
+                WHEN b.resolved_plan_id = sp.id THEN 2
+                ELSE 3
+              END AS match_rank
+         FROM shipping_plans sp
+         JOIN freight_supplier_bills b
+           ON b.link_plan_id = sp.id::text
+           OR b.resolved_plan_id = sp.id
+           OR (sp.bl_no IS NOT NULL AND sp.bl_no <> '' AND b.bl_no = sp.bl_no)
+        WHERE sp.forwarder_company_id = $1
+          AND b.supplier = $2
+          AND (sp.etd >= CURRENT_DATE - interval '6 months' OR sp.etd IS NULL)
+     ), picked AS (
+       SELECT DISTINCT ON (bill_id) *
+         FROM candidate
+        ORDER BY bill_id, match_rank
+     )
+     SELECT p.sp_id, p.carrier_code, p.container_type, p.etd, p.bill_id, p.bl_no,
+            p.cost_category, p.amount, p.unit_price, p.currency, p.charge_basis,
+            i.standard_item_code, i.standard_item_name, i.unit_basis, i.include_in_baseline
+       FROM picked p
+       LEFT JOIN LATERAL (
+         SELECT standard_item_code, standard_item_name, unit_basis, include_in_baseline
+           FROM carrier_tariff_charge_items i
+          WHERE i.raw_item_name = p.cost_category
+            AND i.normalized_carrier IN (COALESCE(NULLIF(UPPER(BTRIM(p.carrier_code)), ''), '*'), '*')
+          ORDER BY CASE WHEN i.normalized_carrier = COALESCE(NULLIF(UPPER(BTRIM(p.carrier_code)), ''), '*') THEN 0 ELSE 1 END,
+                   i.confidence DESC NULLS LAST
+          LIMIT 1
+       ) i ON TRUE
+      ORDER BY p.sp_id, p.bill_id`,
+    [companyId, supplierName]
+  );
+  return rows;
+}
+
+export function attachSupplierPortCharges(plans, billRows){
+  var byPlan = {};
+  (plans || []).forEach(function(row){
+    row._supplier_port_charges = { byGroup:{}, unmapped_count:0 };
+    if (row && row.id != null) byPlan[String(row.id)] = row._supplier_port_charges;
+  });
+  (billRows || []).forEach(function(row){
+    var target = byPlan[String(row.sp_id)];
+    if (!target) return;
+    var feeName = cleanText(row.cost_category);
+    var blNo = cleanText(row.bl_no);
+    var chargeBasis = cleanText(row.charge_basis).toLowerCase();
+    if (chargeBasis !== "per_container") {
+      logUnmappedPortCharge(feeName, blNo, "charge_basis=" + (chargeBasis || "blank"));
+      target.unmapped_count += 1;
+      return;
+    }
+    if (cleanText(row.currency).toUpperCase() !== "CNY") return;
+    if (!row.standard_item_code) {
+      logUnmappedPortCharge(feeName, blNo, "dictionary_missing");
+      target.unmapped_count += 1;
+      return;
+    }
+    if (row.include_in_baseline !== true) return;
+    var unit = numOrNull(row.unit_price);
+    var amount = unit > 0 ? unit : numOrNull(row.amount);
+    var group = portChargeBoxGroup(row.container_type);
+    if (!group || !(amount > 0)) return;
+    var slot = target.byGroup[group] || (target.byGroup[group] = { total:0, src_plan_id:row.sp_id });
+    slot.total += amount;
+  });
+}
+
+function logUnmappedPortCharge(feeName, blNo, reason){
+  console.warn("[port-charge] unmapped fee_name=" + feeName + " bl_no=" + blNo + " reason=" + reason);
+}
+
+export function addSupplierPortCharge(carrier, row, ct, tk){
+  var facts = row && row._supplier_port_charges;
+  var group = portChargeBoxGroup(ct);
+  if (!facts || !group) return;
+  var charge = facts.byGroup[group];
+  if (charge && isUsablePortCharge(charge.total)) {
+    var existing = carrier.charges[group];
+    if (!existing || tk >= existing.t) {
+      carrier.charges[group] = { t:tk, total:charge.total, src_plan_id:charge.src_plan_id };
+    }
+  } else if (charge) {
+    carrier.chargeSkipped[group] = (carrier.chargeSkipped[group] || 0) + 1;
+  }
+  if (facts.unmapped_count) {
+    carrier.portChargeUnmappedCount = (carrier.portChargeUnmappedCount || 0) + facts.unmapped_count;
+  }
 }
 
 function stripSpec(label){
