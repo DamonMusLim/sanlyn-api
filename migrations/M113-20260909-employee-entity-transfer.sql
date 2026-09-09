@@ -50,17 +50,21 @@ SELECT 'm113_action' AS row_type, 'hr_employee_events.insert' AS target,
  ORDER BY e.name;
 
 SELECT 'M113_snapshot_guard' AS phase, 'hr_payroll' AS target,
-       COUNT(*) AS rows_that_would_move
+       COUNT(*) AS rows_before,
+       COALESCE(SUM(net_amount), 0) AS net_sum_before
   FROM hr_payroll
  WHERE company_code = 'BABI'
-   AND period >= '2026-08'
    AND employee_name IN ('李美倩','林彩云','林志凌','邱楚涵');
 
 SELECT 'M113_snapshot_guard' AS phase, 'payroll_sheets' AS target,
-       COUNT(*) AS rows_that_would_move
-  FROM payroll_sheets
- WHERE company_id IN ('37','co-babi')
-   AND period_id >= '2026-08';
+       COUNT(*) AS rows_before,
+       COALESCE(SUM(ps.net_pay), 0) AS net_sum_before
+  FROM payroll_sheets ps
+ WHERE EXISTS (
+       SELECT 1 FROM employees e
+        WHERE e.id = ps.employee_id
+          AND e.name IN ('李美倩','林彩云','林志凌','邱楚涵')
+ );
 
 DO $$
 DECLARE
@@ -68,11 +72,34 @@ DECLARE
   moved_hr integer := 0;
   moved_legacy integer := 0;
   inserted_events integer := 0;
+  payroll_rows_before integer := 0;
+  payroll_net_before numeric := 0;
+  payroll_rows_after integer := 0;
+  payroll_net_after numeric := 0;
+  sheets_rows_before integer := 0;
+  sheets_net_before numeric := 0;
+  sheets_rows_after integer := 0;
+  sheets_net_after numeric := 0;
 BEGIN
   IF NOT live THEN
     RAISE NOTICE 'M113 dry-run only: set app.m113_live=1 to apply';
     RETURN;
   END IF;
+
+  SELECT COUNT(*), COALESCE(SUM(net_amount), 0)
+    INTO payroll_rows_before, payroll_net_before
+    FROM hr_payroll
+   WHERE company_code = 'BABI'
+     AND employee_name IN ('李美倩','林彩云','林志凌','邱楚涵');
+
+  SELECT COUNT(*), COALESCE(SUM(ps.net_pay), 0)
+    INTO sheets_rows_before, sheets_net_before
+    FROM payroll_sheets ps
+   WHERE EXISTS (
+         SELECT 1 FROM employees e
+          WHERE e.id = ps.employee_id
+            AND e.name IN ('李美倩','林彩云','林志凌','邱楚涵')
+   );
 
   UPDATE hr_employees
      SET company_code = 'OCEANBABY'
@@ -109,6 +136,33 @@ BEGIN
 
   RAISE NOTICE 'M113 live applied: hr_employees %, employees %, hr_employee_events %',
                moved_hr, moved_legacy, inserted_events;
+
+  SELECT COUNT(*), COALESCE(SUM(net_amount), 0)
+    INTO payroll_rows_after, payroll_net_after
+    FROM hr_payroll
+   WHERE company_code = 'BABI'
+     AND employee_name IN ('李美倩','林彩云','林志凌','邱楚涵');
+
+  SELECT COUNT(*), COALESCE(SUM(ps.net_pay), 0)
+    INTO sheets_rows_after, sheets_net_after
+    FROM payroll_sheets ps
+   WHERE EXISTS (
+         SELECT 1 FROM employees e
+          WHERE e.id = ps.employee_id
+            AND e.name IN ('李美倩','林彩云','林志凌','邱楚涵')
+   );
+
+  IF payroll_rows_after <> payroll_rows_before
+     OR payroll_net_after IS DISTINCT FROM payroll_net_before THEN
+    RAISE EXCEPTION 'M113 guard failed: hr_payroll snapshot changed, rows % -> %, net % -> %',
+      payroll_rows_before, payroll_rows_after, payroll_net_before, payroll_net_after;
+  END IF;
+
+  IF sheets_rows_after <> sheets_rows_before
+     OR sheets_net_after IS DISTINCT FROM sheets_net_before THEN
+    RAISE EXCEPTION 'M113 guard failed: payroll_sheets snapshot changed, rows % -> %, net % -> %',
+      sheets_rows_before, sheets_rows_after, sheets_net_before, sheets_net_after;
+  END IF;
 END $$;
 
 SELECT 'M113_after_hr_employees' AS phase, id, name, company_code

@@ -30,7 +30,6 @@ WITH target(employee_name, gross_amount, net_amount, tax_amount, note) AS (
 )
 UPDATE hr_payroll p
    SET gross_amount = t.gross_amount,
-       base_amount = t.gross_amount,
        net_amount = t.net_amount,
        tax_amount = t.tax_amount,
        note = t.note,
@@ -93,11 +92,11 @@ INSERT INTO finance_records
    counterparty, counterparty_code, issuing_company, issuing_code, due_date,
    raw, created_by, created_at, updated_at)
 VALUES
-  ('PAY-M111-202606-LINCY-OVERPAID', 'AR', '其他应收款', 'pending', 'CNY', 3395.97, 0,
+  ('PAY-M111-202606-LINCY-OVERPAID', 'in', '其他应收款', 'pending', 'CNY', 3395.97, 0,
    '林彩云', NULL, '厦门巴匕进出口有限公司', 'BABI', DATE '2026-06-30',
    jsonb_build_object('source','M111','period','2026-06','reason','银行按8800档实付8363.65，应发5400档实发4967.68，多发3395.97'),
    'payroll-m111', now(), now()),
-  ('PAY-M111-202606-WITHHELD-ADVANCE', 'AR', '工资垫付', 'pending', 'CNY', 1145.70, 0,
+  ('PAY-M111-202606-WITHHELD-ADVANCE', 'in', '工资垫付', 'pending', 'CNY', 1145.70, 0,
    '林志凌/崔婷雅', NULL, '厦门巴匕进出口有限公司', 'BABI', DATE '2026-06-30',
    jsonb_build_object('source','M111','period','2026-06','林志凌',636.44,'崔婷雅',509.26,'reason','应扣未扣，公司垫付，无还款台账'),
    'payroll-m111', now(), now());

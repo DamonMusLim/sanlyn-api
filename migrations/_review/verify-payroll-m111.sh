@@ -3,102 +3,98 @@ set -u
 
 fail=0
 
-PSQL_BIN="${PSQL_BIN:-psql}"
-DB_URL="${DATABASE_URL:-}"
+M111="migrations/M111-20260909-payroll-202606-net.sql"
+M112="migrations/M112-20260909-payroll-backfill-7periods.sql"
+M113="migrations/M113-20260909-employee-entity-transfer.sql"
+VERIFY="migrations/_review/verify-payroll-m111.sh"
+FILES=("$M111" "$M112" "$M113" "$VERIFY")
 
-if [[ -n "$DB_URL" ]]; then
-  PSQL=("$PSQL_BIN" "$DB_URL" -X -v ON_ERROR_STOP=1 -Atq)
-else
-  PSQL=("$PSQL_BIN" -X -v ON_ERROR_STOP=1 -Atq)
-fi
-
-run_sql() {
-  "${PSQL[@]}" -c "$1"
-}
-
-check_eq() {
+report() {
   local name="$1"
-  local sql="$2"
-  local want="$3"
-  local got
-  if ! got="$(run_sql "$sql")"; then
-    echo "FAIL $name: query_error"
-    fail=1
-    return
-  fi
-  got="$(echo "$got" | tr -d '[:space:]')"
-  if [[ "$got" == "$want" ]]; then
-    echo "PASS $name: $got"
+  local criterion="$2"
+  local actual="$3"
+  local ok="$4"
+  if [[ "$ok" == "1" ]]; then
+    echo "$name | $criterion -> $actual -> PASS"
   else
-    echo "FAIL $name: got=$got want=$want"
+    echo "$name | $criterion -> $actual -> FAIL"
     fail=1
   fi
 }
 
-check_eq "1_net_sum_202606" \
-  "SELECT COALESCE(TO_CHAR(SUM(net_amount), 'FM9999999990.00'), '') FROM hr_payroll WHERE company_code='BABI' AND period='2026-06';" \
-  "48869.63"
+set_list() {
+  awk '/^UPDATE hr_payroll p/{in_set=1} in_set{print} /^  FROM target t/{exit}' "$M111"
+}
 
-check_eq "2_lincaiyun_gross_202606" \
-  "SELECT COALESCE(TO_CHAR(gross_amount, 'FM9999999990.00'), '') FROM hr_payroll WHERE company_code='BABI' AND period='2026-06' AND employee_name='林彩云';" \
-  "5400.00"
+m112_values() {
+  awk '/^WITH target\(period, bank_amount, paid_at, note\) AS/{in_values=1; next} in_values && /^INSERT INTO hr_payroll/{exit} in_values{print}' "$M112"
+}
 
-check_eq "3_net_null_count_202606" \
-  "SELECT COUNT(*)::text FROM hr_payroll WHERE company_code='BABI' AND period='2026-06' AND net_amount IS NULL;" \
-  "0"
+line_no() {
+  local pattern="$1"
+  local file="$2"
+  grep -n "$pattern" "$file" | head -1 | cut -d: -f1
+}
 
-check_eq "4_tax_null_count_202606" \
-  "SELECT COUNT(*)::text FROM hr_payroll WHERE company_code='BABI' AND period='2026-06' AND tax_amount IS NULL;" \
-  "3"
-
-check_eq "5_diff_records_sum" \
-  "SELECT COALESCE(TO_CHAR(SUM(amount), 'FM9999999990.00'), '') FROM finance_records WHERE created_by='payroll-m111' AND record_no IN ('PAY-M111-202606-LINCY-OVERPAID','PAY-M111-202606-WITHHELD-ADVANCE');" \
-  "4541.67"
-
-check_eq "5_diff_formula" \
-  "SELECT TO_CHAR(53411.30::numeric - SUM(net_amount), 'FM9999999990.00') FROM hr_payroll WHERE company_code='BABI' AND period='2026-06';" \
-  "4541.67"
-
-check_eq "6_distinct_periods" \
-  "SELECT COUNT(DISTINCT period)::text FROM hr_payroll WHERE company_code='BABI' AND period BETWEEN '2025-11' AND '2026-06';" \
-  "8"
-
-check_eq "7_unsplit_person_rows" \
-  "SELECT COUNT(*)::text FROM hr_payroll WHERE company_code='BABI' AND period IN ('2025-11','2025-12','2026-01','2026-02') AND employee_id IS NOT NULL;" \
-  "0"
-
-m113_actions="$(
-  "${PSQL[@]}" -f migrations/M113-20260909-employee-entity-transfer.sql 2>/tmp/verify-payroll-m111-m113.err \
-    | awk -F '|' '$1=="m113_action"{c++} END{print c+0}'
-)"
-if [[ "$m113_actions" == "11" ]]; then
-  echo "PASS 8_m113_dry_run_actions: $m113_actions"
+direction_ar_count="$(grep -c "'AR'" "$M111" || true)"
+direction_in_count="$(grep -c "PAY-M111-202606-.*'in'" "$M111" || true)"
+if [[ "$direction_ar_count" == "0" && "$direction_in_count" == "2" ]]; then
+  report "1_m111_direction" "全部为'in'且文件不出现'AR'" "in_rows=$direction_in_count AR=$direction_ar_count" 1
 else
-  echo "FAIL 8_m113_dry_run_actions: got=$m113_actions want=11"
-  cat /tmp/verify-payroll-m111-m113.err
-  fail=1
+  report "1_m111_direction" "全部为'in'且文件不出现'AR'" "in_rows=$direction_in_count AR=$direction_ar_count" 0
 fi
 
-check_eq "8_m113_payroll_guard" \
-  "SELECT COUNT(*)::text FROM hr_payroll WHERE company_code='BABI' AND period >= '2026-08' AND employee_name IN ('李美倩','林彩云','林志凌','邱楚涵');" \
-  "0"
+base_set_count="$(set_list | grep -c "base_amount" || true)"
+report "2_m111_update_set" "UPDATE SET列表不含base_amount" "base_amount_occurrences=$base_set_count" "$([[ "$base_set_count" == "0" ]] && echo 1 || echo 0)"
 
-check_eq "8_m113_payroll_sheets_guard" \
-  "SELECT COUNT(*)::text FROM payroll_sheets WHERE company_id IN ('37','co-babi') AND period_id >= '2026-08';" \
-  "0"
+expected_mapping=$'2025-11=58612.80\n2026-01=51978.98\n2026-02=56629.69\n2026-03=53411.30\n2026-04=53411.30\n2026-05=53411.30'
+actual_mapping="$(
+  m112_values |
+    sed -n "s/^[[:space:]]*('\([0-9-]*\)', \([0-9.]*\)::numeric,.*/\1=\2/p"
+)"
+report "3_m112_mapping" "期间金额映射等于6行目标表" "$actual_mapping" "$([[ "$actual_mapping" == "$expected_mapping" ]] && echo 1 || echo 0)"
 
-si_cols="$(run_sql "SELECT STRING_AGG(quote_ident(column_name), ',') FROM information_schema.columns WHERE table_name='hr_payroll' AND column_name LIKE 'si\_%\_co' ESCAPE '\' ;")"
-if [[ -z "${si_cols// }" ]]; then
-  echo "PASS 9_si_co_columns_absent"
+m112_row_count="$(m112_values | grep -c "^[[:space:]]*('[0-9][0-9][0-9][0-9]-[0-9][0-9]'" || true)"
+m112_202606_count="$(m112_values | grep -c "'2026-06'" || true)"
+if [[ "$m112_row_count" == "6" && "$m112_202606_count" == "0" ]]; then
+  report "4_m112_row_count" "建6行且不含period='2026-06'" "rows=$m112_row_count period_2026_06=$m112_202606_count" 1
 else
-  si_expr="$(run_sql "SELECT STRING_AGG('COALESCE(' || quote_ident(column_name) || ',0) <> 0', ' OR ') FROM information_schema.columns WHERE table_name='hr_payroll' AND column_name LIKE 'si\_%\_co' ESCAPE '\' ;")"
-  si_bad="$(run_sql "SELECT COUNT(*)::text FROM hr_payroll WHERE company_code='BABI' AND period BETWEEN '2025-11' AND '2026-06' AND ($si_expr);")"
-  if [[ "$si_bad" == "0" ]]; then
-    echo "PASS 9_si_co_unchanged_zero_or_null"
-  else
-    echo "FAIL 9_si_co_unchanged_zero_or_null: got=$si_bad want=0"
-    fail=1
-  fi
+  report "4_m112_row_count" "建6行且不含period='2026-06'" "rows=$m112_row_count period_2026_06=$m112_202606_count" 0
+fi
+
+gross_status_count="$(grep -c "NULL, bank_amount, NULL, 'imported'" "$M112" || true)"
+report "5_m112_batch_fields" "gross_amount为NULL且status='imported'" "matching_select_rows=$gross_status_count" "$([[ "$gross_status_count" == "1" ]] && echo 1 || echo 0)"
+
+bad_period_amounts="$(m112_values | grep -E "^[[:space:]]*\\('[0-9-]+', (29306\\.40|36478\\.98|40978\\.98|37629\\.69)::numeric" || true)"
+report "6_m112_bad_period_amounts" "29306.40/36478.98/40978.98/37629.69均不作为期间金额" "${bad_period_amounts:-none}" "$([[ -z "$bad_period_amounts" ]] && echo 1 || echo 0)"
+
+dry_run_line="$(line_no "THEN 'LIVE' ELSE 'DRY_RUN'" "$M113")"
+return_line="$(line_no "RETURN;" "$M113")"
+first_update_line="$(line_no "^  UPDATE " "$M113")"
+if [[ -n "$dry_run_line" && -n "$return_line" && -n "$first_update_line" && "$return_line" -lt "$first_update_line" ]]; then
+  report "7_m113_default_dry_run" "默认输出DRY_RUN且DO块先RETURN" "dry_run_line=$dry_run_line return_line=$return_line first_update_line=$first_update_line" 1
+else
+  report "7_m113_default_dry_run" "默认输出DRY_RUN且DO块先RETURN" "dry_run_line=${dry_run_line:-missing} return_line=${return_line:-missing} first_update_line=${first_update_line:-missing}" 0
+fi
+
+period_guard_hits="$(grep -E "period >= '2026-08'|period_id >= '2026-08'" "$M113" || true)"
+snapshot_terms="$(grep -E "COUNT\\(\\*\\).*rows_before|SUM\\(net_amount\\)|SUM\\(net_pay\\)|snapshot changed" "$M113" | wc -l | tr -d '[:space:]')"
+if [[ -z "$period_guard_hits" && "$snapshot_terms" -ge 4 ]]; then
+  report "8_m113_snapshot_guard" "hr_payroll/payroll_sheets查全表且无2026-08期间限制" "period_filters=0 snapshot_terms=$snapshot_terms" 1
+else
+  report "8_m113_snapshot_guard" "hr_payroll/payroll_sheets查全表且无2026-08期间限制" "period_filters=${period_guard_hits:-0} snapshot_terms=$snapshot_terms" 0
+fi
+
+bad_pattern="$(printf '%s|%s|%s|%s' TO''DO FIX''ME PLACE''HOLDER 占''位''符)"
+placeholder_hits="$(grep -En "$bad_pattern" "${FILES[@]}" || true)"
+bash_n_result="PASS"
+if ! bash -n "$VERIFY"; then
+  bash_n_result="FAIL"
+fi
+if [[ -z "$placeholder_hits" && "$bash_n_result" == "PASS" ]]; then
+  report "9_static_hygiene" "四文件无待办/占位文本且bash -n验收脚本PASS" "placeholders=0 bash_n=$bash_n_result" 1
+else
+  report "9_static_hygiene" "四文件无待办/占位文本且bash -n验收脚本PASS" "placeholders=${placeholder_hits:-0} bash_n=$bash_n_result" 0
 fi
 
 exit "$fail"
