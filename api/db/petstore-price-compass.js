@@ -145,16 +145,20 @@ const BASE = `
                  WHEN lo IS NOT NULL AND store_price > 0 AND (store_price > lo * 3 OR store_price * 3 < lo) THEN 'bad'
                  WHEN basis_shops >= 2 THEN 'ok'
                  WHEN basis_shops = 1 THEN 'warn'
-                 WHEN basis_shops = 0 AND super_shops > 0 THEN 'bad'
+                 WHEN basis_shops = 0 AND excluded_brand > 0 THEN 'bad'
+                 WHEN basis_shops = 0 AND excluded_price > 0 AND excluded_brand = 0 THEN 'bad'
+                 WHEN basis_shops = 0 AND excluded_brand = 0 AND excluded_price = 0 AND super_shops > 0 THEN 'bad'
                  ELSE 'idle'
                END,
                'detail',
                CASE
                  WHEN lo IS NOT NULL AND store_price > 0 AND (store_price > lo * 3 OR store_price * 3 < lo)
                    THEN '差' || round(GREATEST(store_price / NULLIF(lo,0), lo / NULLIF(store_price,0))::numeric,1) || '倍,多半是匹配错或首件神价'
-                 WHEN basis_shops >= 2 THEN basis_shops || '家同品牌可用报价'
-                 WHEN basis_shops = 1 THEN '只有1家同品牌可用报价,样本薄'
-                 WHEN basis_shops = 0 AND super_shops > 0 THEN '只有超市在卖,不能当定价基准'
+                 WHEN basis_shops >= 2 THEN basis_shops || '家同行卖同款'
+                 WHEN basis_shops = 1 THEN '只有1家同行卖同款,样本薄'
+                 WHEN basis_shops = 0 AND excluded_brand > 0 THEN '附近' || excluded_brand || '家同行卖的都不是这个牌子,比不了'
+                 WHEN basis_shops = 0 AND excluded_price > 0 AND excluded_brand = 0 THEN '同行的报价都不可用(占位/钩子价/首件/新客/低折扣),比不了'
+                 WHEN basis_shops = 0 AND excluded_brand = 0 AND excluded_price = 0 AND super_shops > 0 THEN '只有超市在卖,不能当定价基准'
                  ELSE '没有报价'
                END),
              jsonb_build_object('key','movable','label','这个品能不能动价','state',
@@ -199,10 +203,10 @@ const BASE = `
                     ELSE '还没定' END)
            ) AS gates,
            CASE
-             WHEN (lo IS NOT NULL AND store_price > 0 AND (store_price > lo * 3 OR store_price * 3 < lo))
-               OR (basis_shops = 0 AND super_shops > 0) THEN '定「不可比」收起来,别拿它定价'
              WHEN product_name ~ '鲜朗' OR brand_txt ~ '鲜朗' THEN '拉回官方零售价,不按公式'
-             WHEN product_name ~ '${OWN_BRAND_PATTERN}' THEN '不比价 —— 按目标毛利定,卖不动是动销问题不是价格'
+             WHEN product_name ~ '${OWN_BRAND_PATTERN}' THEN '自有品牌不比价 —— 按目标毛利定,卖不动是动销问题不是价格'
+             WHEN (lo IS NOT NULL AND store_price > 0 AND (store_price > lo * 3 OR store_price * 3 < lo))
+               OR (basis_shops = 0 AND (excluded_brand > 0 OR excluded_price > 0 OR super_shops > 0)) THEN '定「不可比」收起来,别拿它定价'
              WHEN my_sales IS NULL OR my_sales = 0 THEN '先查货位和陈列,别急着降价'
              WHEN gap_pct > 20 THEN '贴到 ¥' || nearest_peer_price || '(' || nearest_peer_name || ',' || nearest_peer_km || 'km)'
              WHEN gap_pct < -5 THEN '看是在抢量还是白让利 —— 便宜还卖不动就不是价格问题'
