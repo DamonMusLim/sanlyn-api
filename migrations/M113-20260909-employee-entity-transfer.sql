@@ -1,12 +1,15 @@
 -- M113 · Transfer 4 HR employees from BABI to OCEANBABY effective 2026-08-01.
--- Default is dry-run. To apply intentionally:
+-- Default is dry-run.
+-- 🩸2026-09-09 止血：原写法 current_setting(...,true)='1' 在未设置时返回 NULL，
+--   NULL='1'→NULL，而 IF NOT NULL 不进 THEN，导致「显示 DRY_RUN 却真跑了 LIVE」。
+--   已统一改为 COALESCE(...,'0')='1'，显示与执行走同一表达式。 To apply intentionally:
 --   SET app.m113_live = '1';
 --   \i migrations/M113-20260909-employee-entity-transfer.sql
 -- Revert: update the same hr_employees rows back to BABI, employees company_id back to 37,
 -- and delete transfer events created_by note/source after human review.
 
 SELECT 'M113_mode' AS phase,
-       CASE WHEN current_setting('app.m113_live', true) = '1' THEN 'LIVE' ELSE 'DRY_RUN' END AS mode;
+       CASE WHEN COALESCE(current_setting('app.m113_live', true), '0') = '1' THEN 'LIVE' ELSE 'DRY_RUN' END AS mode;
 
 WITH target(name) AS (
   VALUES ('李美倩'), ('林彩云'), ('林志凌'), ('邱楚涵')
@@ -68,7 +71,7 @@ SELECT 'M113_snapshot_guard' AS phase, 'payroll_sheets' AS target,
 
 DO $$
 DECLARE
-  live boolean := current_setting('app.m113_live', true) = '1';
+  live boolean := COALESCE(current_setting('app.m113_live', true), '0') = '1';
   moved_hr integer := 0;
   moved_legacy integer := 0;
   inserted_events integer := 0;
