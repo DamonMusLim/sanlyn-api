@@ -2,6 +2,7 @@ import { getPool, setCors } from "../db.js";
 import { addPendingPlan, attachLaneWeeks, finishPendingLane, isPendingShipment, localNormalizePort } from "./_lane-weeks.js";
 import { handleDemoGet } from "./_forwarder-demo-active.js";
 import { cleanText, countWeekQuotedCarriers, dateTime, isUsablePortCharge, numOrNull, perContainerCharge, portChargeBoxGroup, publicCargoName } from "./_forwarder-active-shared.js";
+import { attachForwarderServiceStatus } from "./_forwarder-service-status.js";
 
 function cleanCode(req){
   var p = req.params && req.params.code;
@@ -466,6 +467,7 @@ async function handleGet(pool, token, res){
   var closed = await loadClosedMap(pool, supplierName);
   var plans = await loadPlans(pool, token.company_id);
   var lanes = await attachLaneWeeks(pool, token.company_id, groupActivePlans(plans, closed));
+  await attachForwarderServiceStatus(pool, token, lanes);
   lanes.forEach(function(lane){
     lane.week_quoted_carriers = countWeekQuotedCarriers(lane.carriers);
     lane.week_pending_carriers = (lane.carriers || []).length - lane.week_quoted_carriers;
