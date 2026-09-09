@@ -35,7 +35,7 @@ async function listRows(req) {
   const sql = `
     WITH filtered AS (
       SELECT po_no, store_code, supplier, po_status, kind_count, qty_total,
-             total_amount, doc_ref, doc_ref AS require_no, plan_no,
+             total_amount, doc_ref, require_no, plan_no,
              ali_order_no, ali_freight, purchase_account,
              logistics_no, logistics_status, purchased_at, expect_arrive_at
         FROM public.petstore_purchase_orders
