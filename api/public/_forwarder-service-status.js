@@ -14,32 +14,24 @@ export const SERVICE_PLAN_SQL = `
 SELECT sp.id,
        sp.pol,
        sp.container_type AS plan_container_type,
-       sp.factory_company_id AS plan_factory_company_id,
        sp.order_nos,
-       sp_cf.name_cn AS plan_factory_name_cn,
-       sp_cf.name_en AS plan_factory_name_en,
-       sp_cf.code AS plan_factory_code,
        ofac.factory,
-       ofac.factory_company_id,
-       ofac.factory_name_cn,
-       ofac.factory_name_en,
-       ofac.factory_code,
        ofac.order_container_type
   FROM shipping_plans sp
-  LEFT JOIN companies sp_cf ON sp_cf.id = sp.factory_company_id
   LEFT JOIN LATERAL (
     SELECT DISTINCT
-           o.factory,
-           o.factory_company_id,
-           c.name_cn AS factory_name_cn,
-           c.name_en AS factory_name_en,
-           c.code AS factory_code,
+           COALESCE(NULLIF(BTRIM(o.factory), ''), '未标注工厂') AS factory,
            o.container_type AS order_container_type
       FROM orders o
-      LEFT JOIN companies c ON c.id = o.factory_company_id
      WHERE o.order_no = ANY(sp.order_nos)
   ) ofac ON true
- WHERE sp.id = ANY($1::int[])`;
+ WHERE sp.id = ANY($1::int[])
+   AND COALESCE(sp.etd, sp.created_at::date, CURRENT_DATE) >= CURRENT_DATE - INTERVAL '6 months'
+   -- 与 forwarder-services.js:getShipRows 同源:只取货代已接过单的票；改一处要改两处
+   AND (
+     (sp.shipping_status IS NOT NULL AND lower(sp.shipping_status) NOT IN ('planned','draft','pending'))
+     OR sp.carrier_code IS NOT NULL OR sp.vessel IS NOT NULL OR sp.booking_no IS NOT NULL
+   )`;
 
 function text(v) {
   return String(v == null ? "" : v).trim();
@@ -91,13 +83,7 @@ function comboKey(combo) {
 }
 
 function factoryName(row) {
-  return text(row && row.factory)
-    || text(row && row.factory_name_cn)
-    || text(row && row.factory_name_en)
-    || text(row && row.factory_code)
-    || text(row && row.plan_factory_name_cn)
-    || text(row && row.plan_factory_name_en)
-    || text(row && row.plan_factory_code);
+  return text(row && row.factory) || "未标注工厂";
 }
 
 function planPort(row, lanePort) {
