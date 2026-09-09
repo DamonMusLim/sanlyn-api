@@ -34,7 +34,9 @@ async function listRows(req) {
   const params = [storeCode, receiptStatus, poNo, receiptNo, pageSize, offset];
   const sql = `
     WITH filtered AS (
-      SELECT receipt_no, store_code, supplier, po_no, receipt_status, expect_at,
+      SELECT receipt_no, store_code, supplier, po_no, receipt_status,
+             CASE receipt_status WHEN 'pending' THEN '待收货' ELSE receipt_status END AS receipt_status_cn,
+             expect_at,
              received_at, kind_purchase, qty_purchase, amt_purchase, kind_actual,
              qty_actual, amt_actual, operator, auditor, audited_at, notes
         FROM public.petstore_receipts
@@ -45,7 +47,7 @@ async function listRows(req) {
     ), total_count AS (
       SELECT COUNT(*)::int AS total FROM filtered
     ), page_rows AS (
-      SELECT receipt_no, store_code, supplier, po_no, receipt_status, expect_at,
+      SELECT receipt_no, store_code, supplier, po_no, receipt_status, receipt_status_cn, expect_at,
              received_at, kind_purchase, qty_purchase, amt_purchase, kind_actual,
              qty_actual, amt_actual, operator, auditor, audited_at, notes
         FROM filtered

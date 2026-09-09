@@ -34,7 +34,11 @@ async function listRows(req) {
   const params = [storeCode, poStatus, supplier, poNo, pageSize, offset];
   const sql = `
     WITH filtered AS (
-      SELECT po_no, store_code, supplier, po_status, kind_count, qty_total,
+      SELECT po_no, store_code, supplier, po_status,
+             CASE po_status WHEN 'draft' THEN '草稿' WHEN 'ordered' THEN '已下单'
+                  WHEN 'partial' THEN '部分到货' WHEN 'received' THEN '已收货'
+                  WHEN 'cancelled' THEN '已取消' END AS po_status_cn,
+             kind_count, qty_total,
              total_amount, doc_ref, require_no, plan_no,
              ali_order_no, ali_freight, purchase_account,
              logistics_no, logistics_status, purchased_at, expect_arrive_at
@@ -46,7 +50,7 @@ async function listRows(req) {
     ), total_count AS (
       SELECT COUNT(*)::int AS total FROM filtered
     ), page_rows AS (
-      SELECT po_no, store_code, supplier, po_status, kind_count, qty_total,
+      SELECT po_no, store_code, supplier, po_status, po_status_cn, kind_count, qty_total,
              total_amount, doc_ref, require_no, plan_no,
              ali_order_no, ali_freight, purchase_account,
              logistics_no, logistics_status, purchased_at, expect_arrive_at
