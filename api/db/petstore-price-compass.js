@@ -59,7 +59,11 @@ const BASE = `
              WHEN q.title ~ '第1件|首件|第一件|爆品价|新客|限购|券后' THEN '有门槛(首件/爆品/新客/限购)'
            END AS price_why,
            (q.orig_price IS NULL OR q.orig_price <= 0) AS price_unverifiable,
-           (q.title ~ '\\*[0-9]|[0-9]\\s*袋|[0-9]\\s*包|[0-9]\\s*件装') AS multi_pack
+           (q.title ~ '\\*[0-9]|[0-9]\\s*袋|[0-9]\\s*包|[0-9]\\s*件装') AS multi_pack,
+           COALESCE(
+             substring(q.title from '\\*\\s*([0-9]+)')::int,
+             substring(q.title from '([0-9]+)\\s*(袋|包|罐|条|盒)装')::int
+           ) AS pack_n
       FROM public.petstore_market_quotes_raw q
       JOIN public.petstore_ops_row r ON r.product_code = q.product_code
      WHERE q.match_status = 'MATCHED' AND q.price IS NOT NULL
@@ -71,18 +75,18 @@ const BASE = `
            count(*) FILTER (WHERE is_peer AND same_brand IS TRUE AND NOT price_usable)::int AS excluded_price,
            count(*) FILTER (WHERE NOT price_usable)::int AS excluded_hook,
            count(*) FILTER (WHERE price_unverifiable)::int AS unverifiable_cnt,
-           round(min(price) FILTER (WHERE price_usable)::numeric,2) AS price_min,
+           round(min(price) FILTER (WHERE is_peer AND same_brand IS TRUE AND price_usable)::numeric,2) AS price_min,
            round(min(price) FILTER (WHERE is_peer AND same_brand IS TRUE AND price_usable)::numeric,2) AS lo,          -- 主轴:附近最低价(不看销量,65个品全都有)
            round(min(price) FILTER (WHERE NOT is_peer)::numeric,2) AS super_lo,
            count(*) FILTER (WHERE NOT is_peer)::int AS super_shops,
            count(*) FILTER (WHERE monthly_sales IS NOT NULL)::int AS shops_with_sales,
            count(*) FILTER (WHERE monthly_sales IS NOT NULL)::int AS sales_shops_with_data,
-           round(max(price) FILTER (WHERE price_usable)::numeric,2) AS price_max,
+           round(max(price) FILTER (WHERE is_peer AND same_brand IS TRUE AND price_usable)::numeric,2) AS price_max,
            sum(monthly_sales)::int AS rival_sales,
            max(monthly_sales)::int AS rival_sales_max,
            bool_or(monthly_sales >= 200) AS sales_capped,
-           round(min(price) FILTER (WHERE monthly_sales >= ${VERIFIED_SALES} AND price_usable)::numeric,2) AS verified_low,
-           count(*) FILTER (WHERE monthly_sales >= ${VERIFIED_SALES} AND price_usable)::int AS verified_shops,
+           round(min(price) FILTER (WHERE monthly_sales >= ${VERIFIED_SALES} AND is_peer AND same_brand IS TRUE AND price_usable)::numeric,2) AS verified_low,
+           count(*) FILTER (WHERE monthly_sales >= ${VERIFIED_SALES} AND is_peer AND same_brand IS TRUE AND price_usable)::int AS verified_shops,
            (array_agg(round(dist_km::numeric,3) ORDER BY (dist_km IS NULL), dist_km, price)
              FILTER (WHERE is_peer AND same_brand IS TRUE AND price_usable))[1] AS nearest_peer_km,
            (array_agg(competitor_name ORDER BY (dist_km IS NULL), dist_km, price)
@@ -101,6 +105,7 @@ const BASE = `
              'dist_txt', dist_txt, 'dist_km', dist_km, 'shop_sales', shop_sales,
              'same_brand', same_brand, 'price_usable', price_usable,
              'price_why', price_why, 'price_unverifiable', price_unverifiable, 'multi_pack', multi_pack,
+             'pack_n', pack_n, 'unit_price', CASE WHEN pack_n > 0 THEN round((price/pack_n)::numeric,2) END,
              'captured', captured_at::date::text
            ) ORDER BY (dist_km IS NULL), dist_km, price) AS shops_detail
       FROM latest GROUP BY product_code
@@ -371,7 +376,9 @@ async function build(pool) {
       "即时零售 ≠ 电商:30 分钟送达值溢价,合理是电商价的 1.1~1.3 倍。⛔ 拿淘宝价直接对标必亏(而且现在也没有淘宝数据)。",
       "自有品牌/清仓/临期 一律认【果冻橙标签】(petstore_skus.label_list),⛔不再硬编码品牌名单也不读 own_brand 字段(该字段 2936 个品全是 NULL)。老板在果冻橙后台改标签即刻生效。",
       "判钩子价看【折扣力度】不看绝对价格:低于自己划线价3折才算钩子。⛔别用「价格小于X元」一刀切 —— 实测45条≤¥0.5的报价里,8条7折以上是真实小单品(猫条15g卖¥0.29划线也¥0.29),按绝对价格切会误杀20条真实报价,反而让 lo 偏高、页面误报「我们贵了」。",
-      "🔴 更根本的问题:【列表页的价本来就都不可信】。美团列表的「第1件¥13.9起」是首件神价,必须点进商品选规格看划线价/到手价才是真实常规价(实证:邻小虎妮可露2.5kg 列表¥13.9,真实常规价划线¥31.69)。本页所有竞店价都是列表价,折扣力度只是【只有列表数据时的次优判据】,真解是进详情页核价。"
+      "🔴 更根本的问题:【列表页的价本来就都不可信】。美团列表的「第1件¥13.9起」是首件神价,必须点进商品选规格看划线价/到手价才是真实常规价(实证:邻小虎妮可露2.5kg 列表¥13.9,真实常规价划线¥31.69)。本页所有竞店价都是列表价,折扣力度只是【只有列表数据时的次优判据】,真解是进详情页核价。",
+      "🔴 列表页连【规格】都不可信,不只是价格:邻小虎「阿铲严选豆腐猫砂2kg/包」列表价 ¥19.79,实际是 2 包装(单包约 ¥9.9)——标题里看不出。所以「附近最低价」在多件装上会系统性偏高,⛔ 拿它判「我们贵了」之前必须先点进详情页核实件数。",
+      "「验证低价」和价格区间已收紧到【同行 + 同品牌 + 可用价】。此前 ¥19.79 来自邻小虎自有品牌「阿铲严选」,跟我方天王梦不是同一个牌子,却被标成验证低价。"
     ],
   };
 }
