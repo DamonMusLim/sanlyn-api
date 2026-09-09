@@ -30,12 +30,75 @@ function orgCodeSegment(taxNo) {
   return String(taxNo).slice(-10);
 }
 
-// 收款日期栏填打印/生成当天日期（银行单上的"收款日期"经常跟实际处理日期对不上，就填打印这份文件当天）
 function formatReceiptDate(d = new Date()) {
+  if (d == null || d === "") d = new Date();
+  if (typeof d === "string") {
+    const s = d.trim();
+    if (!s) d = new Date();
+    else if (/^\d{4}年\d{1,2}月\d{1,2}日$/.test(s)) return s;
+    else if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(s)) {
+      const [y, m, day] = s.split("-").map(Number);
+      d = new Date(y, m - 1, day);
+    } else {
+      d = new Date(s);
+    }
+  }
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return "";
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}年${m}月${day}日`;
+}
+
+function asObject(raw) {
+  if (!raw) return {};
+  if (typeof raw === "string") {
+    try { return JSON.parse(raw); }
+    catch (_e) { return {}; }
+  }
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+}
+
+function nonEmptyText(v) {
+  if (v == null) return "";
+  if (Array.isArray(v)) return v.map(nonEmptyText).filter(Boolean).join(", ");
+  if (typeof v === "object") return "";
+  return String(v).trim();
+}
+
+function uniqueNonEmpty(values) {
+  return [...new Set(values.map(nonEmptyText).filter(Boolean))];
+}
+
+function contractNosFromPlanRaw(plans) {
+  const pairs = [];
+  for (const pl of plans) {
+    const raw = asObject(pl.raw);
+    for (const [key, value] of Object.entries(raw)) {
+      if (!/contract/i.test(key)) continue;
+      const text = nonEmptyText(value);
+      if (text) pairs.push([key, text]);
+    }
+  }
+  return uniqueNonEmpty(pairs.sort(([a], [b]) => a.localeCompare(b)).map(([, value]) => value));
+}
+
+function formatMoney(v) {
+  if (v == null || v === "") return "";
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(2) : "";
+}
+
+async function loadReceivableAmount(pool, plans) {
+  const blNos = uniqueNonEmpty(plans.map(pl => pl.bl_no));
+  if (!blNos.length) return 0;
+  const r = await pool.query(
+    `SELECT COALESCE(SUM(total_incl_tax), 0) AS amount
+       FROM v_hy_invoice_prep
+      WHERE bl_no = ANY($1::text[])`,
+    [blNos]
+  );
+  return Number(r.rows[0]?.amount || 0);
 }
 
 // 公司抬头模版（Damon 保存的"模版1/模版2..."，可编辑，见 receipt_company_templates 表）
@@ -105,27 +168,35 @@ export async function renderReceiptDoc(pool, refs, overrides = {}) {
   const refList = Array.isArray(refs) ? refs.filter(Boolean) : [refs].filter(Boolean);
   if (!refList.length) return null;
 
-  const ph = refList.map((_, i) => `$${i + 1}`).join(",");
   const planRes = await pool.query(
-    `SELECT * FROM shipping_plans WHERE _id IN (${ph}) OR shipment_no IN (${ph}) OR id::text IN (${ph}) OR bl_no IN (${ph})`,
-    refList
+    `SELECT *
+       FROM shipping_plans
+      WHERE _id = ANY($1::text[])
+         OR shipment_no = ANY($1::text[])
+         OR id::text = ANY($1::text[])
+         OR bl_no = ANY($1::text[])`,
+    [refList]
   );
   if (!planRes.rows.length) return null;
   const plans = planRes.rows;
   const p = plans[0]; // 主票：用于卖方/客户口径判定，多票时金额/合同号取全部汇总
 
   let orders = [];
-  const allOrderNos = plans.flatMap(pl => pl.order_nos || pl.contract_nos || []);
+  const allOrderNos = uniqueNonEmpty(plans.flatMap(pl => [
+    ...(Array.isArray(pl.order_nos) ? pl.order_nos : []),
+    ...(Array.isArray(pl.contract_nos) ? pl.contract_nos : []),
+  ]));
   if (allOrderNos.length > 0) {
-    const ph2 = allOrderNos.map((_, i) => `$${i + 1}`).join(",");
     const oRes = await pool.query(
       `SELECT o._id, o.order_no, o.contract_no, o.customer_po, o.raw,
               COALESCE(ctr.code, c.country) AS country_code
        FROM orders o
        LEFT JOIN companies c ON c.id = o.customer_company_id
        LEFT JOIN countries ctr ON ctr.id = c.country_id
-       WHERE o.order_no IN (${ph2}) OR o.contract_no IN (${ph2}) OR o._id::text IN (${ph2})`,
-      allOrderNos
+       WHERE o.order_no = ANY($1::text[])
+          OR o.contract_no = ANY($1::text[])
+          OR o._id::text = ANY($1::text[])`,
+      [allOrderNos]
     );
     orders = oRes.rows;
   }
@@ -142,25 +213,43 @@ export async function renderReceiptDoc(pool, refs, overrides = {}) {
 
   const sellerCfg = await loadSellerCfg(pool, {}, null, { shipping: true });
   const customerName = p.customer_cn || p.customer_en || p.customer || "";
-  const contractNos = [...new Set(orders.map(o => stripCompanyPrefix(o.contract_no)).filter(Boolean))];
-  const contractNo = contractNos.length
-    ? contractNos.join(", ")
-    : plans.flatMap(pl => Array.isArray(pl.contract_nos) ? pl.contract_nos.map(stripCompanyPrefix) : []).join(", ");
-  // 系统报价金额(单票 freight_total_cny 求和)——仅在银行单没给实收金额时兜底
-  const quotedAmount = plans.reduce((s, pl) => s + Number(pl.freight_total_cny || 0), 0);
-  const amountCny = overrides.amount_total != null && overrides.amount_total !== ""
-    ? Number(overrides.amount_total).toFixed(2)
-    : (quotedAmount > 0 ? quotedAmount.toFixed(2) : "");
+  const orderContractNos = uniqueNonEmpty(orders.map(o => stripCompanyPrefix(o.contract_no)));
+  const planContractNos = uniqueNonEmpty(plans.flatMap(pl => Array.isArray(pl.contract_nos) ? pl.contract_nos.map(stripCompanyPrefix) : []));
+  const rawContractNos = uniqueNonEmpty(contractNosFromPlanRaw(plans).map(stripCompanyPrefix));
+  const contractNo = overrides.contract_no || (
+    orderContractNos.length ? orderContractNos.join(", ")
+      : planContractNos.length ? planContractNos.join(", ")
+        : rawContractNos.join(", ")
+  );
+
+  const bankAmount = formatMoney(overrides.amount_total);
+  let amountCny = bankAmount;
+  let amountSource = bankAmount ? "bank" : "none";
+  if (!amountCny) {
+    const receivableAmount = await loadReceivableAmount(pool, plans);
+    if (receivableAmount > 0) {
+      amountCny = receivableAmount.toFixed(2);
+      amountSource = "receivable";
+    }
+  }
+  if (!amountCny) {
+    const quotedAmount = plans.reduce((s, pl) => s + Number(pl.freight_total_cny || 0), 0);
+    if (quotedAmount > 0) {
+      amountCny = quotedAmount.toFixed(2);
+      amountSource = "quoted";
+    }
+  }
 
   const currency = (overrides.currency || "CNY").toUpperCase();
   const data = {
-    receipt_date: overrides.receipt_date || formatReceiptDate(),
+    receipt_date: formatReceiptDate(overrides.receipt_date),
     receipt_company_name: sellerCfg.nameCN || sellerCfg.nameEN || "",
     receipt_org_code: orgCodeSegment(sellerCfg.taxNo),
     payer_name: overrides.payer_name || customerName,
     payer_country: overrides.payer_country || payerCountry,
     contract_no: contractNo,
     amount_total: amountCny,
+    amount_source: amountSource,
     service_trade_amount: amountCny,
     service_trade_bop_code: "222011", // 出口海运费固定BOP编码(照真实填报案例)
     service_trade_contract_no: contractNo,
@@ -199,7 +288,9 @@ export async function renderReceiptDoc(pool, refs, overrides = {}) {
       amount_total: !data.amount_total,
       payer_name: !data.payer_name,
     },
-    usedBankOverride: !!(overrides.amount_total || overrides.payer_name),
+    data,
+    amount_source: amountSource,
+    usedBankOverride: amountSource === "bank" || !!overrides.payer_name,
   };
 }
 
@@ -219,7 +310,7 @@ export async function renderReceiptDocByTemplate(pool, templateKey, overrides = 
   const orgCode = orgCodeSegment(tpl.org_code_full);
 
   const data = {
-    receipt_date: overrides.receipt_date || formatReceiptDate(),
+    receipt_date: formatReceiptDate(overrides.receipt_date),
     receipt_company_name: tpl.company_name,
     receipt_org_code: orgCode,
     payer_name: overrides.payer_name || "",

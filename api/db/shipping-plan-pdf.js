@@ -228,11 +228,15 @@ export default async function handler(req, res) {
       const _overrides = {};
       if (req.query.bank_amount) _overrides.amount_total = req.query.bank_amount;
       if (req.query.bank_payer) _overrides.payer_name = req.query.bank_payer;
+      if (req.query.receipt_date) _overrides.receipt_date = req.query.receipt_date;
+      if (req.query.payer_country) _overrides.payer_country = req.query.payer_country;
+      if (req.query.contract_no) _overrides.contract_no = req.query.contract_no;
       const _rec = await renderReceiptDoc(pool, _refs, _overrides);
       if (!_rec) return res.status(404).send("<h1>Shipment not found</h1>");
       const _asDocx = String(req.query.format || "") === "docx";
       res.setHeader("Content-Type", _asDocx ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : "application/pdf");
       res.setHeader("Content-Disposition", "inline; filename=" + encodeURIComponent(_asDocx ? _rec.filename.replace(/\.pdf$/, ".docx") : _rec.filename));
+      res.setHeader("X-Receipt-Amount-Source", _rec.amount_source || "none");
       res.setHeader("Cache-Control", "no-cache");
       return res.status(200).send(_asDocx ? _rec.docxBuffer : _rec.pdfBuffer);
     }
