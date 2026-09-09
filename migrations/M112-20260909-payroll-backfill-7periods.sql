@@ -24,11 +24,11 @@ INSERT INTO hr_payroll
   (company_code, employee_id, employee_name, period, pay_type, pay_rate,
    scheduled_days, actual_days, actual_hours, leave_days, overtime_hours,
    base_amount, overtime_amount, commission_amount, deduction_amount, reimb_amount,
-   gross_amount, net_amount, tax_amount, status, note, paid_at, created_at, updated_at)
+   gross_amount, net_amount, tax_amount, status, note, paid_at, created_at)
 SELECT 'BABI', NULL, NULL, period, 'batch', 0,
        0, 0, 0, 0, 0,
        0, 0, 0, 0, 0,
-       NULL, bank_amount, NULL, 'imported', note, paid_at, now(), now()
+       NULL, bank_amount, NULL, 'imported', note, paid_at, now()
   FROM target t
  WHERE NOT EXISTS (
        SELECT 1 FROM hr_payroll p

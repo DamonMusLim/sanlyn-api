@@ -35,8 +35,7 @@ UPDATE hr_payroll p
        note = CASE
                 WHEN COALESCE(p.note, '') = '' THEN '[M111] ' || t.note
                 ELSE p.note || E'\n[M111] ' || t.note
-              END,
-       updated_at = now()
+              END
   FROM target t
  WHERE p.company_code = 'BABI'
    AND p.period = '2026-06'
@@ -73,11 +72,11 @@ INSERT INTO hr_payroll
   (company_code, employee_id, employee_name, period, pay_type, pay_rate,
    scheduled_days, actual_days, actual_hours, leave_days, overtime_hours,
    base_amount, overtime_amount, commission_amount, deduction_amount, reimb_amount,
-   gross_amount, net_amount, tax_amount, status, note, created_at, updated_at)
+   gross_amount, net_amount, tax_amount, status, note, created_at)
 SELECT 'BABI', employee_id, employee_name, '2026-06', pay_type, pay_rate,
        0, 0, 0, 0, 0,
        gross_amount, 0, 0, 0, 0,
-       gross_amount, net_amount, tax_amount, 'confirmed', note, now(), now()
+       gross_amount, net_amount, tax_amount, 'confirmed', note, now()
   FROM src s
  WHERE NOT EXISTS (
        SELECT 1 FROM hr_payroll p
