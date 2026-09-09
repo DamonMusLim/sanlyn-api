@@ -1,37 +1,69 @@
-var SERVICES = ["truck", "customs", "insurance"];
-var RANK = { not_invited:0, invited:1, quoted:2, awarded:3 };
+import { localNormalizePort } from "./_lane-weeks.js";
+
+var RATE_SERVICES = ["truck", "customs"];
 
 export const SERVICE_STATUS_SQL = `
-SELECT r.shipping_plan_id,
-       COALESCE(r.service_type, 'ocean') AS service_type,
-       r.status AS rfq_status,
-       i.id AS item_id,
-       i.selected,
-       i.usd_rate,
-       i.customs_fee,
-       i.trucking_fee
-  FROM freight_rfqs r
-  LEFT JOIN freight_rfq_items i
-    ON i.rfq_id = r.id
-   AND (($2::int IS NOT NULL AND i.forwarder_company_id = $2)
-     OR ($2::int IS NULL AND $3::text <> '' AND i.forwarder_co = $3))
- WHERE r.shipping_plan_id = ANY($1::int[])
-   AND COALESCE(r.service_type, 'ocean') = ANY($4::text[])
- ORDER BY r.shipping_plan_id, service_type, r.id`;
+SELECT service, factory, port, container_type, rate_cny, updated_at
+  FROM forwarder_service_rates
+ WHERE forwarder_company_id = $1
+   AND service = ANY($2::text[])
+   AND rate_cny > 0
+ ORDER BY service, updated_at DESC NULLS LAST, id DESC`;
+
+export const SERVICE_PLAN_SQL = `
+SELECT sp.id,
+       sp.pol,
+       sp.container_type AS plan_container_type,
+       sp.factory_company_id AS plan_factory_company_id,
+       sp.order_nos,
+       sp_cf.name_cn AS plan_factory_name_cn,
+       sp_cf.name_en AS plan_factory_name_en,
+       sp_cf.code AS plan_factory_code,
+       ofac.factory,
+       ofac.factory_company_id,
+       ofac.factory_name_cn,
+       ofac.factory_name_en,
+       ofac.factory_code,
+       ofac.order_container_type
+  FROM shipping_plans sp
+  LEFT JOIN companies sp_cf ON sp_cf.id = sp.factory_company_id
+  LEFT JOIN LATERAL (
+    SELECT DISTINCT
+           o.factory,
+           o.factory_company_id,
+           c.name_cn AS factory_name_cn,
+           c.name_en AS factory_name_en,
+           c.code AS factory_code,
+           o.container_type AS order_container_type
+      FROM orders o
+      LEFT JOIN companies c ON c.id = o.factory_company_id
+     WHERE o.order_no = ANY(sp.order_nos)
+  ) ofac ON true
+ WHERE sp.id = ANY($1::int[])`;
 
 function text(v) {
   return String(v == null ? "" : v).trim();
 }
 
-function emptyCounts() {
-  return { not_invited:0, invited:0, quoted:0, awarded:0 };
+function num(v) {
+  var n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
-function emptyBucket() {
-  return {
-    state:"not_invited",
-    counts:emptyCounts(),
-  };
+function normBox(v) {
+  var s = text(v).toUpperCase();
+  if (!s) return "";
+  if (s.indexOf("20") !== -1) return "20GP";
+  if (s.indexOf("40") !== -1) return "40HQ";
+  return s;
+}
+
+function ymd(v) {
+  if (!v) return null;
+  if (typeof v === "string") return v.slice(0, 10);
+  var d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0");
 }
 
 function planIds(lane) {
@@ -46,57 +78,100 @@ function planIds(lane) {
   return out;
 }
 
-function pricePositive(row) {
-  var svc = text(row && row.service_type).toLowerCase();
-  var key = svc === "truck" || svc === "trucking" ? "trucking_fee"
-    : svc === "customs" ? "customs_fee"
-    : svc === "ocean" ? "usd_rate"
-    : "";
-  if (!key) return false;
-  var n = Number(row && row[key]);
-  return Number.isFinite(n) && n > 0;
+function rateKey(row) {
+  return [
+    localNormalizePort(row && row.port),
+    text(row && row.factory),
+    normBox(row && row.container_type),
+  ].join("\u0001");
 }
 
-function better(a, b) {
-  return RANK[a] >= RANK[b] ? a : b;
+function comboKey(combo) {
+  return [combo.port, combo.factory, combo.box].join("\u0001");
 }
 
-function rowState(row) {
-  if (!row) return "not_invited";
-  if (text(row.rfq_status).toLowerCase() === "awarded" || row.selected === true) return "awarded";
-  if (row.item_id == null) return "invited";
-  return pricePositive(row) ? "quoted" : "invited";
+function factoryName(row) {
+  return text(row && row.factory)
+    || text(row && row.factory_name_cn)
+    || text(row && row.factory_name_en)
+    || text(row && row.factory_code)
+    || text(row && row.plan_factory_name_cn)
+    || text(row && row.plan_factory_name_en)
+    || text(row && row.plan_factory_code);
 }
 
-function buildPlanMap(rows) {
+function planPort(row, lanePort) {
+  return localNormalizePort(row && row.pol) || lanePort;
+}
+
+function planBox(row) {
+  return normBox(row && (row.plan_container_type || row.order_container_type));
+}
+
+function combosForLane(ids, rows, lanePort) {
+  var idSet = {};
+  ids.forEach(function(id) { idSet[id] = true; });
+  var seen = {};
+  var out = [];
+  (rows || []).forEach(function(row) {
+    var id = Number(row.id);
+    if (!idSet[id]) return;
+    var port = planPort(row, lanePort);
+    if (lanePort && port !== lanePort) return;
+    var factory = factoryName(row);
+    var box = planBox(row);
+    if (!port || !factory || !box) return;
+    var combo = { port:port, factory:factory, box:box };
+    var key = comboKey(combo);
+    if (seen[key]) return;
+    seen[key] = true;
+    out.push(combo);
+  });
+  return out;
+}
+
+function buildRateMap(rows) {
   var map = {};
   (rows || []).forEach(function(row) {
-    var pid = Number(row.shipping_plan_id);
-    var svc = text(row.service_type).toLowerCase();
-    if (!Number.isInteger(pid) || SERVICES.indexOf(svc) === -1) return;
-    var bySvc = map[pid] || (map[pid] = {});
-    bySvc[svc] = better(rowState(row), bySvc[svc] || "not_invited");
+    var svc = text(row && row.service).toLowerCase();
+    if (RATE_SERVICES.indexOf(svc) === -1) return;
+    var key = rateKey(row);
+    var rate = num(row && row.rate_cny);
+    if (!key || rate == null || rate <= 0) return;
+    var bySvc = map[svc] || (map[svc] = {});
+    if (!bySvc[key]) {
+      bySvc[key] = { rate_cny:rate, updated_at:ymd(row.updated_at) };
+    }
   });
   return map;
 }
 
-function laneStatus(ids, byPlan) {
-  var out = {};
-  SERVICES.forEach(function(svc) {
-    var bucket = emptyBucket();
-    ids.forEach(function(pid) {
-      var state = byPlan[pid] && byPlan[pid][svc] ? byPlan[pid][svc] : "not_invited";
-      bucket.counts[state] += 1;
-      bucket.state = better(state, bucket.state);
-    });
-    out[svc] = bucket;
+function statusFor(svc, combos, rates) {
+  var bySvc = rates[svc] || {};
+  var covered = 0;
+  var first = null;
+  combos.forEach(function(combo) {
+    var hit = bySvc[comboKey(combo)];
+    if (!hit) return;
+    covered += 1;
+    if (!first) first = hit;
   });
+  var out = {
+    state:covered > 0 ? "has_rate" : "no_rate",
+    covered:covered,
+    total:combos.length,
+  };
+  if (first) {
+    out.rate_cny = first.rate_cny;
+    out.updated_at = first.updated_at;
+  }
   return out;
 }
 
 export async function attachForwarderServiceStatus(pool, token, lanes) {
   var companyId = token && token.company_id ? Number(token.company_id) : null;
-  var forwarderCo = text(token && token.forwarder_co);
+  if (!companyId) return lanes;
+
   var lanePlans = new Map();
   var all = [];
   var seen = {};
@@ -109,12 +184,19 @@ export async function attachForwarderServiceStatus(pool, token, lanes) {
       all.push(id);
     });
   });
-  if (!all.length || (!companyId && !forwarderCo)) return lanes;
+  if (!all.length) return lanes;
 
-  var rows = (await pool.query(SERVICE_STATUS_SQL, [all, companyId, forwarderCo, SERVICES])).rows;
-  var byPlan = buildPlanMap(rows);
+  var planRows = (await pool.query(SERVICE_PLAN_SQL, [all])).rows;
+  var rateRows = (await pool.query(SERVICE_STATUS_SQL, [companyId, RATE_SERVICES])).rows;
+  var rates = buildRateMap(rateRows);
+
   (lanes || []).forEach(function(lane) {
-    lane.service_status = laneStatus(lanePlans.get(lane) || [], byPlan);
+    var lanePort = localNormalizePort(lane && lane.pol);
+    var combos = combosForLane(lanePlans.get(lane) || [], planRows, lanePort);
+    lane.service_status = {
+      truck:statusFor("truck", combos, rates),
+      customs:statusFor("customs", combos, rates),
+    };
   });
   return lanes;
 }
