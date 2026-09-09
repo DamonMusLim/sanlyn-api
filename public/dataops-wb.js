@@ -99,8 +99,26 @@ var PAGES = {
     if (d.error || d.ok===false) return verdict("🔴 "+(d.error||d.message||"取数失败"),"red"), "";
     var c = d.coverage||{};
     verdict(d.verdict, /^🔴/.test(d.verdict) ? "red" : "ok");
-    var money = function(x){ return "¥"+Number(x||0).toLocaleString("zh-CN"); };
     var TIER = {red:"d-red", yellow:"d-yel", green:"d-grn", gray:"d-gry"};
+    var na = '<span class="na">—</span>';
+    var v = function(x){ return (x===null||x===undefined||x==="") ? na : esc(x); };
+    var raw = function(x){ return (x===null||x===undefined||x==="") ? "—" : String(x); };
+    var money = function(x){ return (x===null||x===undefined||x==="") ? na : "¥"+Number(x).toFixed(2); };
+    var moneyText = function(x){ return (x===null||x===undefined||x==="") ? "—" : "¥"+Number(x).toFixed(2); };
+    var pill = function(x){
+      var cls = "p-grade";
+      if (x==="自营") cls = "p-own";
+      else if (x==="倒闭款清仓") cls = "p-clear";
+      else if (x==="临期") cls = "p-exp";
+      else if (x==="热销" || x==="主推") cls = "p-hot";
+      return '<span class="pill2 '+cls+'">'+esc(x)+'</span>';
+    };
+    if (!$("cmpstyle")) {
+      var st = document.createElement("style");
+      st.id = "cmpstyle";
+      st.textContent = ".cmprow{cursor:pointer}.cmprow.clear{background:#fff1f0}.cmprow:hover{background:#f8fafc}.tagbox{display:flex;gap:4px;flex-wrap:wrap}.pill2.p-own{background:#e8f1ff;color:#1455a3;border-color:#bad3ff}.pill2.p-clear{background:#ffe8e8;color:#b4232a;border-color:#ffc4c4}.pill2.p-exp{background:#fff0d9;color:#a45a00;border-color:#ffd89a}.pill2.p-hot{background:#e6f6ed;color:#167347;border-color:#b9e6ca}.pill2.p-grade{background:#f1f3f5;color:#58606d;border-color:#d8dee6}.cmpgrid{display:grid;grid-template-columns:minmax(260px,36%) 1fr;gap:14px}.cmpcol{min-width:0}.cmpcol h4{margin:0 0 10px;font-size:14px}.gate{display:grid;grid-template-columns:24px 1fr;gap:8px;margin:0 0 12px}.gico{font-weight:800;font-size:18px;line-height:20px;text-align:center}.g-ok{color:#17915a}.g-warn{color:#c78405}.g-bad{color:#ce2f36}.g-idle{color:#8b96a8}.gttl{font-weight:700}.gdet{color:#6b7280;font-size:12px;margin-top:2px}.peerrow{border-left:3px solid transparent;padding:8px 9px;border-top:1px solid #edf0f4}.peerrow:first-child{border-top:0}.peerrow.badprice{opacity:.52;text-decoration:line-through}.peerrow.multipack{border-left-color:#f59e0b;background:#fff8ed}.peerline{display:grid;grid-template-columns:64px 72px minmax(130px,1fr) auto;gap:8px;align-items:center}.peerprice{font-weight:800}.peershop{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.peersales{color:#6b7280;text-align:right}.peertags{margin-top:4px;display:flex;gap:4px;flex-wrap:wrap}.peerraw{margin-top:4px;color:#6b7280;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ptag{font-size:12px;border:1px solid #d8dee6;background:#f8fafc;border-radius:4px;padding:1px 5px;color:#4b5563}.ptag.red{background:#ffe8e8;border-color:#ffc4c4;color:#b4232a}.ptag.org{background:#fff0d9;border-color:#ffd89a;color:#a45a00}.ptag.gray{background:#f1f3f5;color:#6b7280}.cmpstat{margin-top:12px;color:#374151}.traffic.ok{color:#137a4b;font-weight:700}.traffic.no{color:#6b7280;font-size:12px}.caveat{margin-top:8px;color:#a45a00}.nextstep{margin-top:10px;background:#fff4c2;border:1px solid #f4d35e;border-radius:6px;padding:9px 11px;font-weight:800}.recheck{margin-bottom:10px;background:#ffe8e8;border-left:4px solid #ce2f36;padding:8px 10px;font-weight:700}.cmpempty{color:#8b96a8;padding:12px}@media(max-width:760px){.cmpgrid{grid-template-columns:1fr}.peerline{grid-template-columns:54px 68px 1fr}.peersales{grid-column:1/-1;text-align:left}}";
+      document.head.appendChild(st);
+    }
 
     // 覆盖率和渠道摆在最上面 —— ⛔ 不许让人以为这 65 个能代表全店
     var h = '<div class="cov bad">对标覆盖 <b>'+(c.matched_sku||0)+'/'+(c.all_sku||0)+'</b>('+
@@ -113,44 +131,50 @@ var PAGES = {
       '<br><b>⚠️ 对上的这些是机器自动配的,抽样约 1/5 会配错品类</b>(例:猫粮配成主食罐)。'+
       '拿去定价前点开核一眼,别直接信。</div>';
 
-    h += '<div class="chan">'+(d.channels||[]).map(function(x){
-      var bad = x.status.indexOf("未开")>=0;
-      return '<span class="ch'+(bad?" off":"")+'"><b>'+esc(x.name)+'</b> '+esc(x.status)+
-             '<i>'+esc(x.detail)+'</i></span>'; }).join("")+'</div>';
+    var extra = '另有 '+num(d.hidden_offshelf)+' 个已下架/无库存的没显示 —— 想看要去「总商品库」';
+    if (d.excluded_hook!==undefined || d.unverifiable_cnt!==undefined) {
+      extra += ' 本页已剔除 '+num(d.excluded_hook)+' 条钩子价 · 另有 '+num(d.unverifiable_cnt)+' 条无划线价无从判断';
+    }
+    h += '<p class="why">'+esc(extra)+'</p>';
 
     if (d.shops && d.shops.length) h += '<p class="why">在采的附近门店:'+
-      d.shops.map(function(s){ return esc(s.competitor_name)+'('+s["品"]+'品)'; }).join(" · ")+'</p>';
+      d.shops.map(function(s){ return esc(s.competitor_name)+'('+esc(s["品"]==null?"—":s["品"])+'品)'; }).join(" · ")+'</p>';
+
+    h += '<div class="chan">'+(d.channels||[]).map(function(x){
+      var bad = String(x.status||"").indexOf("未开")>=0;
+      return '<span class="ch'+(bad?" off":"")+'"><b>'+esc(x.name)+'</b> '+v(x.status)+
+             '<i>'+v(x.detail)+'</i></span>'; }).join("")+'</div>';
 
     (d.groups||[]).forEach(function(g){
       if (!g.count) return;
       h += '<div class="grp"><h3><span class="dot '+(TIER[g.tier]||"d-gry")+'"></span>'+esc(g.label)+
         '<span class="c">'+g.count+'</span>'+
-        '<span class="amt">'+(Number(g.amount_by_price)>0?'占款 '+money(g.amount_by_price):'')+'</span></h3>'+
-        '<p class="gwhy">'+esc(g.why)+'</p>';
+        '<span class="amt">'+(Number(g.amount_by_price)>0?'占款 '+moneyText(g.amount_by_price):'')+'</span></h3>'+
+        (g.why?'<p class="gwhy">'+esc(g.why)+'</p>':'');
       h += '<div class="tw"><table class="g"><tr>'+
-        ['商品编码','品名','规格','我方价','附近最低','价差','我月销','对手月销','库存','货位','状态','采于']
+        ['商品编码','品名','我方价','附近最低','价差','标签','基准家数','货位']
           .map(function(x){return '<th>'+x+'</th>'}).join("")+'</tr>'+
-        g.rows.map(function(r, ri){
+        (g.rows||[]).map(function(r, ri){
           var gp = r.gap_pct;
           var gcls = gp==null ? "" : (gp > 20 ? "hi" : (gp < -20 ? "lo" : ""));
           var key = g.key + "-" + ri;
           if (!window.__CMP) window.__CMP = {};
           window.__CMP[key] = r;
-          return '<tr class="cmprow" data-k="'+key+'">'+
-            '<td class="mono"><span class="cx">▸</span>'+esc(r.product_code)+'</td>'+
-            '<td class="nm" title="'+esc(r.product_name||"")+'">'+esc(r.product_name)+'</td>'+
-            '<td>'+esc(r.spec_text||"")+'</td>'+
-            '<td class="r">¥'+esc(r.store_price)+'</td>'+
-            '<td class="r">¥'+esc(r.lo)+'</td>'+
-            '<td class="r '+gcls+'">'+(gp==null?'<span class="na">—</span>':(gp>0?'+':'')+gp+'%')+'</td>'+
-            '<td class="r">'+(r.my_sales==null?'<span class="na">—</span>':r.my_sales)+'</td>'+
-            '<td class="r">'+(r.rival_sales_max==null
-                 ?'<span class="todo" title="这几家竞店连月销都没采到">无</span>':r.rival_sales_max)+'</td>'+
-            '<td class="r">'+esc(r.stk)+'</td>'+
-            '<td class="mono">'+(r.shelf_code?esc(r.shelf_code):'<span class="todo">无</span>')+'</td>'+
-            '<td>'+(r.product_status==="UP"?'<span class="pill2 p-up">在售</span>'
-                  :'<span class="pill2 p-dn">'+esc(r.product_status||"—")+'</span>')+'</td>'+
-            '<td class="na">'+esc(r.captured||"")+'</td></tr>';
+          var tags = (r.labels||[]).map(pill).join("") || na;
+          var lo = r.lo==null ? '<span class="na" title="没有同品牌的可比报价">—</span>' : money(r.lo);
+          var basis = r.basis_shops==null ? na : esc(r.basis_shops);
+          if (r.basis_shops===0 && r.excluded_brand>0) {
+            basis = '<span title="附近 '+esc(r.excluded_brand)+' 家同行卖的都不是这个牌子,不能作为基准">0('+esc(r.excluded_brand)+'家不同牌)</span>';
+          }
+          return '<tr class="cmprow'+(r.is_clearing?' clear':'')+'" data-k="'+key+'">'+
+            '<td class="mono"><span class="cx">▸</span>'+v(r.product_code)+'</td>'+
+            '<td class="nm" title="'+esc(r.product_name||"")+'">'+(r.is_clearing?'🏷清仓 ':'')+v(r.product_name)+'</td>'+
+            '<td class="r">'+money(r.store_price)+'</td>'+
+            '<td class="r">'+lo+'</td>'+
+            '<td class="r '+gcls+'">'+(gp==null?na:(gp>0?'+':'')+esc(gp)+'%')+'</td>'+
+            '<td><div class="tagbox">'+tags+'</div></td>'+
+            '<td class="r">'+basis+'</td>'+
+            '<td class="mono">'+(r.shelf_code?v(r.shelf_code):'<span class="todo">无</span>')+'</td></tr>';
         }).join("")+'</table></div>';
       if (g.truncated) h += '<p class="gwhy">只列了前 '+g.shown+' 条(共 '+g.count+' 条)。</p>';
       h += '</div>';
@@ -650,7 +674,7 @@ document.addEventListener("click", function(e){
   tr.parentNode.insertBefore(td, tr.nextSibling);
 });
 
-// 比价罗盘:点一行 → 往【下面】展开各家明细。
+// 比价罗盘:点一行 → 往【下面】展开四道闸和附近证据。
 // 🔴 必须显示竞店原始标题 —— 判「是不是匹配错」只能靠它。
 document.addEventListener("click", function(e){
   var tr = e.target.closest && e.target.closest("tr.cmprow");
@@ -663,29 +687,46 @@ document.addEventListener("click", function(e){
   if (!r) return;
   tr.querySelector(".cx").textContent = "▾";
   var cols = tr.querySelectorAll("td").length;
-  var det = (r.shops_detail || []);
-  var body = '<table class="mini"><tr><th>竞店</th><th>它卖的是什么(原始标题)</th>'
-    + '<th class="r">价</th><th class="r">月销</th><th class="r">克重</th><th class="r">每100g</th>'
-    + '<th>匹配规则</th><th>采于</th></tr>'
-    + det.map(function(x){
-        return '<tr><td>'+esc(x.shop)+'</td>'+
-          '<td class="ttl" title="'+esc(x.title||"")+'">'+esc(x.title||"—")+'</td>'+
-          '<td class="r">¥'+x.price+'</td>'+
-          '<td class="r">'+(x.sales==null?'<span class="na">无</span>':x.sales)+
-            (x.sales>=200?' <span class="cap">封顶</span>':'')+'</td>'+
-          '<td class="r">'+(x.qty_g==null?'<span class="na">—</span>':Math.round(x.qty_g)+'g')+'</td>'+
-          '<td class="r">'+(x.unit_100g==null?'<span class="na">—</span>':'¥'+x.unit_100g)+'</td>'+
-          '<td class="na">'+esc(x.rule||"—")+'</td>'+
-          '<td class="na">'+esc(x.captured||"")+'</td></tr>';
-      }).join("") + '</table>';
-  body += '<div class="mktnote">我方 <b>¥'+r.store_price+'</b>('+esc(r.spec_text||"")+')'
-    + ' vs 附近最低 <b>¥'+r.lo+'</b>'
-    + (r.gap_pct!=null ? ' → <b>'+(r.gap_pct>0?'+':'')+r.gap_pct+'%</b>' : '')
-    + ' · 我月销 '+(r.my_sales==null?'—':r.my_sales)
-    + ' / 对手最高月销 '+(r.rival_sales_max==null?'无数据':r.rival_sales_max)
-    + (r.verified_low!=null ? ' · 验证低价 ¥'+r.verified_low+'(月销≥50 的 '+r.verified_shops+' 家)' : '')
-    + '<br>👉 <b>先看上面那列「它卖的是什么」</b> —— 规格对不上就是匹配错了,'
-    + '⛔ 别按这个价差改价,去修匹配。</div>';
+  var raw = function(x){ return (x===null||x===undefined||x==="") ? "—" : String(x); };
+  var money = function(x){ return (x===null||x===undefined||x==="") ? "—" : "¥"+Number(x).toFixed(2); };
+  var stateMap = {ok:["✓","g-ok"], warn:["·","g-warn"], bad:["✗","g-bad"], idle:["·","g-idle"]};
+  var gates = (r.gates||[]).map(function(g){
+    var m = stateMap[g.state] || stateMap.idle;
+    return '<div class="gate"><div class="gico '+m[1]+'">'+m[0]+'</div><div>'+
+      '<div class="gttl">'+esc(raw(g.label))+'</div>'+
+      '<div class="gdet">'+esc(raw(g.detail))+'</div></div></div>';
+  }).join("") || '<div class="cmpempty">未采到闸卡</div>';
+  var peers = (r.shops_detail||[]).map(function(x){
+    var cls = 'peerrow'+(x.price_usable===false?' badprice':'')+(x.multi_pack?' multipack':'');
+    var shop = raw(x.shop);
+    var shortShop = shop.length>14 ? shop.slice(0,14)+'…' : shop;
+    var tags = '<span class="ptag">'+(x.peer?'同行':'超市')+'</span>';
+    if (x.same_brand===false) tags += '<span class="ptag gray">不同牌</span>';
+    if (x.price_usable===false) tags += '<span class="ptag red">'+esc(raw(x.price_why))+'</span>';
+    if (x.pack_n!=null) tags += '<span class="ptag org">'+esc(x.pack_n)+'件装 · 单包'+money(x.unit_price)+'</span>';
+    else if (x.multi_pack) tags += '<span class="ptag org" title="标题里看不出几件,要点进详情页才知道 —— 这个价不能直接和我方单包比">多件价 · 件数未知</span>';
+    if (x.price_unverifiable===true) tags += '<span class="ptag gray">无划线价 · 真伪无从判断</span>';
+    return '<div class="'+cls+'"><div class="peerline">'+
+      '<span>'+esc(raw(x.dist_txt))+'</span><span class="peerprice">'+money(x.price)+'</span>'+
+      '<span class="peershop" title="'+esc(shop)+'">'+esc(shortShop)+'</span>'+
+      '<span class="peersales">'+esc(raw(x.shop_sales))+'</span></div>'+
+      '<div class="peertags">'+tags+'</div>'+
+      '<div class="peerraw" title="'+esc(raw(x.title))+'">'+esc(raw(x.title))+'</div></div>';
+  }).join("") || '<div class="cmpempty">未采到附近门店报价</div>';
+  var body = '';
+  if (r.needs_recheck) {
+    body += '<div class="recheck">🔁 之前定过「'+esc(raw(r.verdict))+'」,当时附近最低 '+money(r.lo_at_decision)+
+      ',现在 '+money(r.lo)+' —— 要重新看</div>';
+  }
+  body += '<div class="cmpgrid"><div class="cmpcol"><h4>四道闸</h4>'+gates+'</div>'+
+    '<div class="cmpcol"><h4>附近怎么卖(按距离,近的在前)</h4>'+peers+'</div></div>';
+  body += '<div class="cmpstat">附近总月销 '+esc(raw(r.rival_sales))+' · 我们月销 '+esc(raw(r.my_sales))+
+    ' · '+esc(raw(r.sales_shops_with_data))+' 家给出月销'+
+    (r.rival_sales_max>=200?' (有店月销到200封顶,分不清卖200和卖爆)':'')+'</div>';
+  if (r.traffic_candidate===true) body += '<div class="traffic ok">🟢 这个品可以作为流量品 —— '+esc(raw(r.traffic_reason))+'</div>';
+  else body += '<div class="traffic no">'+esc(raw(r.traffic_reason))+'</div>';
+  if (r.my_sales_caveat) body += '<div class="caveat">⚠️ '+esc(r.my_sales_caveat)+'</div>';
+  body += '<div class="nextstep">下一步&nbsp;&nbsp;'+esc(raw(r.next_step))+'</div>';
   var d = document.createElement("tr");
   d.className = "cmpdet";
   d.innerHTML = '<td colspan="'+cols+'"><div class="mktbox">'+body+'</div></td>';
