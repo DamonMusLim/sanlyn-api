@@ -70,8 +70,22 @@ export function publicCargoName(v){
 
 export function countWeekQuotedCarriers(carriers){
   return (carriers || []).filter(function(carrier){
-    return (carrier.weeks || []).some(function(week){
-      return week && (week.quoted || Object.keys(week.prices || {}).length > 0);
-    });
+    return carrierHasWeekQuote(carrier);
   }).length;
+}
+
+export function carrierHasWeekQuote(carrier){
+  return (carrier && carrier.weeks || []).some(function(week){
+    return week && (week.quoted || Object.keys(week.prices || {}).length > 0);
+  });
+}
+
+export function refreshLaneQuoteStats(lane){
+  (lane.carriers || []).forEach(function(carrier){
+    carrier.quoted = carrierHasWeekQuote(carrier);
+  });
+  lane.quoted_carriers = countWeekQuotedCarriers(lane.carriers);
+  lane.week_quoted_carriers = lane.quoted_carriers;
+  lane.week_pending_carriers = (lane.carriers || []).length - lane.quoted_carriers;
+  lane.has_any_week_quote = lane.quoted_carriers > 0;
 }

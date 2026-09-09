@@ -1,7 +1,7 @@
 import { getPool, setCors } from "../db.js";
 import { addPendingPlan, attachLaneWeeks, ensureLocalPortCache, finishPendingLane, isPendingShipment, localNormalizePort } from "./_lane-weeks.js";
 import { handleDemoGet } from "./_forwarder-demo-active.js";
-import { cleanText, countWeekQuotedCarriers, dateTime, isUsablePortCharge, numOrNull, perContainerCharge, portChargeBoxGroup, publicCargoName } from "./_forwarder-active-shared.js";
+import { cleanText, dateTime, isUsablePortCharge, numOrNull, perContainerCharge, portChargeBoxGroup, publicCargoName, refreshLaneQuoteStats } from "./_forwarder-active-shared.js";
 import { attachForwarderServiceStatus } from "./_forwarder-service-status.js";
 
 function cleanCode(req){
@@ -320,7 +320,7 @@ function addCarrier(lane, row){
     name:code,
     boxes:{},
     latest:null,
-    prices:{},
+    history_prices:{},
     charges:{},
     chargeSkipped:{},
   });
@@ -334,8 +334,8 @@ function addCarrier(lane, row){
   // 历史海运价:freight_cost=货代收我方价(货代自己的数,Lens可回显),按柜型取最近一条有值的
   var usd = pos(row.freight_cost);
   if (ct && usd != null) {
-    var pv = carrier.prices[ct];
-    if (!pv || tk >= pv.t) carrier.prices[ct] = { t:tk, usd:usd };
+    var pv = carrier.history_prices[ct];
+    if (!pv || tk >= pv.t) carrier.history_prices[ct] = { t:tk, usd:usd, as_of:row.etd || null };
   }
   // 历史港杂(CNY):优先port_surcharge_total,否则各费求和;取最近一条有值的
   var thc = pos(row.thc_fee), seal = pos(row.seal_fee), vgm = pos(row.vgm_fee), doc = pos(row.doc_fee), eir = pos(row.eir_fee);
@@ -368,16 +368,19 @@ function finishCarriers(lane){
   lane.carriers = Object.keys(lane._carriers).sort().map(function(code){
     var carrier = lane._carriers[code];
     var etd = carrier.latest ? carrier.latest.v : null;
-    var prices = {};
-    Object.keys(carrier.prices).forEach(function(b){ prices[b] = carrier.prices[b].usd; });
+    var historyPrices = {}, historyAsOf = null, historyT = -1;
+    Object.keys(carrier.history_prices).forEach(function(b){ var hp = carrier.history_prices[b]; historyPrices[b] = hp.usd;
+      if (hp.t >= historyT) { historyT = hp.t; historyAsOf = hp.as_of; }
+    });
     var out = {
       name:carrier.name,
       boxes:Object.keys(carrier.boxes).sort(),
       etd:formatMD(etd),
       eta:formatMD(addDays(etd, 8)),
       voyage:"",
-      prices:prices,
-      quoted:Object.keys(prices).length > 0,
+      history_prices:historyPrices,
+      history_prices_as_of:historyAsOf,
+      quoted:false,
     };
     // 港杂历史价:现数据多为40柜,填对应柜型;缺则留空由前端显"待填"
     var ch20 = carrier.charges["20"], ch40 = carrier.charges["40"];
@@ -471,10 +474,7 @@ async function handleGet(pool, token, res){
   await ensureLocalPortCache(pool);
   var lanes = await attachLaneWeeks(pool, token.company_id, groupActivePlans(plans, closed));
   await attachForwarderServiceStatus(pool, token, lanes);
-  lanes.forEach(function(lane){
-    lane.week_quoted_carriers = countWeekQuotedCarriers(lane.carriers);
-    lane.week_pending_carriers = (lane.carriers || []).length - lane.week_quoted_carriers;
-  });
+  lanes.forEach(refreshLaneQuoteStats);
   var preferredCarriers = (await pool.query("SELECT COALESCE(preferred_carriers, '{}'::text[]) AS preferred_carriers FROM companies WHERE id = $1 LIMIT 1", [token.company_id])).rows[0]?.preferred_carriers || [];
 
   return send(res, 200, {
