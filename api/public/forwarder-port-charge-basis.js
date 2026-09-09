@@ -1,6 +1,6 @@
 import { getPool, setCors } from "../db.js";
 import { loadFreeDays, resolvePortCode } from "../db/_free-days.js";
-import { normalizeCarrier } from "../db/lib/portcharge-close-loop.js";
+import { normalizeCarrier, normalizeChargeName } from "../db/lib/portcharge-close-loop.js";
 import { localNormalizePort } from "./_lane-weeks.js";
 
 const BOXES = ["20GP", "40GP", "40HQ"];
@@ -33,6 +33,11 @@ function amountOrNull(v) {
   if (v == null || v === "") return null;
   var n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+function positiveAmount(v) {
+  var n = amountOrNull(v);
+  return n != null && n >= 0 ? n : null;
 }
 
 function emptyAmounts() {
@@ -75,7 +80,7 @@ function tariffRows(rows) {
       container_type: row.container_type,
       cost_category: feeCategory(row),
       fee_code: row.charge_item_code,
-      rate: row.amount_cny,
+      rate: null,
       currency: "CNY",
       note: feeNote(row),
       fee_kind: row.conditional_flag ? "conditional" : "fixed",
@@ -102,6 +107,186 @@ async function loadToken(pool, code) {
     return { error: 403, body: { ok: false, error: "token missing company_id" } };
   }
   return { token: token };
+}
+
+async function companyFullName(pool, companyId) {
+  const { rows } = await pool.query(
+    `SELECT COALESCE(NULLIF(name_cn, ''), NULLIF(name_en, ''), code) AS name
+       FROM companies
+      WHERE id = $1
+      LIMIT 1`,
+    [companyId]
+  );
+  return text(rows[0] && rows[0].name);
+}
+
+function inputFees(body) {
+  var fees = Array.isArray(body.fees) ? body.fees : Array.isArray(body.items) ? body.items : [];
+  return fees.map(function(fee) {
+    return {
+      name: text(fee.name || fee.raw_name || fee.cost_category || fee.fee_name),
+      amount: positiveAmount(fee.amount),
+    };
+  }).filter(function(fee) {
+    return fee.name || fee.amount != null;
+  });
+}
+
+function basisCode(unitBasis) {
+  var basis = text(unitBasis).toLowerCase();
+  if (basis === "container") return "per_ctn";
+  if (basis === "bill") return "per_bl";
+  if (basis === "seal") return "per_seal";
+  return "";
+}
+
+async function loadChargeItem(pool, rawName, carrier) {
+  const c = normCarrier(carrier || "*") || "*";
+  const { rows } = await pool.query(
+    `SELECT standard_item_code, standard_item_name, unit_basis, conditional_charge
+       FROM carrier_tariff_charge_items
+      WHERE (normalized_carrier = $1 OR normalized_carrier = '*')
+        AND lower(btrim(raw_item_name)) = lower(btrim($2))
+      ORDER BY (normalized_carrier = $1) DESC, confidence DESC NULLS LAST
+      LIMIT 1`,
+    [c, rawName]
+  );
+  return rows[0] || null;
+}
+
+function pickStandardRows(rows, carrier, pol, box) {
+  var c = normCarrier(carrier);
+  var p = localNormalizePort(pol);
+  var b = normBox(box);
+  var exact = rows.filter(function(row) {
+    return normCarrier(row.carrier) === c
+      && localNormalizePort(row.port) === p
+      && normBox(row.container_type) === b;
+  });
+  if (exact.length) return exact;
+  var lane = rows.filter(function(row) {
+    return localNormalizePort(row.port) === p && normBox(row.container_type) === b;
+  });
+  if (lane.length) return lane;
+  return rows.filter(function(row) { return normBox(row.container_type) === b; });
+}
+
+async function loadConditionalFlag(pool, code, carrier, pol, box, fallback) {
+  const { rows } = await pool.query(
+    `SELECT carrier, port, container_type, required_flag, conditional_flag, valid_from, version_id
+       FROM carrier_tariff_standards
+      WHERE lower(btrim(charge_item_code)) = lower(btrim($1))
+        AND COALESCE(review_status, '') = 'confirmed'
+        AND (valid_from IS NULL OR valid_from <= CURRENT_DATE)
+        AND (valid_to IS NULL OR valid_to >= CURRENT_DATE)
+      ORDER BY valid_from DESC NULLS LAST, version_id DESC NULLS LAST, id DESC`,
+    [code]
+  );
+  var picked = pickStandardRows(rows, carrier, pol, box);
+  if (!picked.length) return !!fallback;
+  return picked.some(function(row) { return row.conditional_flag === true; });
+}
+
+async function normalizeSubmittedFee(pool, fee, carrier, pol, box) {
+  var charge = await normalizeChargeName(pool, fee.name, carrier, "");
+  if (charge.unmapped) return { unmapped: fee.name };
+  var item = await loadChargeItem(pool, fee.name, carrier);
+  var basis = basisCode(item && item.unit_basis);
+  if (!item || !basis) return { unmapped: fee.name };
+  var conditional = await loadConditionalFlag(
+    pool,
+    item.standard_item_code,
+    carrier,
+    pol,
+    box,
+    item.conditional_charge
+  );
+  return {
+    line: {
+      code: item.standard_item_code,
+      name: item.standard_item_name,
+      basis: basis,
+      amount: fee.amount,
+      conditional: conditional,
+    },
+  };
+}
+
+function totals(lines) {
+  return lines.reduce(function(acc, line) {
+    var amount = amountOrNull(line.amount) || 0;
+    if (line.conditional) acc.conditional += amount;
+    else acc.base += amount;
+    return acc;
+  }, { base:0, conditional:0 });
+}
+
+async function upsertLocalCharge(client, params) {
+  const existing = await client.query(
+    `SELECT id
+       FROM local_charges
+      WHERE lower(btrim(carrier)) = lower(btrim($1))
+        AND lower(btrim(pol)) = lower(btrim($2))
+        AND lower(btrim(pod)) = lower(btrim($3))
+        AND lower(btrim(container_type)) = lower(btrim($4))
+        AND lower(btrim(company_name)) = lower(btrim($5))
+        AND COALESCE(is_active, true) IS TRUE
+      ORDER BY updated_at DESC NULLS LAST, id DESC
+      LIMIT 1
+      FOR UPDATE`,
+    [params.carrier, params.pol, params.pod, params.box, params.companyName]
+  );
+  var raw = {
+    source: "forwarder_portal",
+    token_code: params.tokenCode,
+    unmapped: params.unmapped,
+  };
+  if (existing.rows.length) {
+    const updated = await client.query(
+      `UPDATE local_charges
+          SET fees = $2::jsonb,
+              base_total_cny = $3,
+              conditional_total_cny = $4,
+              cost_total = $3,
+              charge_type = 'port_charge',
+              currency = 'CNY',
+              updated_by = $5,
+              raw = COALESCE(raw, '{}'::jsonb) || $6::jsonb,
+              updated_at = now()
+        WHERE id = $1
+        RETURNING *`,
+      [
+        existing.rows[0].id,
+        JSON.stringify(params.lines),
+        params.baseTotal,
+        params.conditionalTotal,
+        params.updatedBy,
+        JSON.stringify(raw),
+      ]
+    );
+    return { row: updated.rows[0], action: "updated" };
+  }
+  const inserted = await client.query(
+    `INSERT INTO local_charges
+       (carrier, pol, pod, container_type, company_name, fees, base_total_cny,
+        conditional_total_cny, cost_total, charge_type, currency, is_active,
+        updated_by, raw, valid_from)
+     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$7,'port_charge','CNY',true,$9,$10::jsonb,CURRENT_DATE)
+     RETURNING *`,
+    [
+      params.carrier,
+      params.pol,
+      params.pod,
+      params.box,
+      params.companyName,
+      JSON.stringify(params.lines),
+      params.baseTotal,
+      params.conditionalTotal,
+      params.updatedBy,
+      JSON.stringify(raw),
+    ]
+  );
+  return { row: inserted.rows[0], action: "inserted" };
 }
 
 function groupedFee(rows, feeKind) {
@@ -241,13 +426,75 @@ async function handleGet(pool, req, res) {
   return send(res, 200, body);
 }
 
+async function handlePost(pool, req, token, res) {
+  var body = req.body || {};
+  var carrier = normCarrier(body.carrier || body.carrier_code);
+  var pol = text(body.pol);
+  var pod = text(body.pod);
+  var box = normBox(body.container_type || body.box);
+  var fees = inputFees(body);
+  if (!carrier || !pol || !pod || !box) {
+    return send(res, 400, { ok: false, error: "carrier_pol_pod_container_type_required" });
+  }
+  if (!fees.length) return send(res, 400, { ok: false, error: "fees_required" });
+
+  var companyName = await companyFullName(pool, token.company_id);
+  if (!companyName) return send(res, 404, { ok: false, error: "company_not_found" });
+
+  var lines = [];
+  var unmapped = [];
+  for (const fee of fees) {
+    if (fee.amount == null) return send(res, 400, { ok: false, error: "fee_amount_required", fee_name: fee.name });
+    var normalized = await normalizeSubmittedFee(pool, fee, carrier, pol, box);
+    if (normalized.unmapped) unmapped.push(normalized.unmapped);
+    if (normalized.line) lines.push(normalized.line);
+  }
+  if (unmapped.length) {
+    return send(res, 422, { ok: false, error: "unmapped_fee_names", unmapped: unmapped });
+  }
+  var sum = totals(lines);
+  var client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    var saved = await upsertLocalCharge(client, {
+      carrier: carrier,
+      pol: pol,
+      pod: pod,
+      box: box,
+      companyName: companyName,
+      lines: lines,
+      baseTotal: sum.base,
+      conditionalTotal: sum.conditional,
+      updatedBy: "portal:" + token.code,
+      tokenCode: token.code,
+      unmapped: unmapped,
+    });
+    await client.query("COMMIT");
+    return send(res, 200, {
+      ok: true,
+      action: saved.action,
+      local_charge: saved.row,
+      unmapped: [],
+      base_total_cny: sum.base,
+      conditional_total_cny: sum.conditional,
+      fees: lines,
+    });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    return send(res, 500, { ok: false, error: e.message });
+  } finally {
+    client.release();
+  }
+}
+
 export default async function handler(req, res) {
-  setCors(req, res, "GET, OPTIONS");
+  setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "GET") return send(res, 405, { ok: false, error: "method_not_allowed" });
+  if (req.method !== "GET" && req.method !== "POST") return send(res, 405, { ok: false, error: "method_not_allowed" });
   const pool = getPool();
   const code = cleanCode(req);
   const loaded = await loadToken(pool, code);
   if (loaded.error) return send(res, loaded.error, loaded.body);
+  if (req.method === "POST") return handlePost(pool, req, loaded.token, res);
   return handleGet(pool, req, res);
 }

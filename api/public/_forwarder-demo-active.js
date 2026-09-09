@@ -150,15 +150,12 @@ function addCarrier(lane, row, etd){
     boxes:{},
     latest:null,
     prices:{},
-    charge:null,
   });
   var ct = normBox(row.container_type);
   if (ct) carrier.boxes[ct] = true;
   if (etd && (!carrier.latest || etd > carrier.latest.v)) carrier.latest = { v:etd };
   var n = numOrNull(row.freight_cost);
   if (ct && n != null) carrier.prices[ct] = n;
-  var port = numOrNull(row.port_surcharge_total);
-  if (ct && port != null) carrier.charge = { box:ct, total:port };
 }
 
 function finishLane(lane){
@@ -182,10 +179,9 @@ function finishLane(lane){
       prices:prices,
       quoted:Object.keys(prices).length > 0,
     };
-    if (carrier.charge) {
-      if (/40/.test(carrier.charge.box)) out.port_charge_40 = carrier.charge.total;
-      else out.port_charge_20 = carrier.charge.total;
-    }
+    out.local_charge_cards = Object.keys(carrier.boxes).sort().map(function(box){
+      return { container_type:box, status:"missing", display:"请填写港杂" };
+    });
     return out;
   });
   delete lane._box; delete lane._cargo; delete lane._carriers; delete lane._etds;

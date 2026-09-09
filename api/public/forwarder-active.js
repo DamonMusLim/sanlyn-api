@@ -1,7 +1,7 @@
 import { getPool, setCors } from "../db.js";
 import { addPendingPlan, attachLaneWeeks, ensureLocalPortCache, finishPendingLane, isPendingShipment, localNormalizePort } from "./_lane-weeks.js";
 import { handleDemoGet } from "./_forwarder-demo-active.js";
-import { addSupplierPortCharge, attachSupplierPortCharges, cleanText, dateTime, loadSupplierPortCharges, numOrNull, publicCargoName, refreshLaneQuoteStats } from "./_forwarder-active-shared.js";
+import { attachForwarderLocalCharges, cleanText, dateTime, loadForwarderLocalCharges, numOrNull, publicCargoName, refreshLaneQuoteStats } from "./_forwarder-active-shared.js";
 import { attachForwarderServiceStatus } from "./_forwarder-service-status.js";
 
 function cleanCode(req){
@@ -78,41 +78,6 @@ async function companyName(pool, companyId){
     [companyId]
   );
   return rows[0] && rows[0].name_cn ? rows[0].name_cn : "";
-}
-
-function paidStatus(v){
-  return cleanText(v).toLowerCase() === "paid";
-}
-
-function closedBills(rows){
-  var byBl = {};
-  (rows || []).forEach(function(row){
-    var bl = cleanText(row.bl_no);
-    if (!bl) return;
-    var g = byBl[bl] || (byBl[bl] = { count:0, ap_paid:true, ar_paid:true, confirmed:false });
-    g.count += 1;
-    if (!paidStatus(row.ap_status)) g.ap_paid = false;
-    if (!paidStatus(row.ar_status)) g.ar_paid = false;
-    if (row.confirmed_at) g.confirmed = true;
-  });
-  var closed = {};
-  Object.keys(byBl).forEach(function(bl){
-    var g = byBl[bl];
-    closed[bl] = g.count > 0 && g.ap_paid && g.ar_paid && g.confirmed;
-  });
-  return closed;
-}
-
-async function loadClosedMap(pool, supplierName){
-  const { rows } = await pool.query(
-    `SELECT bl_no, confirmed_at, ap_status, ar_status
-       FROM freight_supplier_bills
-      WHERE supplier = $1
-        AND bl_no IS NOT NULL
-        AND bl_no <> ''`,
-    [supplierName]
-  );
-  return closedBills(rows);
 }
 
 async function loadPlans(pool, companyId){
@@ -321,8 +286,6 @@ function addCarrier(lane, row){
     boxes:{},
     latest:null,
     history_prices:{},
-    charges:{},
-    chargeSkipped:{},
   });
   var ct = boxType(row.container_type);
   if (ct) carrier.boxes[ct] = true;
@@ -337,7 +300,6 @@ function addCarrier(lane, row){
     var pv = carrier.history_prices[ct];
     if (!pv || tk >= pv.t) carrier.history_prices[ct] = { t:tk, usd:usd, as_of:row.etd || null };
   }
-  addSupplierPortCharge(carrier, row, ct, tk);
 }
 
 function startOfToday(){
@@ -370,22 +332,6 @@ function finishCarriers(lane){
       history_prices_as_of:historyAsOf,
       quoted:false,
     };
-    // 港杂历史价:现数据多为40柜,填对应柜型;缺则留空由前端显"待填"
-    var ch20 = carrier.charges["20"], ch40 = carrier.charges["40"];
-    if (ch20 || ch40) out.port_charge_basis = "per_container";
-    if (ch20) {
-      out.port_charge_20 = ch20.total;
-      out.port_charge_20_parts = ch20.parts;
-      out.port_charge_20_src_plan_id = ch20.src_plan_id;
-    }
-    if (ch40) {
-      out.port_charge_40 = ch40.total;
-      out.port_charge_40_parts = ch40.parts;
-      out.port_charge_40_src_plan_id = ch40.src_plan_id;
-    }
-    if (carrier.chargeSkipped["20"]) out.port_charge_20_skipped = carrier.chargeSkipped["20"];
-    if (carrier.chargeSkipped["40"]) out.port_charge_40_skipped = carrier.chargeSkipped["40"];
-    if (carrier.portChargeUnmappedCount) out.port_charge_unmapped_count = carrier.portChargeUnmappedCount;
     return out;
   });
 }
@@ -458,11 +404,10 @@ async function handleGet(pool, token, res){
   var supplierName = await companyName(pool, token.company_id);
   if (!supplierName) return send(res, 404, { ok:false, error:"company_not_found" });
 
-  var closed = await loadClosedMap(pool, supplierName);
   var plans = await loadPlans(pool, token.company_id);
-  attachSupplierPortCharges(plans, await loadSupplierPortCharges(pool, token.company_id, supplierName));
   await ensureLocalPortCache(pool);
-  var lanes = await attachLaneWeeks(pool, token.company_id, groupActivePlans(plans, closed));
+  var lanes = await attachLaneWeeks(pool, token.company_id, groupActivePlans(plans, {}));
+  attachForwarderLocalCharges(lanes, await loadForwarderLocalCharges(pool, supplierName));
   await attachForwarderServiceStatus(pool, token, lanes);
   lanes.forEach(refreshLaneQuoteStats);
   var preferredCarriers = (await pool.query("SELECT COALESCE(preferred_carriers, '{}'::text[]) AS preferred_carriers FROM companies WHERE id = $1 LIMIT 1", [token.company_id])).rows[0]?.preferred_carriers || [];

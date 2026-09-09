@@ -218,22 +218,7 @@ async function handleGet(pool, token, res){
   var supplierName = await companyName(pool, token.company_id);
   if (!supplierName) return send(res, 404, { ok:false, error:"company_not_found" });
 
-  const bills = await pool.query(
-    `SELECT bl_no, container_no, bill_month, cost_category, amount, currency, link_plan_id,
-            reconciled, confirmed_at, ap_status, ar_status
-       FROM freight_supplier_bills
-      WHERE supplier = $1
-        AND bl_no IS NOT NULL
-        AND bl_no <> ''`,
-    [supplierName]
-  );
-  var byBl = groupBills(bills.rows);
-  try {
-    await attachPlans(pool, token.company_id, byBl);
-  } catch (e) {
-    console.warn("[forwarder-history] attach shipping_plans skipped:", e.message);
-  }
-  var history = finalize(byBl);
+  var history = [];
   var totals = history.reduce(function(acc, item){
     acc.bl_count += 1;
     acc.usd_total = money(acc.usd_total + item.usd_total);
@@ -248,6 +233,7 @@ async function handleGet(pool, token, res){
     forwarder_co:supplierName,
     company_id:token.company_id,
     totals:totals,
+    note:"货代门户不再展示我方账单港杂历史",
     history:history,
   });
 }
