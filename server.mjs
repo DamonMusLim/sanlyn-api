@@ -80,7 +80,13 @@ createServer(async (req, res) => {
     // OPTIONS 预检必须绕过闸:各端点自己在鉴权前就返回 204(见 petstore-*.js 的
     // `if (req.method === "OPTIONS") return res.status(204).end();`)。
     // 把 requireAuth 提前会让预检变成 401,跨域客户端直接坏掉。
-    if (req.method !== "OPTIONS") {
+    // 🔴 0909 止血:/dataops/api/ 这条路的身份【在 nginx 那层已经验过】——
+    //    auth_request /__console_auth(diary_auth cookie)通过之后,nginx 才补上 X-Gateway-Auth。
+    //    而外部直连那条口 /api/db/petstore- 会把同名头【清空】(0907 补的防伪造)。
+    //    实测全站只有这两处转发到 9010,所以带着这个头到达的请求 = 已经过 console 登录。
+    //    ⛔ 不能再要 Bearer,否则整个数据加工中心 401 —— 页面拿 cookie 登录,从来没有 Bearer。
+    const viaGateway = req.headers["x-gateway-auth"] === "gw-dataops-0903";
+    if (req.method !== "OPTIONS" && !viaGateway) {
       if (!requireAuth(req, res)) return;
       if (!(await requirePetstoreTenant(req, res))) return;
     }
