@@ -70,6 +70,7 @@ function feeNote(row) {
 
 function tariffRows(rows) {
   return rows.map(function(row) {
+    var confidence = text(row.review_status) === "pending" ? "pending" : "confirmed";
     return {
       container_type: row.container_type,
       cost_category: feeCategory(row),
@@ -78,6 +79,7 @@ function tariffRows(rows) {
       currency: "CNY",
       note: feeNote(row),
       fee_kind: row.conditional_flag ? "conditional" : "fixed",
+      standard_confidence: confidence,
     };
   });
 }
@@ -122,12 +124,16 @@ function groupedFee(rows, feeKind) {
         currency: text(row.currency) || null,
         note: "",
         fee_kind: feeKind,
+        standard_confidence: "confirmed",
       };
       out.push(byKey[key]);
     }
     var box = normBox(row.container_type);
+    if (text(row.standard_confidence) === "pending") {
+      byKey[key].standard_confidence = "pending";
+    }
     if (Object.prototype.hasOwnProperty.call(byKey[key].amounts, box)) {
-      byKey[key].amounts[box] = amountOrNull(row.rate);
+      byKey[key].amounts[box] = text(row.standard_confidence) === "pending" ? null : amountOrNull(row.rate);
       byKey[key].notes[box] = text(row.note) || null;
       var notes = BOXES.map(function(k) { return byKey[key].notes[k]; })
         .filter(Boolean)
@@ -155,6 +161,11 @@ function duplicateFeeWarnings(feeParts) {
   return warnings;
 }
 
+function pendingFeeCount(feeParts) {
+  return [].concat(feeParts.fees || [], feeParts.conditional_fees || [])
+    .filter(function(fee) { return text(fee.standard_confidence) === "pending"; }).length;
+}
+
 async function loadOfficialFees(pool, carrier, polNormalized) {
   const statusStats = await pool.query(
     `SELECT review_status, COUNT(*)::int AS count
@@ -169,14 +180,13 @@ async function loadOfficialFees(pool, carrier, polNormalized) {
     `SELECT carrier, port, container_type, charge_item_code, charge_item_name,
             raw_item_name, amount_cny, unit_basis, conditional_flag,
             station_name, route_scope, version_id, valid_from, valid_to,
+            review_status,
             (valid_from IS NOT NULL
              AND valid_from <= CURRENT_DATE
              AND (valid_to IS NULL OR valid_to >= CURRENT_DATE)) AS effective_today
        FROM public.carrier_tariff_standards
-      WHERE ($1::boolean IS FALSE OR review_status = 'confirmed')
       ORDER BY valid_from DESC NULLS LAST, version_id DESC, charge_item_code,
-               charge_item_name, route_scope, station_name, container_type`,
-    [hasConfirmed]
+               charge_item_name, route_scope, station_name, container_type`
   );
   var matched = rows.filter(function(row) {
     return normCarrier(row.carrier) === carrier
@@ -222,6 +232,7 @@ async function handleGet(pool, req, res) {
     free_days_match: freeDayParts.free_days_match,
     free_days_source: FREE_DAYS_SOURCE,
     conditional_fees: feeParts.conditional_fees,
+    standards_pending_count: pendingFeeCount(feeParts),
   };
   var warnings = [].concat(feeParts._warn || [], duplicateFeeWarnings(feeParts));
   if (warnings.length) body._warn = warnings;
