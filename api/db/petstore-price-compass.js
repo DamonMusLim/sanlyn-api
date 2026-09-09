@@ -26,6 +26,9 @@ import { requireAuth } from "../auth.js";
 
 const VERIFIED_SALES = 50;
 const STALE_WARN_DAYS = 3;
+const ACTIVE = "COALESCE(product_status <> 'LOWER' AND stk > 0,false)";
+const UNSETTLED = "(verdict IS NULL OR verdict = 'todo')";
+const SETTLED = "(verdict IS NOT NULL AND verdict <> 'todo' AND NOT needs_recheck)";
 
 function json(res, code, body) { return res.status(code).json(body); }
 
@@ -33,7 +36,14 @@ const BASE = `
   WITH latest AS (
     SELECT DISTINCT ON (q.product_code, q.competitor_name)
            q.product_code, q.competitor_name, q.price, q.monthly_sales, q.qty_g, q.captured_at,
-           q.title, q.match_rule,
+           q.title, q.match_rule, q.raw_payload->>'distance' AS dist_txt,
+           CASE
+             WHEN q.raw_payload->>'distance' ~ '^[0-9]+(\\.[0-9]+)?km$'
+               THEN replace(q.raw_payload->>'distance','km','')::numeric
+             WHEN q.raw_payload->>'distance' ~ '^[0-9]+(\\.[0-9]+)?m$'
+               THEN round((replace(q.raw_payload->>'distance','m','')::numeric / 1000),3)
+           END AS dist_km,
+           q.raw_payload->>'shop_month_sales' AS shop_sales,
            (q.competitor_name ~ '宠物|宠|猫粮|狗粮|猫砂|猫罐|猫条|喵|汪|犬|萌宠|萌鸟|爱宠|羊奶粉') AS is_peer
       FROM public.petstore_market_quotes_raw q
      WHERE q.match_status = 'MATCHED' AND q.price IS NOT NULL
@@ -46,26 +56,40 @@ const BASE = `
            round(min(price) FILTER (WHERE NOT is_peer)::numeric,2) AS super_lo,
            count(*) FILTER (WHERE NOT is_peer)::int AS super_shops,
            count(*) FILTER (WHERE monthly_sales IS NOT NULL)::int AS shops_with_sales,
+           count(*) FILTER (WHERE monthly_sales IS NOT NULL)::int AS sales_shops_with_data,
            round(max(price)::numeric,2) AS price_max,
-           sum(COALESCE(monthly_sales,0))::int AS rival_sales,
+           sum(monthly_sales)::int AS rival_sales,
            max(monthly_sales)::int AS rival_sales_max,
            bool_or(monthly_sales >= 200) AS sales_capped,
            round(min(price) FILTER (WHERE monthly_sales >= ${VERIFIED_SALES})::numeric,2) AS verified_low,
            count(*) FILTER (WHERE monthly_sales >= ${VERIFIED_SALES})::int AS verified_shops,
+           (array_agg(round(dist_km::numeric,3) ORDER BY (dist_km IS NULL), dist_km, price)
+             FILTER (WHERE is_peer))[1] AS nearest_peer_km,
+           (array_agg(competitor_name ORDER BY (dist_km IS NULL), dist_km, price)
+             FILTER (WHERE is_peer))[1] AS nearest_peer_name,
+           (array_agg(round(price::numeric,2) ORDER BY (dist_km IS NULL), dist_km, price)
+             FILTER (WHERE is_peer))[1] AS nearest_peer_price,
            max(captured_at)::date::text AS captured,
            -- 🔴 竞店原始标题必须带出去:判「是不是匹配错」只能靠它,
            --    光看价格和百分比人没法判(0908 Damon:「不然看不到更多消息」)
+           -- 🔴 销量两个坑:monthly_sales 最大值恰好 200,疑似平台「200+」封顶;
+           --    172 条同行报价里 41 条(24%)根本没有月销,所以 sales_shops_with_data 必须单独给。
            jsonb_agg(jsonb_build_object(
              'shop', competitor_name, 'peer', is_peer, 'title', title, 'rule', match_rule,
              'price', round(price::numeric,2), 'sales', monthly_sales, 'qty_g', qty_g,
              'unit_100g', CASE WHEN qty_g > 0 THEN round((price/qty_g*100)::numeric,2) END,
+             'dist_txt', dist_txt, 'dist_km', dist_km, 'shop_sales', shop_sales,
              'captured', captured_at::date::text
-           ) ORDER BY price) AS shops_detail
+           ) ORDER BY (dist_km IS NULL), dist_km, price) AS shops_detail
       FROM latest GROUP BY product_code
   ), j AS (
     SELECT a.*, r.product_name, r.spec_text, r.shelf_code, r.product_status, r.store_price,
            k.month_sale AS my_sales, k.category_l1,
+           COALESCE(to_jsonb(k)->>'brand', to_jsonb(r)->>'brand', '') AS brand_txt,
+           COALESCE((to_jsonb(k)->>'own_brand')::boolean, (to_jsonb(r)->>'own_brand')::boolean, false) AS own_brand,
            GREATEST(COALESCE(k.stock_num,0), COALESCE(r.cur_stock,0)) AS stk,
+           v.verdict, v.note, v.decided_by, v.decided_at, v.lo_at_decision,
+           v.store_price_at_decision, v.recheck_pct,
            CASE WHEN a.lo IS NOT NULL AND r.store_price > 0
                 THEN round((r.store_price - a.lo)::numeric, 2) END AS gap,
            CASE WHEN a.lo > 0 AND r.store_price > 0
@@ -73,6 +97,98 @@ const BASE = `
       FROM agg a
       JOIN public.petstore_ops_row r ON r.product_code = a.product_code
       LEFT JOIN public.petstore_skus k ON k.product_code = a.product_code
+      LEFT JOIN public.petstore_price_review v ON v.product_code = a.product_code
+  ), x AS (
+    SELECT j.*,
+           (verdict IS NOT NULL AND verdict <> 'todo' AND lo IS NOT NULL
+            AND lo_at_decision > 0
+            AND abs(lo - lo_at_decision) / lo_at_decision * 100 > recheck_pct) AS needs_recheck,
+           (COALESCE(rival_sales,0) >= 30 AND sales_shops_with_data >= 2
+            AND COALESCE(my_sales,0) < COALESCE(rival_sales,0) * 0.2) AS traffic_candidate,
+           CASE
+             WHEN sales_shops_with_data < 2 THEN '只有' || sales_shops_with_data || '家给出月销,样本不够'
+             WHEN COALESCE(rival_sales,0) < 30 THEN '附近总月销才' || COALESCE(rival_sales,0) || '件,需求本身小'
+             WHEN COALESCE(my_sales,0) >= COALESCE(rival_sales,0) * 0.2
+               THEN '我们已经吃到附近的' || round((COALESCE(my_sales,0) / NULLIF(rival_sales,0)::numeric * 100),0) || '%'
+             ELSE '附近' || sales_shops_with_data || '家在卖共' || rival_sales || '件,我们只做到' || COALESCE(my_sales,0) || '件 —— 有需求没吃到'
+           END AS traffic_reason,
+           CASE WHEN my_sales IS NULL OR my_sales = 0
+                THEN '门店 08-07 起近乎停业,我方月销偏低不全是竞争力问题' END AS my_sales_caveat
+      FROM j
+  ), y AS (
+    SELECT x.*,
+           jsonb_build_array(
+             jsonb_build_object('key','comparable','label','这条比价可信吗','state',
+               CASE
+                 WHEN lo IS NOT NULL AND store_price > 0 AND (store_price > lo * 3 OR store_price * 3 < lo) THEN 'bad'
+                 WHEN peer_shops >= 2 THEN 'ok'
+                 WHEN peer_shops = 1 THEN 'warn'
+                 WHEN peer_shops = 0 AND super_shops > 0 THEN 'bad'
+                 ELSE 'idle'
+               END,
+               'detail',
+               CASE
+                 WHEN lo IS NOT NULL AND store_price > 0 AND (store_price > lo * 3 OR store_price * 3 < lo)
+                   THEN '差' || round(GREATEST(store_price / NULLIF(lo,0), lo / NULLIF(store_price,0))::numeric,1) || '倍,多半是匹配错或首件神价'
+                 WHEN peer_shops >= 2 THEN peer_shops || '家同行报价'
+                 WHEN peer_shops = 1 THEN '只有1家同行,样本薄'
+                 WHEN peer_shops = 0 AND super_shops > 0 THEN '只有超市在卖,不能当定价基准'
+                 ELSE '没有报价'
+               END),
+             jsonb_build_object('key','movable','label','这个品能不能动价','state',
+               CASE
+                 WHEN product_name ~ '鲜朗' OR brand_txt ~ '鲜朗' THEN 'bad'
+                 WHEN own_brand THEN 'bad'
+                 WHEN my_sales IS NULL OR my_sales = 0 THEN 'warn'
+                 ELSE 'ok'
+               END,
+               'detail',
+               CASE
+                 WHEN product_name ~ '鲜朗' OR brand_txt ~ '鲜朗' THEN '鲜朗控价,只能拉回官方价(临期才是例外)'
+                 WHEN own_brand THEN '自有品牌不比价,按目标毛利走'
+                 WHEN my_sales IS NULL OR my_sales = 0 THEN '月销0,先查货位和陈列,多半不是价格问题'
+                 ELSE '可以动'
+               END),
+             jsonb_build_object('key','gap','label','跟附近比贵还是便宜','state',
+               CASE
+                 WHEN lo IS NULL THEN 'idle'
+                 WHEN gap_pct > 20 THEN 'bad'
+                 WHEN gap_pct > 5 THEN 'warn'
+                 WHEN gap_pct >= -5 AND gap_pct <= 5 THEN 'ok'
+                 WHEN gap_pct < -5 THEN 'warn'
+                 ELSE 'idle'
+               END,
+               'detail',
+               CASE
+                 WHEN lo IS NULL THEN '没有同行报价,比不了'
+                 WHEN gap_pct > 20 THEN '比最近的同行贵 ' || gap_pct || '%'
+                 WHEN gap_pct > 5 THEN '贵 ' || gap_pct || '%'
+                 WHEN gap_pct >= -5 AND gap_pct <= 5 THEN '基本持平'
+                 WHEN gap_pct < -5 THEN '比附近便宜 ' || abs(gap_pct) || '%'
+               END),
+             jsonb_build_object('key','decided','label','定结论了没','state',
+               CASE WHEN verdict IS NOT NULL AND verdict <> 'todo' THEN 'ok' ELSE 'idle' END,
+               'detail',
+               CASE WHEN verdict IS NOT NULL AND verdict <> 'todo'
+                    THEN '已定:' || CASE verdict
+                      WHEN 'not_comparable' THEN '不可比' WHEN 'priced_ok' THEN '价格合理'
+                      WHEN 'intentional' THEN '有意策略' WHEN 'cannot_follow' THEN '不能跟'
+                      ELSE verdict END || ' · ' || decided_at::date::text
+                    ELSE '还没定' END)
+           ) AS gates,
+           CASE
+             WHEN (lo IS NOT NULL AND store_price > 0 AND (store_price > lo * 3 OR store_price * 3 < lo))
+               OR (peer_shops = 0 AND super_shops > 0) THEN '定「不可比」收起来,别拿它定价'
+             WHEN product_name ~ '鲜朗' OR brand_txt ~ '鲜朗' THEN '拉回官方零售价,不按公式'
+             WHEN own_brand THEN '不比价 —— 按目标毛利定,卖不动是动销问题不是价格'
+             WHEN my_sales IS NULL OR my_sales = 0 THEN '先查货位和陈列,别急着降价'
+             WHEN gap_pct > 20 THEN '贴到 ¥' || nearest_peer_price || '(' || nearest_peer_name || ',' || nearest_peer_km || 'km)'
+             WHEN gap_pct < -5 THEN '看是在抢量还是白让利 —— 便宜还卖不动就不是价格问题'
+             WHEN gap_pct >= -5 AND gap_pct <= 5 THEN '不用动'
+             WHEN verdict IS NOT NULL AND verdict <> 'todo' THEN '已定过,附近价没大动'
+             ELSE '先看一眼'
+           END AS next_step
+      FROM x
   )`;
 
 // 分档互斥,相加必须等于总数(自校验)
@@ -111,35 +227,54 @@ const BUCKETS = [
     why: "比附近最低价还低。是有意抢量还是白送毛利,自己确认 —— 对手月销拿不到时无法替你判断。" },
 ];
 
+const ROW_SELECT = `product_code, product_name, spec_text, shelf_code, product_status, category_l1,
+  store_price, my_sales, stk, peer_shops, price_min, price_max, lo, super_lo, super_shops,
+  verified_low, verified_shops, shops_with_sales, sales_shops_with_data, rival_sales,
+  rival_sales_max, sales_capped, gap, gap_pct, captured, shops_detail, nearest_peer_km,
+  nearest_peer_name, nearest_peer_price, gates, next_step, verdict, note, decided_by,
+  decided_at, lo_at_decision, store_price_at_decision, recheck_pct, needs_recheck,
+  traffic_candidate, traffic_reason, my_sales_caveat`;
+
+async function queryGroup(pool, b, where) {
+  const agg = await pool.query(`${BASE}
+    SELECT count(*)::int AS n,
+           COALESCE(round(SUM(GREATEST(stk,0) * store_price)::numeric,0),0)::text AS amount_by_price
+      FROM y WHERE ${where}`);
+  let rows = [];
+  if (agg.rows[0].n > 0) {
+    const r = await pool.query(`${BASE}
+      SELECT ${ROW_SELECT}
+        FROM y WHERE ${where}
+       ORDER BY (needs_recheck IS NOT TRUE), (gap_pct IS NULL), abs(COALESCE(gap_pct,0)) DESC, product_code
+       LIMIT 200`);
+    rows = r.rows;
+  }
+  return { ...b, count: agg.rows[0].n, amount_by_price: agg.rows[0].amount_by_price,
+           shown: rows.length, truncated: agg.rows[0].n > rows.length, rows };
+}
+
 async function build(pool) {
   const groups = [];
+  groups.push(await queryGroup(pool, {
+    key: "recheck", tier: "red", label: "🔁 之前定过,但附近价变了 · 要重新看"
+  }, `${ACTIVE} AND needs_recheck`));
   for (const b of BUCKETS) {
-    const agg = await pool.query(`${BASE}
-      SELECT count(*)::int AS n,
-             COALESCE(round(SUM(GREATEST(stk,0) * store_price)::numeric,0),0)::text AS amount_by_price
-        FROM j WHERE ${b.where}`);
-    let rows = [];
-    if (agg.rows[0].n > 0) {
-      const r = await pool.query(`${BASE}
-        SELECT product_code, product_name, spec_text, shelf_code, product_status, category_l1,
-               store_price, my_sales, stk, peer_shops, price_min, price_max,
-               lo, super_lo, super_shops, verified_low, verified_shops, shops_with_sales,
-               rival_sales, rival_sales_max, sales_capped, gap, gap_pct, captured, shops_detail
-          FROM j WHERE ${b.where}
-         ORDER BY (gap_pct IS NULL), abs(COALESCE(gap_pct,0)) DESC, product_code
-         LIMIT 200`);
-      rows = r.rows;
-    }
-    groups.push({ ...b, count: agg.rows[0].n, amount_by_price: agg.rows[0].amount_by_price,
-                  shown: rows.length, truncated: agg.rows[0].n > rows.length, rows });
+    groups.push(await queryGroup(pool, b, `${ACTIVE} AND ${UNSETTLED} AND NOT needs_recheck AND (${b.where})`));
   }
+  groups.push(await queryGroup(pool, {
+    key: "settled", tier: "gray", label: "✅ 已定结论(折叠)"
+  }, `${ACTIVE} AND ${SETTLED}`));
 
   const cov = await pool.query(`${BASE}
     SELECT (SELECT count(*)::int FROM public.petstore_ops_row) AS all_sku,
            count(*)::int AS matched_sku,
-           count(*) FILTER (WHERE stk > 0)::int AS matched_instock,
+           count(*) FILTER (WHERE ${ACTIVE})::int AS matched_instock,
+           count(*) FILTER (WHERE NOT ${ACTIVE})::int AS hidden_offshelf,
+           count(*) FILTER (WHERE ${ACTIVE} AND ${UNSETTLED})::int AS pending,
+           count(*) FILTER (WHERE ${ACTIVE} AND needs_recheck)::int AS recheck,
+           count(*) FILTER (WHERE ${ACTIVE} AND ${SETTLED})::int AS settled,
            max(captured) AS captured,
-           count(DISTINCT category_l1)::int AS cats FROM j`);
+           count(DISTINCT category_l1)::int AS cats FROM y`);
   const c = cov.rows[0];
   const shops = await pool.query(`
     SELECT competitor_name, count(DISTINCT product_code)::int AS 品,
@@ -150,20 +285,19 @@ async function build(pool) {
     ? Math.floor((Date.now() - new Date(c.captured + "T00:00:00+08:00").getTime()) / 86400000) : null;
 
   const tot = groups.reduce((a, g) => a + g.count, 0);
-  const red = groups.filter((g) => g.tier === "red").reduce((a, g) => a + g.count, 0);
-  const verdict = red > 0
-    ? `🔴 ${red} 个品要处理(贵过附近 20% 以上,或 便宜却卖不动)`
-    : (tot ? "✅ 已对标的品里没有红档" : "⚠️ 没有任何品有竞品对标");
+  const verdict = c.pending === 0 && c.recheck === 0
+    ? "✅ 待比价都定完了,附近价也没大动"
+    : `🔴 ${c.pending} 个待定 · ${c.recheck} 个要复核(附近价变了) · ${c.settled} 个已定`;
 
   return {
     verdict,
+    hidden_offshelf: c.hidden_offshelf,
     coverage: {
       all_sku: c.all_sku, matched_sku: c.matched_sku, matched_instock: c.matched_instock,
       pct: c.all_sku ? Math.round(c.matched_sku * 1000 / c.all_sku) / 10 : 0,
       captured: c.captured, stale_days: stale,
     },
     shops: shops.rows,
-    // ⛔ 空栏不许假装在采
     channels: [
       { name: "附近门店(美团)", status: "有数据", detail: `${shops.rows.length} 家 · 覆盖 ${c.matched_sku} 个品`
         + (stale > STALE_WARN_DAYS ? ` · 已停采 ${stale} 天` : "") },
@@ -172,7 +306,9 @@ async function build(pool) {
     ],
     groups, total_matched: tot,
     caveats: [
+      `另有 ${c.hidden_offshelf} 个已下架/无库存的没显示。`,
       `覆盖率只有 ${c.matched_sku}/${c.all_sku} 个规格。⛔ 不许拿这 ${c.matched_sku} 个的分布去代表全店 —— 剩下的不是「没问题」,是「没看过」。`,
+      "门店 2026-08 起近乎停业:最近一笔销售 2026-09-05,近7天只有13个品有销。⛔ 我方月销偏低不全是竞争力问题。",
       "每家竞店只取该品最新一条报价。原表曾被重导 7 遍(28,408→4,102 已于 0908 清理),⛔任何直接 sum 都会虚高。",
       `🔴 去重后 80 条竞店报价里【43 条(54%)根本没采到月销】,月销≥${VERIFIED_SALES} 的只有 2 条。所以主轴用【我方 vs 附近最低价】(65 个品全有价);「验证低价」只在有月销时作为加分标注出现,⛔ 它覆盖不了大盘。`,
       `「验证低价」= 月销≥${VERIFIED_SALES} 的店里的最低价。⛔ 不用「最高月销那家的价」:竞店月销最大值恰好 200,疑似平台「200+」封顶,分不清卖 200 和卖爆。`,
