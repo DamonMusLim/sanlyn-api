@@ -4,6 +4,16 @@ function text(v) {
   return String(v == null ? "" : v).trim();
 }
 
+function stripLeadingCn(v) {
+  var raw = text(v);
+  var stripped = raw.replace(/^[\u4e00-\u9fff]+/, "").trim();
+  return stripped || raw;
+}
+
+function portCacheKey(v) {
+  return stripLeadingCn(v).toUpperCase().replace(/\s+/g, "");
+}
+
 function pos(v) {
   var n = Number(v);
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -17,12 +27,41 @@ export const LOCAL_PORT_ALIASES = {
   SHANGHAI: ["SHANGHAI", "上海"],
   LIANYUNGANG: ["LIANYUNGANG", "连云港"],
   DALIAN: ["DALIAN", "大连"],
-  PORTKLANGWESTPORT: ["PORT KLANG WESTPORT", "PKG WESTPORT", "巴生西"],
+  PORTKLANG: ["PORT KLANG", "PORT KELANG", "KLANG", "KELANG", "巴生港", "巴生"],
+  PORTKLANGWESTPORT: ["PORT KLANG WESTPORT", "PORT KLANG WEST", "PORT KELANG WEST", "PORT KELANG WESTPORT", "PKG WESTPORT", "巴生西"],
   PORTKLANGNORTHPORT: ["PORT KLANG NORTHPORT", "PORT KLANG NORTH", "PKG NORTHPORT", "巴生北"],
   KOTAKINABALU: ["KOTA KINABALU", "亚庇"],
   PASIRGUDANG: ["PASIR GUDANG", "新山"],
   CHITTAGONG: ["CHITTAGONG", "吉大港"],
 };
+
+var localPortCache = null;
+var localPortCacheLoading = null;
+
+export async function ensureLocalPortCache(pool) {
+  if (localPortCache) return localPortCache;
+  if (!localPortCacheLoading) {
+    localPortCacheLoading = pool.query(
+      "SELECT name_cn, unlocode, code FROM ports WHERE COALESCE(name_cn, '') <> ''"
+    ).then(function(q) {
+      var map = {};
+      (q.rows || []).forEach(function(r) {
+        var name = text(r.name_cn);
+        [r.unlocode, r.code, r.name_cn].forEach(function(v) {
+          var key = portCacheKey(v);
+          if (name && key) map[key] = name;
+        });
+      });
+      localPortCache = map;
+      return map;
+    }).catch(function(e) {
+      console.warn("[_lane-weeks] ports cache unavailable; using static aliases", e && e.message);
+      localPortCache = {};
+      return localPortCache;
+    });
+  }
+  return localPortCacheLoading;
+}
 
 export const MARKET_CARRIER_ALIASES = {
   "IAL运达航运": "IAL",
@@ -163,8 +202,10 @@ export function finishPendingLane(lane) {
 }
 
 export function localNormalizePort(v) {
-  var official = normalizePort(v);
-  var direct = text(v).toUpperCase().replace(/\s+/g, "");
+  var clean = stripLeadingCn(v);
+  var cached = localPortCache && localPortCache[portCacheKey(clean)];
+  var official = cached || normalizePort(clean);
+  var direct = portCacheKey(clean);
   var keys = Object.keys(LOCAL_PORT_ALIASES);
   for (var i = 0; i < keys.length; i++) {
     var aliases = LOCAL_PORT_ALIASES[keys[i]];
@@ -383,6 +424,7 @@ function groupPriceRows(rows, pairs) {
 }
 
 export async function attachLaneWeeks(pool, companyId, lanes) {
+  if (pool) await ensureLocalPortCache(pool);
   var out = Array.isArray(lanes) ? lanes : [];
   var meta = collectPairs(out);
   var template = buildWeeks(new Date());

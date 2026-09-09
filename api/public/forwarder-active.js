@@ -1,5 +1,5 @@
 import { getPool, setCors } from "../db.js";
-import { addPendingPlan, attachLaneWeeks, finishPendingLane, isPendingShipment, localNormalizePort } from "./_lane-weeks.js";
+import { addPendingPlan, attachLaneWeeks, ensureLocalPortCache, finishPendingLane, isPendingShipment, localNormalizePort } from "./_lane-weeks.js";
 import { handleDemoGet } from "./_forwarder-demo-active.js";
 import { cleanText, countWeekQuotedCarriers, dateTime, isUsablePortCharge, numOrNull, perContainerCharge, portChargeBoxGroup, publicCargoName } from "./_forwarder-active-shared.js";
 import { attachForwarderServiceStatus } from "./_forwarder-service-status.js";
@@ -439,7 +439,9 @@ function groupActivePlans(rows, closed){
     if (!isBooked(row)) return;
     // 结束(终态)移出活跃→归历史
     if (isEnded(row)) return;
-    var key = localNormalizePort(row.pol || row.pol_canon_en || row.pol_canon_cn) + "::" + localNormalizePort(row.pod || row.pod_canon_en || row.pod_canon_cn);
+    var polKey = localNormalizePort(row.pol || row.pol_canon_en || row.pol_canon_cn), podKey = localNormalizePort(row.pod || row.pod_canon_en || row.pod_canon_cn);
+    if (!polKey) { console.warn("[forwarder-active] skip lane with empty POL", { plan_id: row.id || row.plan_id || null }); return; }
+    var key = polKey + "::" + podKey;
     if (key === "::") return;
     var lane = lanes[key] || (lanes[key] = makeLane(row));
     // 该 lane 任一票码头未确认(裸母港)→整条标待确认
@@ -466,6 +468,7 @@ async function handleGet(pool, token, res){
 
   var closed = await loadClosedMap(pool, supplierName);
   var plans = await loadPlans(pool, token.company_id);
+  await ensureLocalPortCache(pool);
   var lanes = await attachLaneWeeks(pool, token.company_id, groupActivePlans(plans, closed));
   await attachForwarderServiceStatus(pool, token, lanes);
   lanes.forEach(function(lane){
