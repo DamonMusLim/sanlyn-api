@@ -43,7 +43,7 @@ async function listRows(req) {
     ), latest AS (
       SELECT DISTINCT ON (product_code)
              product_code, upc_code, spec, category_name, second_category_name,
-             stock_num, in_price, cost_price, out_price, store_code, store_name,
+             stock_num, out_price, store_code, store_name,   /* 0909 删 in_price,cost_price:红线,成本字段永不出库。页面本就不显示(dataMaps不映射),但接口JSON在返回,开发者工具可见 */
              captured_at
         FROM filtered
        ORDER BY product_code, capture_date DESC NULLS LAST, captured_at DESC NULLS LAST
@@ -51,7 +51,7 @@ async function listRows(req) {
       SELECT COUNT(*)::int AS total FROM latest
     ), page_rows AS (
       SELECT product_code, upc_code, spec, category_name, second_category_name,
-             stock_num, in_price, cost_price, out_price, store_code, store_name,
+             stock_num, out_price, store_code, store_name,   /* 0909 删 in_price,cost_price:红线,成本字段永不出库。页面本就不显示(dataMaps不映射),但接口JSON在返回,开发者工具可见 */
              captured_at
         FROM latest
        ORDER BY product_code
