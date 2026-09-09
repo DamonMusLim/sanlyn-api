@@ -375,10 +375,12 @@ function finishCarriers(lane){
     if (ch20 || ch40) out.port_charge_basis = "per_container";
     if (ch20) {
       out.port_charge_20 = ch20.total;
+      out.port_charge_20_parts = ch20.parts;
       out.port_charge_20_src_plan_id = ch20.src_plan_id;
     }
     if (ch40) {
       out.port_charge_40 = ch40.total;
+      out.port_charge_40_parts = ch40.parts;
       out.port_charge_40_src_plan_id = ch40.src_plan_id;
     }
     if (carrier.chargeSkipped["20"]) out.port_charge_20_skipped = carrier.chargeSkipped["20"];
