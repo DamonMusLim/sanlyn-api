@@ -32,7 +32,10 @@ UPDATE hr_payroll p
    SET gross_amount = t.gross_amount,
        net_amount = t.net_amount,
        tax_amount = t.tax_amount,
-       note = t.note,
+       note = CASE
+                WHEN COALESCE(p.note, '') = '' THEN '[M111] ' || t.note
+                ELSE p.note || E'\n[M111] ' || t.note
+              END,
        updated_at = now()
   FROM target t
  WHERE p.company_code = 'BABI'
