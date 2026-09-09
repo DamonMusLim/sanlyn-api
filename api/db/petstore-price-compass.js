@@ -29,13 +29,15 @@ const STALE_WARN_DAYS = 3;
 const ACTIVE = "COALESCE(product_status <> 'LOWER' AND stk > 0,false)";
 const UNSETTLED = "(verdict IS NULL OR verdict = 'todo')";
 const SETTLED = "(verdict IS NOT NULL AND verdict <> 'todo' AND NOT needs_recheck)";
+const OWN_BRANDS = ["LUVSOME","SNIFFLY","CATSOME","DOGSOME","PETSOME","ENRICH","PiXELDOG","天王梦"];
+const OWN_BRAND_PATTERN = OWN_BRANDS.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
 
 function json(res, code, body) { return res.status(code).json(body); }
 
 const BASE = `
   WITH latest AS (
     SELECT DISTINCT ON (q.product_code, q.competitor_name)
-           q.product_code, q.competitor_name, q.price, q.monthly_sales, q.qty_g, q.captured_at,
+           q.product_code, q.competitor_name, q.price, q.orig_price, q.monthly_sales, q.qty_g, q.captured_at,
            q.title, q.match_rule, q.raw_payload->>'distance' AS dist_txt,
            CASE
              WHEN q.raw_payload->>'distance' ~ '^[0-9]+(\\.[0-9]+)?km$'
@@ -44,15 +46,34 @@ const BASE = `
                THEN round((replace(q.raw_payload->>'distance','m','')::numeric / 1000),3)
            END AS dist_km,
            q.raw_payload->>'shop_month_sales' AS shop_sales,
-           (q.competitor_name ~ '宠物|宠|猫粮|狗粮|猫砂|猫罐|猫条|喵|汪|犬|萌宠|萌鸟|爱宠|羊奶粉') AS is_peer
+           (q.competitor_name ~ '宠物|宠|猫粮|狗粮|猫砂|猫罐|猫条|喵|汪|犬|萌宠|萌鸟|爱宠|羊奶粉') AS is_peer,
+           CASE
+             WHEN substring(r.product_name from '^[A-Za-z0-9一-鿿]{2,6}') IS NULL THEN NULL
+             ELSE position(substring(r.product_name from '^[A-Za-z0-9一-鿿]{2,6}') in q.title) > 0
+           END AS same_brand,
+           CASE
+             WHEN q.price <= 0.5 THEN false
+             WHEN q.title ~ '第1件|首件|第一件|爆品价|新客|限购|券后' THEN false
+             WHEN q.orig_price > 0 AND q.price < q.orig_price*0.2 THEN false
+             ELSE true
+           END AS price_usable,
+           CASE
+             WHEN q.price <= 0.5 THEN '占位/钩子价'
+             WHEN q.title ~ '第1件|首件|第一件|爆品价|新客|限购|券后' THEN '有门槛(首件/爆品/新客)'
+             WHEN q.orig_price > 0 AND q.price < q.orig_price*0.2 THEN '低于原价2折,多半是活动首件'
+           END AS price_why,
+           (q.title ~ '\\*[0-9]|[0-9]\\s*袋|[0-9]\\s*包|[0-9]\\s*件装') AS multi_pack
       FROM public.petstore_market_quotes_raw q
+      JOIN public.petstore_ops_row r ON r.product_code = q.product_code
      WHERE q.match_status = 'MATCHED' AND q.price IS NOT NULL
      ORDER BY q.product_code, q.competitor_name, q.captured_at DESC
   ), agg AS (
     SELECT product_code,
-           count(*) FILTER (WHERE is_peer)::int AS peer_shops,
+           count(*) FILTER (WHERE is_peer AND same_brand IS TRUE AND price_usable)::int AS basis_shops,
+           count(*) FILTER (WHERE is_peer AND same_brand IS FALSE)::int AS excluded_brand,
+           count(*) FILTER (WHERE is_peer AND same_brand IS TRUE AND NOT price_usable)::int AS excluded_price,
            round(min(price)::numeric,2) AS price_min,
-           round(min(price) FILTER (WHERE is_peer)::numeric,2) AS lo,          -- 主轴:附近最低价(不看销量,65个品全都有)
+           round(min(price) FILTER (WHERE is_peer AND same_brand IS TRUE AND price_usable)::numeric,2) AS lo,          -- 主轴:附近最低价(不看销量,65个品全都有)
            round(min(price) FILTER (WHERE NOT is_peer)::numeric,2) AS super_lo,
            count(*) FILTER (WHERE NOT is_peer)::int AS super_shops,
            count(*) FILTER (WHERE monthly_sales IS NOT NULL)::int AS shops_with_sales,
@@ -64,11 +85,11 @@ const BASE = `
            round(min(price) FILTER (WHERE monthly_sales >= ${VERIFIED_SALES})::numeric,2) AS verified_low,
            count(*) FILTER (WHERE monthly_sales >= ${VERIFIED_SALES})::int AS verified_shops,
            (array_agg(round(dist_km::numeric,3) ORDER BY (dist_km IS NULL), dist_km, price)
-             FILTER (WHERE is_peer))[1] AS nearest_peer_km,
+             FILTER (WHERE is_peer AND same_brand IS TRUE AND price_usable))[1] AS nearest_peer_km,
            (array_agg(competitor_name ORDER BY (dist_km IS NULL), dist_km, price)
-             FILTER (WHERE is_peer))[1] AS nearest_peer_name,
+             FILTER (WHERE is_peer AND same_brand IS TRUE AND price_usable))[1] AS nearest_peer_name,
            (array_agg(round(price::numeric,2) ORDER BY (dist_km IS NULL), dist_km, price)
-             FILTER (WHERE is_peer))[1] AS nearest_peer_price,
+             FILTER (WHERE is_peer AND same_brand IS TRUE AND price_usable))[1] AS nearest_peer_price,
            max(captured_at)::date::text AS captured,
            -- 🔴 竞店原始标题必须带出去:判「是不是匹配错」只能靠它,
            --    光看价格和百分比人没法判(0908 Damon:「不然看不到更多消息」)
@@ -79,6 +100,8 @@ const BASE = `
              'price', round(price::numeric,2), 'sales', monthly_sales, 'qty_g', qty_g,
              'unit_100g', CASE WHEN qty_g > 0 THEN round((price/qty_g*100)::numeric,2) END,
              'dist_txt', dist_txt, 'dist_km', dist_km, 'shop_sales', shop_sales,
+             'same_brand', same_brand, 'price_usable', price_usable,
+             'price_why', price_why, 'multi_pack', multi_pack,
              'captured', captured_at::date::text
            ) ORDER BY (dist_km IS NULL), dist_km, price) AS shops_detail
       FROM latest GROUP BY product_code
@@ -86,7 +109,6 @@ const BASE = `
     SELECT a.*, r.product_name, r.spec_text, r.shelf_code, r.product_status, r.store_price,
            k.month_sale AS my_sales, k.category_l1,
            COALESCE(to_jsonb(k)->>'brand', to_jsonb(r)->>'brand', '') AS brand_txt,
-           COALESCE((to_jsonb(k)->>'own_brand')::boolean, (to_jsonb(r)->>'own_brand')::boolean, false) AS own_brand,
            GREATEST(COALESCE(k.stock_num,0), COALESCE(r.cur_stock,0)) AS stk,
            v.verdict, v.note, v.decided_by, v.decided_at, v.lo_at_decision,
            v.store_price_at_decision, v.recheck_pct,
@@ -121,31 +143,31 @@ const BASE = `
              jsonb_build_object('key','comparable','label','这条比价可信吗','state',
                CASE
                  WHEN lo IS NOT NULL AND store_price > 0 AND (store_price > lo * 3 OR store_price * 3 < lo) THEN 'bad'
-                 WHEN peer_shops >= 2 THEN 'ok'
-                 WHEN peer_shops = 1 THEN 'warn'
-                 WHEN peer_shops = 0 AND super_shops > 0 THEN 'bad'
+                 WHEN basis_shops >= 2 THEN 'ok'
+                 WHEN basis_shops = 1 THEN 'warn'
+                 WHEN basis_shops = 0 AND super_shops > 0 THEN 'bad'
                  ELSE 'idle'
                END,
                'detail',
                CASE
                  WHEN lo IS NOT NULL AND store_price > 0 AND (store_price > lo * 3 OR store_price * 3 < lo)
                    THEN '差' || round(GREATEST(store_price / NULLIF(lo,0), lo / NULLIF(store_price,0))::numeric,1) || '倍,多半是匹配错或首件神价'
-                 WHEN peer_shops >= 2 THEN peer_shops || '家同行报价'
-                 WHEN peer_shops = 1 THEN '只有1家同行,样本薄'
-                 WHEN peer_shops = 0 AND super_shops > 0 THEN '只有超市在卖,不能当定价基准'
+                 WHEN basis_shops >= 2 THEN basis_shops || '家同品牌可用报价'
+                 WHEN basis_shops = 1 THEN '只有1家同品牌可用报价,样本薄'
+                 WHEN basis_shops = 0 AND super_shops > 0 THEN '只有超市在卖,不能当定价基准'
                  ELSE '没有报价'
                END),
              jsonb_build_object('key','movable','label','这个品能不能动价','state',
                CASE
                  WHEN product_name ~ '鲜朗' OR brand_txt ~ '鲜朗' THEN 'bad'
-                 WHEN own_brand THEN 'bad'
+                 WHEN product_name ~ '${OWN_BRAND_PATTERN}' THEN 'bad'
                  WHEN my_sales IS NULL OR my_sales = 0 THEN 'warn'
                  ELSE 'ok'
                END,
                'detail',
                CASE
                  WHEN product_name ~ '鲜朗' OR brand_txt ~ '鲜朗' THEN '鲜朗控价,只能拉回官方价(临期才是例外)'
-                 WHEN own_brand THEN '自有品牌不比价,按目标毛利走'
+                 WHEN product_name ~ '${OWN_BRAND_PATTERN}' THEN '自有品牌不比价,按目标毛利走'
                  WHEN my_sales IS NULL OR my_sales = 0 THEN '月销0,先查货位和陈列,多半不是价格问题'
                  ELSE '可以动'
                END),
@@ -178,9 +200,9 @@ const BASE = `
            ) AS gates,
            CASE
              WHEN (lo IS NOT NULL AND store_price > 0 AND (store_price > lo * 3 OR store_price * 3 < lo))
-               OR (peer_shops = 0 AND super_shops > 0) THEN '定「不可比」收起来,别拿它定价'
+               OR (basis_shops = 0 AND super_shops > 0) THEN '定「不可比」收起来,别拿它定价'
              WHEN product_name ~ '鲜朗' OR brand_txt ~ '鲜朗' THEN '拉回官方零售价,不按公式'
-             WHEN own_brand THEN '不比价 —— 按目标毛利定,卖不动是动销问题不是价格'
+             WHEN product_name ~ '${OWN_BRAND_PATTERN}' THEN '不比价 —— 按目标毛利定,卖不动是动销问题不是价格'
              WHEN my_sales IS NULL OR my_sales = 0 THEN '先查货位和陈列,别急着降价'
              WHEN gap_pct > 20 THEN '贴到 ¥' || nearest_peer_price || '(' || nearest_peer_name || ',' || nearest_peer_km || 'km)'
              WHEN gap_pct < -5 THEN '看是在抢量还是白让利 —— 便宜还卖不动就不是价格问题'
@@ -193,6 +215,8 @@ const BASE = `
 
 // 分档互斥,相加必须等于总数(自校验)
 const BUCKETS = [
+  { key: "no_basis", label: "⚠️ 没有同品牌的可比报价 · 无法定价", tier: "gray",
+    where: "lo IS NULL AND (excluded_brand > 0 OR excluded_price > 0) AND store_price > 0" },
   { key: "super_only", label: "⚠️ 附近只有超市在卖,没有同行报价 · 仅供参考不可定价", tier: "gray",
     where: "lo IS NULL AND super_lo IS NOT NULL AND store_price > 0" },
   // 🔴 这一档必须排在最前面 —— 它是【数据可信度闸】,不是定价档。
@@ -228,7 +252,7 @@ const BUCKETS = [
 ];
 
 const ROW_SELECT = `product_code, product_name, spec_text, shelf_code, product_status, category_l1,
-  store_price, my_sales, stk, peer_shops, price_min, price_max, lo, super_lo, super_shops,
+  store_price, my_sales, stk, basis_shops, excluded_brand, excluded_price, price_min, price_max, lo, super_lo, super_shops,
   verified_low, verified_shops, shops_with_sales, sales_shops_with_data, rival_sales,
   rival_sales_max, sales_capped, gap, gap_pct, captured, shops_detail, nearest_peer_km,
   nearest_peer_name, nearest_peer_price, gates, next_step, verdict, note, decided_by,
@@ -316,6 +340,7 @@ async function build(pool) {
       "价格给区间不给点 —— 同一个编码历史上混进过不同规格(实测 12.90~539)。差额一律按【线下售价】算,成本不出库。",
       "🔴 竞店的 price 抓的是美团页面价,里面混着【第1件神价】。实证:冠能 2.5kg*2(5公斤)标 ¥14.80、网易严选冻干双拼 1.8kg*2 也标 ¥14.80 —— 这个价位不可能是常规成交价。拿我们的常规价比人家的首件神价,本来就不是一回事,⛔ 别据此降价。",
       "🔴 多件装没折算:竞店标题写「2.5kg/袋*2」但 qty_g 只抓到 2500(应是 5000)。所以「每100g」在多件装上会偏高一倍,⛔ 单位价也不能直接信,先看标题里有没有 *2。",
+      "定价基准只取【同行 + 同品牌 + 可用价】;不同品牌、占位/钩子价、首件/爆品/新客价、低于原价2折的价都不进 lo。没有同品牌可用价时 lo 留空,不硬凑。",
       "即时零售 ≠ 电商:30 分钟送达值溢价,合理是电商价的 1.1~1.3 倍。⛔ 拿淘宝价直接对标必亏(而且现在也没有淘宝数据)。",
     ],
   };
