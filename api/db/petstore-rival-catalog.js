@@ -19,10 +19,10 @@ const CAVEATS = [
 ];
 
 const BUCKETS = [
-  { key: "hot", label: "月销20+", test: (p) => Number(p.month_sale) >= 20 },
-  { key: "selling", label: "有月销", test: (p) => Number(p.month_sale) > 0 },
-  { key: "linked", label: "多链接", test: (p) => Number(p.links) > 1 },
-  { key: "hook", label: "疑钩子", test: (p) => Number(p.price_lo) <= 0.5 }
+  { key: "hot", label: "月销20+", test: (p) => Number(p.月销) >= 20 },
+  { key: "selling", label: "有月销", test: (p) => Number(p.月销) > 0 },
+  { key: "linked", label: "多链接", test: (p) => Number(p.链接数) > 1 },
+  { key: "hook", label: "疑钩子", test: (p) => p.实付最低 !== null && Number(p.实付最低) <= 0.5 }
 ];
 
 const BASE = `
@@ -59,6 +59,10 @@ function cleanName(s) {
   return String(s || "").replace(/^【[^】]*】\s*/, "").trim() || null;
 }
 
+function productName(r) {
+  return cleanName(r.product_name) || "品名缺失";
+}
+
 function num(v) {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
@@ -86,7 +90,9 @@ function dateDaysAgo(s) {
 }
 
 function productKey(r) {
-  return `${r.shop_name}\u0001${cleanName(r.product_name) || ""}\u0001${r.month_sale ?? ""}`;
+  const name = cleanName(r.product_name);
+  const nameKey = name || `品名缺失\u0001${r.barcode ?? ""}\u0001${r.spec_name ?? ""}`;
+  return `${r.shop_name}\u0001${nameKey}\u0001${r.month_sale ?? ""}`;
 }
 
 function packProduct(rows) {
@@ -101,7 +107,7 @@ function packProduct(rows) {
   return {
     key: productKey(first),
     shop_name: first.shop_name,
-    品名: cleanName(first.product_name),
+    品名: productName(first),
     月销: num(first.month_sale),
     已售: num(first.sold_total),
     链接数: links,
