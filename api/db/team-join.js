@@ -26,6 +26,14 @@ async function hashPassword(plain) {
   return bcrypt.hash(plain, 12);
 }
 
+function previewBusinessLine(raw) {
+  const marker = String(raw?.business_line || raw?.businessLine || "").trim().toLowerCase();
+  if (["retail_reports", "retail_report", "sales_analysis", "petstore_reports"].includes(marker)) {
+    return "retail_reports";
+  }
+  return null;
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -41,7 +49,7 @@ export default async function handler(req, res) {
       `SELECT ti.id, ti.email, ti.role, ti.company_code, ti.status, ti.expires_at, ti.raw,
               c.name_en AS company_name_en, c.name_cn AS company_name_cn
          FROM team_invites ti
-         LEFT JOIN customers c ON c.company_code = ti.company_code
+         LEFT JOIN companies c ON c.code = ti.company_code
         WHERE ti.token = $1 LIMIT 1`,
       [token]
     );
@@ -64,6 +72,7 @@ export default async function handler(req, res) {
         role: inv.role,
         company_code: inv.company_code,
         company_name: inv.company_name_en || inv.company_name_cn || inv.company_code,
+        business_line: previewBusinessLine(inv.raw),
         hq_scope: hqScope, // null for single-company invites; array for HQ
         expires_at: inv.expires_at,
       },

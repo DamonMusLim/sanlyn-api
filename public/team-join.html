@@ -53,10 +53,8 @@
   .lang-toggle button.on {
     background: rgba(96,165,250,0.15); color: #60a5fa;
   }
-
   .state { display: none; }
   .state.active { display: block; }
-
   .spinner {
     width: 28px; height: 28px;
     border: 2px solid rgba(96,165,250,0.2);
@@ -67,14 +65,12 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
   .loading-text { text-align: center; color: #64748b; font-size: 13px; }
-
   h1 {
     font-size: 20px; font-weight: 800; color: #f1f5f9;
     margin-bottom: 6px; letter-spacing: -0.01em;
   }
   .greeting { font-size: 13px; color: #94a3b8; margin-bottom: 18px; }
   .greeting b { color: #f1f5f9; }
-
   .info-row {
     display: flex; justify-content: space-between; align-items: center;
     padding: 10px 12px; border-radius: 8px;
@@ -83,7 +79,6 @@
   }
   .info-row .k { color: #64748b; }
   .info-row .v { color: #f1f5f9; font-weight: 700; }
-
   .hq-banner {
     margin: 8px 0 14px;
     padding: 10px 14px;
@@ -93,7 +88,6 @@
     font-size: 12px; color: #c084fc; line-height: 1.5;
   }
   .hq-banner b { color: #d8b4fe; }
-
   label {
     display: block; font-size: 10px; font-weight: 800;
     text-transform: uppercase; letter-spacing: .06em;
@@ -113,7 +107,6 @@
     border-color: rgba(168,85,247,0.3);
   }
   .hint { font-size: 11px; color: #64748b; margin-top: 5px; }
-
   button.primary {
     width: 100%; margin-top: 18px;
     padding: 12px 0; border-radius: 8px; border: none;
@@ -125,7 +118,6 @@
   }
   button.primary:hover:not(:disabled) { filter: brightness(1.1); }
   button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
-
   .err-box {
     padding: 14px; border-radius: 8px;
     background: rgba(239,68,68,0.08);
@@ -136,7 +128,6 @@
   .inline-error {
     margin-top: 10px; font-size: 12px; color: #fca5a5;
   }
-
   .success-icon {
     width: 56px; height: 56px;
     margin: 8px auto 16px;
@@ -162,13 +153,11 @@
     font-family: inherit;
   }
   a.login-btn:hover { background: rgba(34,197,94,0.18); }
-
   .footer-link {
     text-align: center; margin-top: 16px;
     font-size: 11px; color: #475569;
   }
   .footer-link b { color: #94a3b8; }
-
   code.url-sample {
     display: block; margin-top: 6px; padding: 6px 8px;
     background: rgba(0,0,0,0.3); border-radius: 4px;
@@ -178,32 +167,25 @@
 </style>
 </head>
 <body>
-
 <div class="card">
   <div class="lang-toggle">
     <button id="lang-en" type="button">EN</button>
     <button id="lang-cn" type="button">中</button>
   </div>
-
   <div class="brand">
     <div class="dot"></div>
     <div class="name">Sanlyn OS</div>
   </div>
-
-  <!-- ── Loading ── -->
   <div id="state-loading" class="state active">
     <div class="spinner"></div>
     <div class="loading-text" data-i18n="loading">Verifying invitation…</div>
   </div>
-
-  <!-- ── Landing (no token) ── -->
   <div id="state-landing" class="state">
     <div style="font-size: 36px; text-align: center; margin: 4px 0 12px;">👥</div>
     <h1 style="text-align: center; margin-bottom: 8px;" data-i18n="landing.title">Team Join Page</h1>
     <p style="text-align: center; font-size: 13px; color: #94a3b8; line-height: 1.6; margin-bottom: 22px;" data-i18n-html="landing.desc">
       This page is used to accept a team invitation. You should arrive here by clicking the link in an <b style="color:#f1f5f9">invitation email</b> sent by your team admin.
     </p>
-
     <div style="background: rgba(96,165,250,0.06); border: 1px solid rgba(96,165,250,0.2); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px;">
       <div style="font-size: 11px; font-weight: 800; color: #60a5fa; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px;" data-i18n="landing.find">
         📧 Looking for your invite?
@@ -213,17 +195,13 @@
       </div>
       <code class="url-sample">/team-join.html?token=…</code>
     </div>
-
     <a href="/" class="login-btn" style="background: rgba(96,165,250,0.1); color: #60a5fa; border-color: rgba(96,165,250,0.3);" data-i18n="landing.signin">
       → I already have an account · Sign in
     </a>
-
     <div class="footer-link" style="margin-top: 18px;" data-i18n-html="landing.askAdmin">
       Need an invite? Ask your team admin to add you in <b>Profile → Team Members → + Invite</b>
     </div>
   </div>
-
-  <!-- ── Error (broken token) ── -->
   <div id="state-error" class="state">
     <h1 style="margin-bottom: 12px;" data-i18n="error.title">Invitation Issue</h1>
     <div class="err-box">
@@ -237,44 +215,31 @@
       If you believe this is a mistake, contact your team admin to resend.
     </div>
   </div>
-
-  <!-- ── Form ── -->
   <div id="state-form" class="state">
-    <!-- Invitation hero — clean & minimal: who invited + what to do -->
     <div style="text-align: center; margin-bottom: 22px;">
       <div style="font-size: 32px; margin-bottom: 10px;">🎉</div>
       <div style="font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px;" data-i18n="form.invitedBy">You've been invited by</div>
       <div id="invite-company-hero" style="font-size: 22px; font-weight: 900; color: #f1f5f9; letter-spacing: -0.01em; line-height: 1.3;">—</div>
-      <div style="font-size: 13px; color: #64748b; margin-top: 8px;" data-i18n="form.joinTeam">to join the team on Sanlyn OS</div>
+      <div style="font-size: 13px; color: #64748b; margin-top: 8px;" data-i18n="form.joinTeam">to join your company account</div>
     </div>
-
     <div class="greeting" data-i18n-html="form.greetingV2">Enter your email and set a password to join.</div>
-
-    <!-- Email input: 双门槛 — invitee self-claims email; if admin hinted, must match -->
     <label for="email-input" data-i18n="form.emailLabel">Your Email</label>
     <input id="email-input" type="email" autocomplete="email" data-i18n-attr="placeholder:form.emailPlaceholder">
-    <div class="hint" id="email-hint" data-i18n="form.emailHint">We'll use this to send order updates and as your sign-in ID.</div>
-
+    <div class="hint" id="email-hint" data-i18n="form.emailHint">We'll use this as your sign-in ID and for account-related notices.</div>
     <label for="pw" data-i18n="form.pwLabel">Choose Password</label>
     <input id="pw" type="password" autocomplete="new-password" minlength="8" data-i18n-attr="placeholder:form.pwPlaceholder">
     <div class="hint" data-i18n="form.pwHint">Pick something only you know. You can change it later in Profile.</div>
-
     <label for="pw2" data-i18n="form.pw2Label">Confirm Password</label>
     <input id="pw2" type="password" autocomplete="new-password" data-i18n-attr="placeholder:form.pw2Placeholder">
-
     <button id="submit-btn" class="primary" data-i18n="form.submit">Create Account & Continue →</button>
     <div id="form-error" class="inline-error" style="display: none;"></div>
   </div>
-
-  <!-- ── Success ── -->
   <div id="state-success" class="state success">
     <div class="success-icon">✓</div>
     <h2 data-i18n="success.title">Account Created</h2>
     <p data-i18n="success.desc">Welcome to Sanlyn OS. You can now sign in with your email and password.</p>
     <a id="login-link" class="login-btn" href="/" data-i18n="success.signin">Go to Sign In →</a>
   </div>
-
-  <!-- ── Pending review (admin needs to approve) ── -->
   <div id="state-pending" class="state success">
     <div class="success-icon" style="background: rgba(251,191,36,0.15); border-color: #fbbf24; color: #fcd34d;">⏳</div>
     <h2 data-i18n="pending.title">Awaiting Admin Approval</h2>
@@ -284,12 +249,9 @@
     </div>
   </div>
 </div>
-
 <script>
 (function() {
   const API_BASE = "https://api.sanlyn.cn";
-
-  // ── i18n dictionary ──
   const I18N = {
     en: {
       "title":             "Sanlyn OS · Join Your Team",
@@ -305,13 +267,15 @@
       "error.contact":     "If you believe this is a mistake, contact your team admin to resend.",
       "form.title":        "Join Your Team",
       "form.invitedBy":    "You've been invited by",
-      "form.joinTeam":     "to join the team on Sanlyn OS",
+      "form.joinTeam":     "to join your company account",
       "form.emailLabel":   "Your Email",
       "form.emailPlaceholder": "name@your-company.com",
-      "form.emailHint":    "We'll use this to send order updates and as your sign-in ID.",
+      "form.emailHint":    "We'll use this as your sign-in ID and for account-related notices.",
+      "form.emailHint.retail_reports": "We'll use this as your sign-in ID and to send retail sales analysis report notices.",
       "form.emailHintMatch": "✓ This invite was issued for a specific email — enter it to verify.",
+      "form.emailHintMatch.retail_reports": "✓ Enter the email this invite was issued for. We'll use it as your sign-in ID and to send retail sales analysis report notices.",
       "form.greetingV2":   "Enter your email and set a password to join.",
-      "form.greeting":     "Hi <b id=\"invite-email\">—</b>, set a password to join your company on Sanlyn OS.",
+      "form.greeting":     "Hi <b id=\"invite-email\">—</b>, set a password to join your company account.",
       "form.company":      "Company",
       "form.role":         "Role",
       "form.hq":           "🏛 <b>Headquarters scope.</b> You'll see and act across <b><span id=\"hq-count\">0</span> group companies</b> when you sign in.",
@@ -327,7 +291,6 @@
       "pending.title":     "Awaiting Admin Approval",
       "pending.desc":      "Your registration has been received. Your team admin will review and activate your account shortly. You'll be able to sign in once approved.",
       "pending.hint":      "💡 Speed it up: send a message to whoever invited you so they know to approve.",
-      // Dynamic error strings
       "err.notFound":      ["Invitation not found", "The token in your link doesn't match any active invitation."],
       "err.expired":       ["This invitation has expired", "Ask your admin to send a fresh invitation."],
       "err.alreadyUsed":   ["This invitation was already used", "If you forgot your password, use the reset flow from the sign-in page."],
@@ -358,13 +321,15 @@
       "error.contact":     "如有疑问，请联系您的团队管理员重新发送邀请。",
       "form.title":        "加入团队",
       "form.invitedBy":    "您收到来自以下公司的邀请",
-      "form.joinTeam":     "邀请您加入 Sanlyn OS",
+      "form.joinTeam":     "邀请您加入您所在公司的账号",
       "form.emailLabel":   "您的邮箱",
       "form.emailPlaceholder": "name@your-company.com",
-      "form.emailHint":    "用于接收订单通知，也是您的登录账号。",
+      "form.emailHint":    "用作登录账号，以及接收与账号有关的通知。",
+      "form.emailHint.retail_reports": "用作登录账号，以及接收零售销售分析报告相关通知。",
       "form.emailHintMatch": "✓ 本邀请已指定邮箱，请输入对应邮箱完成验证。",
+      "form.emailHintMatch.retail_reports": "✓ 请输入本邀请指定的邮箱。该邮箱将用作登录账号，并接收零售销售分析报告相关通知。",
       "form.greetingV2":   "请输入您的邮箱并设置密码以加入。",
-      "form.greeting":     "您好 <b id=\"invite-email\">—</b>，请设置密码以加入您所在公司的 Sanlyn OS。",
+      "form.greeting":     "您好 <b id=\"invite-email\">—</b>，请设置密码以加入您所在公司的账号。",
       "form.company":      "公司",
       "form.role":         "角色",
       "form.hq":           "🏛 <b>总部权限。</b>登录后您将可见并操作 <b><span id=\"hq-count\">0</span> 家集团公司</b> 的全部数据。",
@@ -397,8 +362,6 @@
       "form.creating":     "正在创建账号…",
     }
   };
-
-  // ── Language detection: localStorage > navigator.language > 'en' ──
   function detectLang() {
     const saved = localStorage.getItem("sanlyn_lang");
     if (saved === "en" || saved === "cn") return saved;
@@ -406,88 +369,71 @@
     return nav.startsWith("zh") ? "cn" : "en";
   }
   let LANG = detectLang();
-
   function t(key) { return (I18N[LANG] && I18N[LANG][key]) || I18N.en[key] || key; }
-
+  function emailHintKey(inv, prefix) {
+    return inv && inv.business_line ? prefix + "." + inv.business_line : prefix;
+  }
   function applyI18n() {
     document.documentElement.lang = LANG === "cn" ? "zh-CN" : "en";
     document.title = t("title");
-    // text content
     document.querySelectorAll("[data-i18n]").forEach(el => {
       const key = el.getAttribute("data-i18n");
       const v = t(key);
       if (typeof v === "string") el.textContent = v;
     });
-    // HTML content (allows inline tags)
     document.querySelectorAll("[data-i18n-html]").forEach(el => {
       const key = el.getAttribute("data-i18n-html");
       const v = t(key);
       if (typeof v === "string") el.innerHTML = v;
     });
-    // attribute (e.g. placeholder)
     document.querySelectorAll("[data-i18n-attr]").forEach(el => {
       const spec = el.getAttribute("data-i18n-attr"); // "placeholder:form.pwPlaceholder"
       const [attr, key] = spec.split(":");
       el.setAttribute(attr, t(key));
     });
-    // toggle button state
     document.getElementById("lang-en").classList.toggle("on", LANG === "en");
     document.getElementById("lang-cn").classList.toggle("on", LANG === "cn");
-    // Rehydrate dynamic fields if a state was already loaded
     if (currentInvite) renderInvite(currentInvite);
   }
-
   function setLang(l) {
     LANG = l; localStorage.setItem("sanlyn_lang", l);
     applyI18n();
   }
   document.getElementById("lang-en").addEventListener("click", () => setLang("en"));
   document.getElementById("lang-cn").addEventListener("click", () => setLang("cn"));
-
-  // ── State helpers ──
   function showState(name) {
     document.querySelectorAll(".state").forEach(el => el.classList.remove("active"));
     document.getElementById("state-" + name).classList.add("active");
   }
-
   function showError(errKey, customDetail) {
     const [title, detail] = t(errKey);
     document.getElementById("err-title").textContent = title;
     document.getElementById("err-detail").textContent = customDetail || detail || "";
     showState("error");
   }
-
   function getToken() {
     const params = new URLSearchParams(window.location.search);
     return params.get("token");
   }
-
   let currentInvite = null;
   function renderInvite(inv) {
-    // Hero: only company name. Role + HQ scope are internal details, hidden per damon 2026-05-18
     const heroEl = document.getElementById("invite-company-hero");
     if (heroEl) heroEl.textContent = inv.company_name;
-
-    // 双门槛: if admin pre-set an email, prefill + lock it visually; else free input
     const emailInput = document.getElementById("email-input");
     const emailHint  = document.getElementById("email-hint");
     if (inv.email && inv.email.indexOf("@") > 0) {
       emailInput.value = inv.email;
       emailInput.classList.add("email-hinted");
-      emailHint.textContent = t("form.emailHintMatch");
+      emailHint.textContent = t(emailHintKey(inv, "form.emailHintMatch"));
     } else {
       emailInput.value = "";
       emailInput.classList.remove("email-hinted");
-      emailHint.textContent = t("form.emailHint");
+      emailHint.textContent = t(emailHintKey(inv, "form.emailHint"));
     }
   }
-
-  // ── Apply i18n once, then run flow ──
   applyI18n();
-
   const token = getToken();
   if (!token) { showState("landing"); return; }
-
   fetch(API_BASE + "/api/db/team-join?token=" + encodeURIComponent(token))
     .then(r => r.json().then(d => ({ status: r.status, body: d })))
     .then(({ status, body }) => {
@@ -498,25 +444,19 @@
         return showError("err.invalid", body.error || "");
       }
       if (status >= 400 || !body.ok) return showError("err.loadFail", body.error || "");
-
       currentInvite = body.invite;
       renderInvite(currentInvite);
       showState("form");
     })
     .catch(() => showError("err.network"));
-
-  // ── Submit ──
   document.getElementById("submit-btn").addEventListener("click", function() {
     const email = (document.getElementById("email-input").value || "").trim().toLowerCase();
     const pw  = document.getElementById("pw").value;
     const pw2 = document.getElementById("pw2").value;
     const errEl = document.getElementById("form-error");
     errEl.style.display = "none";
-
-    // Email validation (client-side; backend re-checks)
     const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
     if (!emailOk) { errEl.textContent = t("form.err.emailInvalid"); errEl.style.display = "block"; return; }
-    // If admin pre-hinted, enforce match here too (server still authoritative)
     const hinted = currentInvite && currentInvite.email && currentInvite.email.indexOf("@") > 0
                    ? currentInvite.email.toLowerCase() : null;
     if (hinted && email !== hinted) {
@@ -524,10 +464,8 @@
     }
     if (pw.length < 8) { errEl.textContent = t("form.err.pwShort"); errEl.style.display = "block"; return; }
     if (pw !== pw2)    { errEl.textContent = t("form.err.pwMatch"); errEl.style.display = "block"; return; }
-
     const btn = document.getElementById("submit-btn");
     btn.disabled = true; btn.textContent = t("form.creating");
-
     fetch(API_BASE + "/api/db/team-join", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -536,7 +474,6 @@
       .then(r => r.json().then(d => ({ status: r.status, body: d })))
       .then(({ status, body }) => {
         if (status === 200 && body.ok) {
-          // pending_review = admin needs to approve; else immediate active
           return showState(body.pending_review ? "pending" : "success");
         }
         if (status === 409)      errEl.textContent = t("form.err.dupEmail");
@@ -551,7 +488,6 @@
         btn.disabled = false; btn.textContent = t("form.submit");
       });
   });
-
   document.addEventListener("keydown", function(e) {
     if (e.key === "Enter" && document.getElementById("state-form").classList.contains("active")) {
       document.getElementById("submit-btn").click();
