@@ -8,11 +8,8 @@ SELECT r.shipping_plan_id,
        i.id AS item_id,
        i.selected,
        i.usd_rate,
-       i.freight_usd,
-       i.total_usd,
-       i.port_surcharge,
-       i.thc,
-       i.doc_fee
+       i.customs_fee,
+       i.trucking_fee
   FROM freight_rfqs r
   LEFT JOIN freight_rfq_items i
     ON i.rfq_id = r.id
@@ -50,10 +47,14 @@ function planIds(lane) {
 }
 
 function pricePositive(row) {
-  return ["usd_rate", "freight_usd", "total_usd", "port_surcharge", "thc", "doc_fee"].some(function(k) {
-    var n = Number(row && row[k]);
-    return Number.isFinite(n) && n > 0;
-  });
+  var svc = text(row && row.service_type).toLowerCase();
+  var key = svc === "truck" || svc === "trucking" ? "trucking_fee"
+    : svc === "customs" ? "customs_fee"
+    : svc === "ocean" ? "usd_rate"
+    : "";
+  if (!key) return false;
+  var n = Number(row && row[key]);
+  return Number.isFinite(n) && n > 0;
 }
 
 function better(a, b) {
