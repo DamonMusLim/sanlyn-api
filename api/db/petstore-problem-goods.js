@@ -24,14 +24,37 @@ function json(res, code, body) { return res.status(code).json(body); }
 const BASE = `
   WITH f AS (
     SELECT r.product_code, r.product_name, r.barcode, r.spec_text, r.shelf_code,
-           r.product_status, r.store_price, r.cur_stock,
-           k.stock_num, k.category_l1, k.category_l2, k.month_sale,
+           r.product_status, r.store_price, r.cur_stock, r.pic_url,
+           k.stock_num, k.category_l1, k.category_l2, k.category_l1 AS category, k.month_sale,
            GREATEST(COALESCE(k.stock_num, 0), COALESCE(r.cur_stock, 0)) AS stk,
            x.expiration_date
       FROM public.petstore_ops_row r
       LEFT JOIN public.petstore_skus k ON k.product_code = r.product_code
       LEFT JOIN public.petstore_offline_expiry_snapshot x ON x.product_code = r.product_code
   )`;
+
+const DATA_GAP_DETAIL_SQL = `
+  SELECT
+    count(*) FILTER (WHERE stk > 0 AND (pic_url IS NULL OR pic_url = ''))::int AS "无图",
+    count(*) FILTER (WHERE stk > 0 AND (
+      product_name IS NULL OR length(product_name) < 4
+      OR product_name ~ '^[0-9]+$'
+      OR product_name ~ '待补|未命名|测试|占位|placeholder'
+    ))::int AS "品名可疑",
+    count(*) FILTER (WHERE stk > 0 AND product_status = 'UP' AND (store_price IS NULL OR store_price <= 0))::int AS "在售无价",
+    count(*) FILTER (WHERE stk > 0 AND (barcode IS NULL OR barcode = '' OR length(barcode) NOT IN (8,12,13,14)))::int AS "条码非标",
+    count(*) FILTER (WHERE stk > 0 AND (category IS NULL OR category = ''))::int AS "无类目"
+  FROM f`;
+
+const DATA_GAP_MISSING_SQL = `ARRAY_REMOVE(ARRAY[
+  CASE WHEN pic_url IS NULL OR pic_url = '' THEN '无图' END,
+  CASE WHEN product_name IS NULL OR length(product_name) < 4
+            OR product_name ~ '^[0-9]+$'
+            OR product_name ~ '待补|未命名|测试|占位|placeholder' THEN '品名可疑' END,
+  CASE WHEN product_status = 'UP' AND (store_price IS NULL OR store_price <= 0) THEN '在售无价' END,
+  CASE WHEN barcode IS NULL OR barcode = '' OR length(barcode) NOT IN (8,12,13,14) THEN '条码非标' END,
+  CASE WHEN category IS NULL OR category = '' THEN '无类目' END
+], NULL) AS "缺什么"`;
 
 const CHECKS = [
   { key: "onsale_no_stock", label: "在售但没货", tier: "red",
@@ -62,6 +85,18 @@ const CHECKS = [
     where: "product_status IS NULL",
     why: "不知道它到底在不在卖 —— 界面上的「在售/下架」都判不了。",
     todo: "查状态" },
+  { key: "data_gap", label: "📋 档案缺口 · 缺关键字段", tier: "yellow",
+    where: `stk > 0 AND (
+      pic_url IS NULL OR pic_url = ''
+      OR product_name IS NULL OR length(product_name) < 4
+      OR product_name ~ '^[0-9]+$'
+      OR product_name ~ '待补|未命名|测试|占位|placeholder'
+      OR product_status = 'UP' AND (store_price IS NULL OR store_price <= 0)
+      OR barcode IS NULL OR barcode = '' OR length(barcode) NOT IN (8,12,13,14)
+      OR category IS NULL OR category = ''
+    )`,
+    why: "商品档案缺关键字段,会影响前台展示、扫码识别、定价检查和后台归类。",
+    todo: "后台补档案", missing: true },
 ];
 
 // 这三类当前是 0 —— 也要显示出来。⛔ 不显示会让人以为没查(「没问题」和「没查」必须分得开)
@@ -85,7 +120,7 @@ async function build(pool) {
       const r = await pool.query(
         `${BASE} SELECT product_code, product_name, spec_text, barcode, shelf_code, product_status,
                         category_l1, category_l2, month_sale, stk, stock_num, cur_stock,
-                        store_price, expiration_date,
+                        store_price, expiration_date${c.missing ? `, ${DATA_GAP_MISSING_SQL}` : ""},
                         round((GREATEST(stk, 0) * store_price)::numeric, 0)::text AS amount_by_price
            FROM f WHERE ${c.where} ORDER BY stk DESC, product_code LIMIT ${MAX_ROWS}`, params);
       rows = r.rows;
@@ -101,6 +136,7 @@ async function build(pool) {
   }
   const tot = await pool.query(`${BASE} SELECT count(*)::int AS total,
       count(*) FILTER (WHERE stk > 0)::int AS in_stock FROM f`);
+  const dataGapDetail = await pool.query(`${BASE} ${DATA_GAP_DETAIL_SQL}`);
 
   const red = groups.filter((g) => g.tier === "red" && g.count > 0);
   const verdict = red.length
@@ -109,6 +145,7 @@ async function build(pool) {
 
   return {
     verdict, total: tot.rows[0].total, in_stock: tot.rows[0].in_stock,
+    overview: { data_gap_detail: dataGapDetail.rows[0] },
     groups, clean,
     perishable_whitelist: PERISHABLE,
     caveats: [
@@ -117,6 +154,8 @@ async function build(pool) {
       "「两个库存源对不上」不是显示错,是真实存在的差:一边是果冻橙每日快照,一边是工作台门店在册。",
       "占款按【线下售价】估,不是成本 —— 成本不出库。",
       "每档最多列 " + MAX_ROWS + " 条;超过的说明该批量处理,不是一条条看。",
+      "📋 档案缺口那一档的五个明细数会【互相重叠】(一个品可能同时无图又条码非标),所以五个数相加 ≠ 该档总数。这不是 bug。",
+      "⛔ 临期/保质期不在这一层 —— 那归【效期风险】层。本层只回答「档案缺不缺」,不回答「货能不能卖」。同一个品在两层出现是正常的,看的角度不同。",
     ],
   };
 }
