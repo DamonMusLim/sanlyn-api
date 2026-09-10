@@ -125,3 +125,40 @@ table.g td .date{font-variant-numeric:tabular-nums;letter-spacing:-.1px}
 .grp .tw{margin:0 13px 13px}
 .blind ul{margin:7px 0 0;padding-left:18px}
 .blind li{margin:4px 0;line-height:1.6}
+
+/* 第6层 问题商品:查过没问题的也要显示 */
+.okrow{display:flex;flex-wrap:wrap;gap:8px;padding:0 13px 13px}
+.okrow .ok{font-size:12px;padding:5px 11px;border-radius:8px;background:#e3f4ec;color:#17915a;font-weight:600}
+.okrow .ok.bad{background:#fbe6e7;color:#ce2f36}
+
+/* 附近怎么卖 */
+td.mkt{white-space:nowrap;font-size:11.5px}
+.mktcell{cursor:pointer;border-bottom:1px dashed #c3cbd8}
+.mktcell:hover{background:#f1f4f9}
+.mkt b.hi{color:#ce2f36}.mkt b.lo{color:#17915a}.mkt b.eq{color:#586580}
+tr.mktrow td{background:var(--sunk,#f1f4f9);padding:0!important}
+.mktbox{padding:11px 14px;font-size:12px;color:#4a5568;line-height:1.7}
+table.mini{border-collapse:collapse;font-size:12px;background:#fff;border-radius:7px;overflow:hidden;
+ margin-bottom:8px;min-width:320px}
+table.mini th{background:#e9edf4;padding:5px 12px;font-size:10.5px;color:#586580;text-align:left}
+table.mini td{padding:5px 12px;border-top:1px solid #eef2f8;font-variant-numeric:tabular-nums}
+table.mini td.r,table.mini th.r{text-align:right}
+.cap{font-size:9.5px;color:#c88a1e;background:#fdf3e0;padding:0 4px;border-radius:4px}
+.mktnote{font-size:11.5px;color:#586580}
+
+/* 比价罗盘 */
+.chan{display:flex;gap:9px;flex-wrap:wrap;margin:0 0 11px}
+.chan .ch{flex:1 1 200px;background:#fff;border:1px solid var(--line,#dde4ef);border-radius:10px;
+ padding:9px 12px;font-size:12px;color:#4a5568}
+.chan .ch b{display:block;font-size:12.5px;color:inherit;margin-bottom:2px}
+.chan .ch i{display:block;font-style:normal;font-size:11px;color:#8a96ac;margin-top:3px;line-height:1.5}
+.chan .ch.off{background:#f7f8fa;border-style:dashed;color:#8a96ac}
+table.g td.hi{color:#ce2f36;font-weight:700}
+table.g td.lo{color:#17915a;font-weight:700}
+
+/* 罗盘展开 */
+tr.cmprow{cursor:pointer}
+tr.cmprow:hover td{background:#f7f9fc}
+.cx{display:inline-block;width:13px;color:#8a96ac;font-size:10px}
+tr.cmpdet td{background:var(--sunk,#f1f4f9);padding:0!important}
+table.mini td.ttl{white-space:normal;max-width:420px;line-height:1.45}
