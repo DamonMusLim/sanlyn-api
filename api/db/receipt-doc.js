@@ -252,6 +252,8 @@ export async function renderReceiptDoc(pool, refs, overrides = {}) {
     service_trade_bop_code: "222011", // 出口海运费固定BOP编码(照真实填报案例)
     service_trade_contract_no: contractNo,
     receipt_nature: "出口海运费",
+    // 0910 止血:新母版加了 {remark} 格,这里不给值 docxtemplater 会打出字面 undefined(已在给银行的件上出现过)。
+    remark: overrides.remark ?? "",
     filler_tel: sellerCfg.tel || "",
     filler_name: (overrides.filler_name || DEFAULT_FILLER_NAME) + "      ", // 后面留空格,不然跟紧挨着的"联系电话"标签挤在一起
     // 已报关/人民币报关那组勾选是"货物报关"专用的，海运费/服务贸易不适用，不勾
@@ -332,6 +334,8 @@ export async function renderReceiptDocByTemplate(pool, templateKey, overrides = 
     receipt_nature: isGoods
       ? `${overrides.goods_desc || ""} ${overrides.trade_classification || "一般贸易"}`.trim()
       : "出口海运费",
+    // 0910 止血:同上,{remark} 必须有值,绝不让 undefined 印到银行单据上。
+    remark: overrides.remark ?? "",
   };
 
   const templateBuf = fs.readFileSync(TEMPLATE_PATH);
