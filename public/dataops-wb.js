@@ -309,6 +309,7 @@ var PAGES = {
         '该做:'+esc(g.todo)+'</span></h3><p class="gwhy">'+esc(g.why)+'</p>';
       h += '<div class="tw"><table class="g"><tr>'+
         ['商品编码','品名','规格','货位','状态','库存<sup>快照/在册</sup>','品类','到期日期','月销','占款']
+          .concat(g.key==="data_gap"?['缺什么']:[])
           .map(function(x){return '<th>'+x+'</th>'}).join("")+'</tr>'+
         g.rows.map(function(r){
           var a=r.stock_num, b=r.cur_stock;
@@ -329,7 +330,9 @@ var PAGES = {
             '<td class="mono">'+(r.expiration_date?esc(String(r.expiration_date).slice(0,10))
                   :'<span class="todo">未录</span>')+'</td>'+
             '<td class="r">'+(r.month_sale==null?na:esc(r.month_sale))+'</td>'+
-            '<td class="r">'+money(r.amount_by_price)+'</td></tr>';
+            '<td class="r">'+money(r.amount_by_price)+'</td>'+
+            (g.key==="data_gap"?'<td>'+((r["缺什么"]||[]).map(function(x){return '<span class="pill2 p-none">'+esc(x)+'</span>';}).join(""))+'</td>':'')+
+            '</tr>';
         }).join("")+'</table></div>';
       if (g.truncated) h += '<p class="gwhy">只列了前 '+g.shown+' 条(共 '+g.count+' 条) —— 这一档该批量处理。</p>';
       h += '</div>';
@@ -345,7 +348,6 @@ var PAGES = {
       (d.caveats||[]).map(function(c){return '<li>'+esc(c)+'</li>'}).join("")+'</ul></div>';
     return h;
   },
-
   // ── 第5层 效期风险 ──
   l5: async function(){
     var d = await get("db/petstore-expiry-risk");
@@ -364,6 +366,7 @@ var PAGES = {
       if (!g.count) return;
       h += '<div class="grp"><h3><span class="dot '+(TIER[g.tier]||"d-gry")+'"></span>'+esc(g.label)+
         '<span class="c">'+g.count+'</span>'+
+        '<span class="c'+(g.up_count_tier==="red"?' bad':'')+'">其中在售 '+raw(g.up_count||0)+'</span>'+
         '<span class="amt">占款 '+money(g.amount_by_price)+'</span></h3>'+
         '<p class="gwhy">'+esc(g.why)+'</p>';
       if (g.rows && g.rows.length) {
@@ -395,6 +398,8 @@ var PAGES = {
       }
       h += '</div>';
     });
+    var sc = d.summary && d.summary.self_check;
+    if (sc) h += '<div class="'+(sc.ok===true?'checkok':'checkbad')+'">'+esc(sc.verdict)+'</div>';
     h += '<div class="blind"><b>这层数字能信到什么程度</b><ul>'+
       (d.caveats||[]).map(function(c){return '<li>'+esc(c)+'</li>'}).join("")+'</ul></div>';
     return h;
