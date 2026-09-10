@@ -184,6 +184,113 @@ var PAGES = {
     return h;
   },
 
+  l8: async function(){
+    var d = await get("db/petstore-rival-catalog");
+    if (d.error || d.ok===false) return verdict("🔴 "+(d.error||d.message||"取数失败"),"red"), "";
+    verdict(d.verdict, /^🔴/.test(d.verdict) ? "red" : "ok");
+    if (!$("rivalstyle")) {
+      var st = document.createElement("style");
+      st.id = "rivalstyle";
+      st.textContent = ".rivals{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:10px;margin:10px 0 12px}.rvcard{border:1px solid #d8dee6;background:#fff;border-radius:6px;padding:10px;cursor:pointer}.rvcard.on{border-color:#1d72d2;box-shadow:0 0 0 2px #dcebff;background:#f8fbff}.rvtop{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.rvname{font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rvdate{color:#6b7280;font-size:12px;white-space:nowrap}.rvnums{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:8px}.rvnums b{display:block;font-size:18px}.rvnums span{color:#6b7280;font-size:12px}.rvmini{margin-top:8px;color:#6b7280;font-size:12px}.rvbar{background:#fff4df;border-left:4px solid #f59e0b;padding:9px 11px;margin:0 0 10px;font-weight:700;color:#8a4b00}.rvfilters{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.rvfilters button{border:1px solid #d8dee6;background:#fff;border-radius:5px;padding:6px 10px;cursor:pointer}.rvfilters button.on{background:#e8f1ff;border-color:#9fc3ff;color:#1455a3;font-weight:700}.strike{text-decoration:line-through;color:#8b96a8}.soldref{color:#8b96a8}.rvprod b{display:block}.rvprod small{display:block;color:#6b7280;margin-top:2px}.shoplist{font-size:12px;line-height:1.5}.shoplist div{white-space:nowrap}.checkbad{background:#ffe8e8;border-left:4px solid #ce2f36;padding:8px 10px;margin-top:10px;font-weight:700}.checkok{background:#e6f6ed;border-left:4px solid #17915a;padding:8px 10px;margin-top:10px;font-weight:700}.tier-green{color:#17915a}.tier-yellow{color:#c78405}.tier-red{color:#ce2f36}@media(max-width:980px){.rivals{grid-template-columns:repeat(2,1fr)}}@media(max-width:620px){.rivals{grid-template-columns:1fr}}";
+      document.head.appendChild(st);
+    }
+    var shops = d.shops||[], ov = d.overview||{}, na = '<span class="na">—</span>';
+    var v = function(x){ return (x===null||x===undefined||x==="") ? na : esc(x); };
+    var raw = function(x){ return (x===null||x===undefined||x==="") ? "—" : String(x); };
+    var money = function(x){ return (x===null||x===undefined||x==="") ? na : "¥"+Number(x).toFixed(2); };
+    var band = function(a,b){ if (a===null||a===undefined||a==="") return na; return Number(a)===Number(b) ? money(a) : money(a)+" ~ "+money(b); };
+    $("n8").textContent = ov["总品数"]==null ? shops.length : ov["总品数"];
+    var cur = shops[0] ? shops[0].shop_name : "";
+    var detail = cur ? await get("db/petstore-rival-catalog?shop="+encodeURIComponent(cur)) : {rows:[]};
+    if (detail.error || detail.ok===false) return verdict("🔴 "+(detail.error||detail.message||"取数失败"),"red"), "";
+    var h = "";
+    if (Number(ov.stale_days)>30) h += '<div class="rvbar">'+esc("数据导出于 "+raw(ov.export_date_min)+" · 距今 "+raw(ov.stale_days)+" 天 —— 价格和月销都可能变了,当参考不当今天行情")+'</div>';
+    h += '<div class="rivals">'+shops.map(function(s,i){
+      return '<div class="rvcard'+(i===0?' on':'')+'" data-shop="'+esc(s.shop_name||"")+'"><div class="rvtop"><div class="rvname" title="'+esc(raw(s.shop_name))+'">'+v(s.shop_name)+'</div><div class="rvdate">'+v(s.export_date)+'</div></div>'+
+        '<div class="rvnums"><div><b>'+v(s["品"])+'</b><span>'+esc("在架品")+'</span></div>'+
+        (s["月销合计"]==null?'':'<div><b>'+v(s["月销合计"])+'</b><span>'+esc("月销合计")+'</span></div>')+
+        '<div><b>'+v(s["月销20plus"])+'</b><span>'+esc("月销20+")+'</span></div>'+
+        '<div><b>'+v(s["我们有"])+'</b><span>'+esc("我们有")+'</span></div></div>'+
+        '<div class="rvmini">'+esc("有月销")+" "+v(s["有月销"])+" · "+esc("多档价")+" "+v(s["多链接"])+" · "+esc("疑钩子")+" "+v(s["疑钩子"])+'</div></div>';
+    }).join("")+'</div>';
+    h += '<div class="rvfilters">'+["全部","月销20+","我们没有","多档价·钩子"].map(function(x,i){
+      return '<button data-f="'+i+'" class="'+(i===0?'on':'')+'">'+esc(x)+'</button>';
+    }).join("")+'</div><div id="rvdetail"></div>';
+    h += '<div class="blind"><b>'+esc("这层盲区")+'</b><ul>'+(d.caveats||[]).map(function(x){return '<li>'+esc(x)+'</li>'}).join("")+'</ul></div>';
+    var draw = function(dd, f){
+      var rows = dd.rows||[];
+      if (f===1) rows = rows.filter(function(r){ return Number(r["月销"])>=20; });
+      if (f===2) rows = rows.filter(function(r){ return r["我方有没有"]===false; });
+      if (f===3) rows = rows.filter(function(r){ return r.flag==="三档价" || r.flag==="疑钩子价"; });
+      return '<div class="tw"><table class="g"><tr>'+["商品","月销","已售","链接","实付","标价","提示","我方","店内分类"].map(function(x){return '<th>'+esc(x)+'</th>'}).join("")+'</tr>'+
+        rows.map(function(r){
+          var flag = r.flag==="三档价" ? '<span class="pill2 p-exp">'+esc("多档价")+'</span>' : (r.flag==="疑钩子价" ? '<span class="pill2 p-none">'+esc("疑钩子价")+'</span>' : na);
+          var mine = r["我方有没有"]===true ? '<span class="pill2 p-up">'+esc("我们有")+'</span>' : (r["我方有没有"]===false ? '<span class="pill2 p-grade">'+esc("没有")+'</span>' : na);
+          return '<tr><td class="rvprod"><b title="'+esc(raw(r["品名"]))+'">'+v(r["品名"])+'</b><small>'+v(r["规格"])+' · '+v(r["条码"])+'</small></td>'+
+            '<td class="r">'+v(r["月销"])+'</td><td class="r soldref">'+v(r["已售"])+'</td><td class="r">'+v(r["链接数"])+'</td>'+
+            '<td class="r">'+band(r["实付最低"],r["实付最高"])+'</td><td class="r strike">'+band(r["标价最低"],r["标价最高"])+'</td>'+
+            '<td>'+flag+'</td><td>'+mine+'</td><td>'+v(r["店内分类"])+'</td></tr>';
+        }).join("")+'</table></div>'+(dd.truncated?'<p class="gwhy">'+esc("只列了前 "+raw(dd.shown)+" 条(共 "+raw(dd.total)+" 条)。")+'</p>':'');
+    };
+    setTimeout(function(){
+      var dd = detail, f = 0;
+      $("rvdetail").innerHTML = draw(dd,f);
+      document.querySelectorAll(".rvfilters button").forEach(function(b){ b.onclick=function(){
+        f = Number(this.dataset.f);
+        document.querySelectorAll(".rvfilters button").forEach(function(x){x.classList.toggle("on", x===b)});
+        $("rvdetail").innerHTML = draw(dd,f);
+      };});
+      document.querySelectorAll(".rvcard[data-shop]").forEach(function(c){ c.onclick=async function(){
+        document.querySelectorAll(".rvcard").forEach(function(x){x.classList.toggle("on", x===c)});
+        dd = await get("db/petstore-rival-catalog?shop="+encodeURIComponent(c.dataset.shop));
+        $("rvdetail").innerHTML = (dd.error || dd.ok===false) ? '<div class="blind">'+esc("🔴 "+(dd.error||dd.message||"取数失败"))+'</div>' : draw(dd,f);
+      };});
+    },0);
+    return h;
+  },
+
+  l9: async function(){
+    var d = await get("db/petstore-rival-pk");
+    if (d.error || d.ok===false) return verdict("🔴 "+(d.error||d.message||"取数失败"),"red"), "";
+    verdict(d.verdict, /^🔴/.test(d.verdict) ? "red" : "ok");
+    if (!$("rivalstyle")) {
+      var st = document.createElement("style");
+      st.id = "rivalstyle";
+      st.textContent = ".rivals{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:10px;margin:10px 0 12px}.rvcard{border:1px solid #d8dee6;background:#fff;border-radius:6px;padding:10px;cursor:pointer}.rvcard.on{border-color:#1d72d2;box-shadow:0 0 0 2px #dcebff;background:#f8fbff}.rvtop{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.rvname{font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rvdate{color:#6b7280;font-size:12px;white-space:nowrap}.rvnums{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:8px}.rvnums b{display:block;font-size:18px}.rvnums span{color:#6b7280;font-size:12px}.rvmini{margin-top:8px;color:#6b7280;font-size:12px}.rvbar{background:#fff4df;border-left:4px solid #f59e0b;padding:9px 11px;margin:0 0 10px;font-weight:700;color:#8a4b00}.rvfilters{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.rvfilters button{border:1px solid #d8dee6;background:#fff;border-radius:5px;padding:6px 10px;cursor:pointer}.rvfilters button.on{background:#e8f1ff;border-color:#9fc3ff;color:#1455a3;font-weight:700}.strike{text-decoration:line-through;color:#8b96a8}.soldref{color:#8b96a8}.rvprod b{display:block}.rvprod small{display:block;color:#6b7280;margin-top:2px}.shoplist{font-size:12px;line-height:1.5}.shoplist div{white-space:nowrap}.checkbad{background:#ffe8e8;border-left:4px solid #ce2f36;padding:8px 10px;margin-top:10px;font-weight:700}.checkok{background:#e6f6ed;border-left:4px solid #17915a;padding:8px 10px;margin-top:10px;font-weight:700}.tier-green{color:#17915a}.tier-yellow{color:#c78405}.tier-red{color:#ce2f36}@media(max-width:980px){.rivals{grid-template-columns:repeat(2,1fr)}}@media(max-width:620px){.rivals{grid-template-columns:1fr}}";
+      document.head.appendChild(st);
+    }
+    var ov = d.overview||{}, na = '<span class="na">—</span>';
+    var v = function(x){ return (x===null||x===undefined||x==="") ? na : esc(x); };
+    var raw = function(x){ return (x===null||x===undefined||x==="") ? "—" : String(x); };
+    var money = function(x){ return (x===null||x===undefined||x==="") ? na : "¥"+Number(x).toFixed(2); };
+    var band = function(a,b){ if (a===null||a===undefined||a==="") return na; return Number(a)===Number(b) ? money(a) : money(a)+" ~ "+money(b); };
+    var yn = function(x){ return x===true ? '<span class="pill2 p-up">'+esc("能报")+'</span>' : (x===false ? '<span class="pill2 p-grade">'+esc("不能报")+'</span>' : na); };
+    $("n9").textContent = ov.pk_total==null ? "" : ov.pk_total;
+    var h = '<p class="why">'+esc("竞店 "+raw(ov["采于_竞店"])+" · 活动表 "+raw(ov["采于_活动"])+" · 我方实时")+'</p>';
+    (d.groups||[]).forEach(function(g){
+      h += '<div class="grp"><h3><span class="dot '+(g.tier==="green"?"d-grn":(g.tier==="yellow"?"d-yel":(g.tier==="red"?"d-red":"d-gry")))+'"></span><span class="tier-'+esc(g.tier||"gray")+'">'+esc(raw(g.label))+'</span><span class="c">'+v(g.count)+'</span></h3>';
+      h += '<div class="tw"><table class="g"><tr>'+["商品","附近月销","几家","附近实付","活动价上限","我方","价差","各家在卖"].map(function(x){return '<th>'+esc(x)+'</th>'}).join("")+'</tr>'+
+        (g.rows||[]).map(function(r){
+          var mine = r["我方品名"] ? esc(raw(r["我方品名"]))+'<br>'+money(r["我方售价"])+' · '+esc("库存")+v(r["我方库存"]) : '<span class="pill2 p-grade">'+esc("我们没有")+'</span>';
+          var gp = r["价差百分比"], gcls = gp==null ? "" : (Number(gp)>0 ? "hi" : (Number(gp)<0 ? "lo" : ""));
+          var sellers = (r["各家在卖"]||[]).map(function(s){
+            var shop = raw(s.shop), shortShop = shop.length>14 ? shop.slice(0,14)+"…" : shop;
+            return '<div title="'+esc(shop)+'">'+esc(shortShop)+" "+(s.price==null?esc("—"):"¥"+esc(Number(s.price).toFixed(2)))+" · "+v(s.ms)+esc("件")+'</div>';
+          }).join("") || na;
+          return '<tr><td class="rvprod"><b title="'+esc(raw(r["平台在推"]))+'">'+v(r["平台在推"])+'</b><small>'+v(r["条码"])+'</small></td>'+
+            '<td class="r">'+v(r["附近月销"])+'</td><td class="r">'+v(r["几家在卖"])+'</td><td class="r">'+band(r["附近最低实付"],r["附近最高实付"])+'</td>'+
+            '<td class="r">'+money(r["活动价上限"])+'<br>'+yn(r["能不能报"])+'</td><td>'+mine+'</td>'+
+            '<td class="r '+gcls+'">'+(gp==null?na:(Number(gp)>0?'+':'')+esc(gp)+'%')+'</td><td class="shoplist">'+sellers+'</td></tr>';
+        }).join("")+'</table></div>';
+      if (g.truncated) h += '<p class="gwhy">'+esc("只列了前 "+raw(g.shown)+" 条(共 "+raw(g.count)+" 条)。")+'</p>';
+      h += '</div>';
+    });
+    var sc = ov.self_check||{}, ok = sc.ok===true;
+    h += '<div class="'+(ok?'checkok':'checkbad')+'">'+esc("自校验:三档合计 "+raw(sc["三档计数相加"])+" = 能对上条码且附近有销量的 "+raw(sc["能对上条码且附近月销大于0的活动数"])+" "+(ok?"✅":"🔴"))+'</div>';
+    h += '<div class="blind"><b>'+esc("这层盲区")+'</b><ul>'+(d.caveats||[]).map(function(x){return '<li>'+esc(x)+'</li>'}).join("")+'</ul></div>';
+    return h;
+  },
+
   // ── 第6层 问题商品 ──
   l6: async function(){
     var d = await get("db/petstore-problem-goods");
@@ -386,7 +493,7 @@ var PAGES = {
 
 async function show(p){
   document.querySelectorAll(".snav").forEach(function(a){a.classList.toggle("on", a.dataset.p===p)});
-  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
+  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",l8:"竞店商品档",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
   $("body").innerHTML = '<div class="verdict">读取中…</div>';
   try { $("body").innerHTML = await PAGES[p](); }
   catch(e){ verdict("🔴 "+e.message,"red"); $("body").innerHTML=""; }
