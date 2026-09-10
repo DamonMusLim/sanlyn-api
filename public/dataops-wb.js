@@ -356,17 +356,32 @@ var PAGES = {
     verdict(d.verdict, /^🔴/.test(d.verdict) ? "red" : (/^🟡/.test(d.verdict) ? "warn" : "ok"));
     var money = function(x){ return "¥"+Number(x||0).toLocaleString("zh-CN"); };
     var TIER = {red:"d-red", yellow:"d-yel", green:"d-grn"};
-    var h = '<div class="cov'+(s.dated_pct<50?' bad':'')+'">有货 <b>'+
-      (s.in_stock||0).toLocaleString("zh-CN")+'</b> 个规格,其中 <b>'+(s.dated||0)+'</b> 个有日期('+
-      (s.dated_pct||0)+'%),<b>'+(s.undated||0)+'</b> 个没有。'+
-      '日期快照拉取于 <b>'+esc(s.captured||"?")+'</b>'+
-      (s.stale_days>2 ? '(已停 '+s.stale_days+' 天,这段时间到的货不在里面)' : '')+'</div>';
+    var hasPerishable = s.perishable!==undefined && s.perishable!==null;
+    var h;
+    if (hasPerishable) {
+      var inStock = Number(s.in_stock||0);
+      var perishable = Number(s.perishable||0);
+      var supplies = inStock - perishable;
+      // 覆盖率分母是会坏的品(perishable),不是全部有货规格;用品不看保质期。
+      h = '<div class="cov'+(s.dated_pct<50?' bad':'')+'">有货 <b>'+
+        esc(String(inStock.toLocaleString("zh-CN")))+'</b> 个规格,其中【会坏的】<b>'+esc(String(perishable.toLocaleString("zh-CN")))+'</b> 个;这 '+
+        esc(String(perishable.toLocaleString("zh-CN")))+' 个里 <b>'+esc(String(s.dated||0))+'</b> 个有日期('+
+        esc(String(s.dated_pct||0))+'%),<b>'+esc(String(s.undated||0))+'</b> 个没有。'+
+        '其余 <b>'+esc(String(supplies.toLocaleString("zh-CN")))+'</b> 个是用品,不看保质期。'+
+        '日期快照拉取于 <b>'+esc(s.captured||"?")+'</b>'+
+        (s.stale_days>2 ? '(已停 '+esc(String(s.stale_days))+' 天,这段时间到的货不在里面)' : '')+'</div>';
+    } else {
+      // 旧后端没有 perishable 时不能算分母,只显示有货数和快照日期。
+      h = '<div class="cov'+(s.dated_pct<50?' bad':'')+'">有货 <b>'+
+        esc(String((s.in_stock||0).toLocaleString("zh-CN")))+'</b> 个规格。'+
+        '日期快照拉取于 <b>'+esc(s.captured||"?")+'</b></div>';
+    }
 
     (d.groups||[]).forEach(function(g){
       if (!g.count) return;
       h += '<div class="grp"><h3><span class="dot '+(TIER[g.tier]||"d-gry")+'"></span>'+esc(g.label)+
-        '<span class="c">'+g.count+'</span>'+
-        '<span class="c'+(g.up_count_tier==="red"?' bad':"")+'">其中在售 '+String(g.up_count||0)+'</span>'+
+        '<span class="c">'+esc(String(g.count))+'</span>'+
+        '<span class="c'+(g.up_count_tier==="red"?' bad':"")+'">其中在售 '+esc(String(g.up_count||0))+'</span>'+
         '<span class="amt">占款 '+money(g.amount_by_price)+'</span></h3>'+
         '<p class="gwhy">'+esc(g.why)+'</p>';
       if (g.rows && g.rows.length) {
@@ -376,9 +391,9 @@ var PAGES = {
           g.rows.map(function(r){
             var dd = r.days_to_expire;
             var lf = (dd===null||dd===undefined) ? '<span class="todo">无日期</span>'
-              : (dd<0 ? '<span class="pill2 p-none">已过期 '+(-dd)+' 天</span>'
-              : (dd<=30 ? '<span class="pill2 p-none">'+dd+' 天</span>'
-              : (dd<=90 ? '<span class="pill2 p-warn">'+dd+' 天</span>' : '<span class="dim">'+dd+' 天</span>')));
+              : (dd<0 ? '<span class="pill2 p-none">已过期 '+esc(String(-dd))+' 天</span>'
+              : (dd<=30 ? '<span class="pill2 p-none">'+esc(String(dd))+' 天</span>'
+              : (dd<=90 ? '<span class="pill2 p-warn">'+esc(String(dd))+' 天</span>' : '<span class="dim">'+esc(String(dd))+' 天</span>')));
             return '<tr>'+
               '<td class="mono">'+esc(r.product_code)+'</td>'+
               '<td class="nm" title="'+esc(r.product_name||"")+'">'+esc(r.product_name)+'</td>'+
@@ -390,10 +405,10 @@ var PAGES = {
               '<td class="mono">'+(r.expiration_date?esc(String(r.expiration_date).slice(0,10))
                     :'<span class="todo">未录</span>')+'</td>'+
               '<td class="r">'+lf+'</td>'+
-              '<td class="r">'+esc(r.month_sale==null?"—":r.month_sale)+'</td>'+
+              '<td class="r">'+esc(r.month_sale==null?"—":String(r.month_sale))+'</td>'+
               '<td class="r">'+money(r.amount_by_price)+'</td></tr>';
           }).join("")+'</table></div>';
-        if (g.truncated) h += '<p class="gwhy">只列了前 '+g.shown+' 条(共 '+g.count+' 条) —— '+
+        if (g.truncated) h += '<p class="gwhy">只列了前 '+esc(String(g.shown))+' 条(共 '+esc(String(g.count))+' 条) —— '+
           '这一档太多,该做的是批量补录,不是一条条看。</p>';
       }
       h += '</div>';
