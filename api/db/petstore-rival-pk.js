@@ -15,8 +15,18 @@ const CAVEATS = [
   "「我们有没有」按【条码】判,⛔不是品名匹配(品名匹配准确率只有 10.6%)。",
   "「活动价上限」是平台允许的最高活动价,不是建议价。能报≠值得报 —— 要先过毛利这关,⛔ 本页不返回成本和毛利。",
   "同一个品可能出现多行(平台把「单袋」和「4袋装」拆成两个活动),条码相同、活动名不同。看的时候注意 sub_act_name 里的【N袋】。",
-  "只列出附近月销>0 的;附近没销量的不进这张表,不代表它不存在。"
+  "只列出附近月销>0 的;附近没销量的不进这张表,不代表它不存在。",
+  "💰 那一档按【平台补贴】切,⛔不看附近有没有人卖 —— 平台愿意贴钱推的品,附近没人做反而可能是机会。它和下面三档会重复出现同一个品,那是两个视角不是重复数据。",
+  "⛔「能报」不等于「值得报」:活动价上限是平台允许的最高活动价,不是建议价。报之前必须先过毛利这关,而本接口⛔不返回成本和毛利。另外要看清最少下单量/每日库存下限/本店最多报几个SKU —— 报了执行不了等于没报。"
 ];
+
+const SUBSIDY_BUCKET = {
+  key: "subsidized",
+  label: "💰 平台给补贴 · 不管附近有没有人卖 —— 这是平台在贴钱推的",
+  tier: "green",
+  note: "⚠️ 这一档和下面三档会重复出现同一个品 —— 它是按「平台补贴」切的另一个视角",
+  test: (r) => (num(r.plat_charge_amount) || 0) > 0
+};
 
 const BUCKETS = [
   {
@@ -56,6 +66,9 @@ const ACTIVITY_BASE = `
       max_act_price,
       can_apply,
       plat_charge_amount,
+      min_order_count,
+      day_stock_limit_min,
+      max_sku_per_poi,
       capture_date,
       captured_at,
       (regexp_match(sku_filter_detail::text, 'UPC:([0-9]{8,14})'))[1] AS "条码"
@@ -68,6 +81,9 @@ const ACTIVITY_BASE = `
     a.max_act_price,
     a.can_apply,
     a.plat_charge_amount,
+    a.min_order_count,
+    a.day_stock_limit_min,
+    a.max_sku_per_poi,
     a.capture_date,
     a."条码",
     p."品牌", p."类目", p."竞店品名", p."几家在卖", p."附近月销",
@@ -112,6 +128,12 @@ function sortBySales(a, b) {
     || String(a.条码 || "").localeCompare(String(b.条码 || ""), "zh-CN");
 }
 
+function sortBySubsidy(a, b) {
+  return (num(b.plat_charge_amount) || 0) - (num(a.plat_charge_amount) || 0)
+    || (num(b.附近月销) ?? -1) - (num(a.附近月销) ?? -1)
+    || String(a.条码 || "").localeCompare(String(b.条码 || ""), "zh-CN");
+}
+
 function shops(detail) {
   const xs = Array.isArray(detail) ? detail : [];
   return xs.map((x) => ({
@@ -119,6 +141,29 @@ function shops(detail) {
     price: num(x?.price),
     ms: num(x?.ms)
   }));
+}
+
+function packSubsidized(r) {
+  return {
+    条码: str(r.条码),
+    平台在推: str(r.sub_act_name),
+    平台补贴: num(r.plat_charge_amount),
+    活动价上限: num(r.max_act_price),
+    能不能报: bool(r.can_apply),
+    最少下单量: num(r.min_order_count),
+    每日库存下限: num(r.day_stock_limit_min),
+    本店最多报几个SKU: num(r.max_sku_per_poi),
+    附近月销: num(r.附近月销),
+    几家在卖: num(r.几家在卖),
+    附近最低实付: num(r.附近最低实付),
+    我方品名: str(r.我方品名),
+    我方售价: num(r.我方售价),
+    我方库存: num(r.我方库存),
+    我方月销: num(r.我方月销),
+    我方货位: str(r.我方货位),
+    价差百分比: num(r.价差百分比),
+    各家在卖: shops(r.各家明细)
+  };
 }
 
 function packOpportunity(r) {
@@ -169,9 +214,11 @@ function packPk(r) {
 function overviewFrom(rows, pkStats) {
   const matched = rows.filter((r) => str(r.条码) && r.竞店品名 !== null);
   const matchedSelling = matched.filter((r) => (num(r.附近月销) || 0) > 0);
+  const subsidized = rows.filter(SUBSIDY_BUCKET.test);
   const counts = Object.fromEntries(BUCKETS.map((b) => [b.key, matchedSelling.filter(b.test).length]));
   const actDates = rows.map((r) => str(r.capture_date)).filter(Boolean).sort();
   const selfCheck = counts.can_apply + counts.need_restock + counts.need_buy;
+  const subsidyShown = Math.min(subsidized.length, OP_LIMIT);
 
   return {
     pk_total: pkStats.pk_total,
@@ -179,6 +226,9 @@ function overviewFrom(rows, pkStats) {
     我们没有: pkStats.我们没有,
     活动总数: rows.length,
     能对上条码的: matched.length,
+    有补贴的活动数: subsidized.length,
+    有补贴且我们有货的: subsidized.filter((r) => hasMineCode(r) && Number(r.我方库存) > 0).length,
+    有补贴但我们连品都没有的: subsidized.filter((r) => !hasMineCode(r)).length,
     can_apply: counts.can_apply,
     need_restock: counts.need_restock,
     need_buy: counts.need_buy,
@@ -190,6 +240,11 @@ function overviewFrom(rows, pkStats) {
       三档计数相加: selfCheck,
       能对上条码且附近月销大于0的活动数: matchedSelling.length,
       ok: selfCheck === matchedSelling.length
+    },
+    subsidy_check: {
+      有补贴的活动数: subsidized.length,
+      本档列出数: subsidyShown,
+      ok: subsidyShown === Math.min(subsidized.length, OP_LIMIT)
     }
   };
 }
@@ -207,25 +262,40 @@ async function pkStats(pool) {
 }
 
 function buildBuckets(rows) {
+  const subsidyRows = rows.filter(SUBSIDY_BUCKET.test).sort(sortBySubsidy);
   const selling = rows.filter((r) => str(r.条码) && r.竞店品名 !== null && (num(r.附近月销) || 0) > 0);
-  return BUCKETS.map((b) => {
-    const bucketRows = selling.filter(b.test).sort(sortBySales);
-    return {
-      key: b.key,
-      label: b.label,
-      tier: b.tier,
-      count: bucketRows.length,
-      shown: Math.min(bucketRows.length, OP_LIMIT),
-      truncated: bucketRows.length > OP_LIMIT,
-      rows: bucketRows.slice(0, OP_LIMIT).map(packOpportunity)
-    };
-  });
+  const subsidized = {
+    key: SUBSIDY_BUCKET.key,
+    label: SUBSIDY_BUCKET.label,
+    note: SUBSIDY_BUCKET.note,
+    tier: SUBSIDY_BUCKET.tier,
+    count: subsidyRows.length,
+    shown: Math.min(subsidyRows.length, OP_LIMIT),
+    truncated: subsidyRows.length > OP_LIMIT,
+    rows: subsidyRows.slice(0, OP_LIMIT).map(packSubsidized)
+  };
+
+  return [
+    subsidized,
+    ...BUCKETS.map((b) => {
+      const bucketRows = selling.filter(b.test).sort(sortBySales);
+      return {
+        key: b.key,
+        label: b.label,
+        tier: b.tier,
+        count: bucketRows.length,
+        shown: Math.min(bucketRows.length, OP_LIMIT),
+        truncated: bucketRows.length > OP_LIMIT,
+        rows: bucketRows.slice(0, OP_LIMIT).map(packOpportunity)
+      };
+    })
+  ];
 }
 
 async function buildOpportunities(pool) {
   const [stats, activity] = await Promise.all([
     pkStats(pool),
-    pool.query(`${ACTIVITY_BASE} ORDER BY p."附近月销" DESC NULLS LAST, a.sub_act_id`)
+    pool.query(`${ACTIVITY_BASE} ORDER BY a.plat_charge_amount DESC NULLS LAST, p."附近月销" DESC NULLS LAST, a.sub_act_id`)
   ]);
   const overview = overviewFrom(activity.rows, stats);
   const total = overview.can_apply + overview.need_restock + overview.need_buy;
