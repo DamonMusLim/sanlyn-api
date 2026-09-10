@@ -366,7 +366,7 @@ var PAGES = {
       if (!g.count) return;
       h += '<div class="grp"><h3><span class="dot '+(TIER[g.tier]||"d-gry")+'"></span>'+esc(g.label)+
         '<span class="c">'+g.count+'</span>'+
-        '<span class="c'+(g.up_count_tier==="red"?' bad':'')+'">其中在售 '+raw(g.up_count||0)+'</span>'+
+        '<span class="c'+(g.up_count_tier==="red"?' bad':"")+'">其中在售 '+String(g.up_count||0)+'</span>'+
         '<span class="amt">占款 '+money(g.amount_by_price)+'</span></h3>'+
         '<p class="gwhy">'+esc(g.why)+'</p>';
       if (g.rows && g.rows.length) {
