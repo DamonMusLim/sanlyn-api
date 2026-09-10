@@ -2,6 +2,7 @@ import { getPool, setCors } from "../db.js";
 
 const TIERS = ["lt20", "20_25", "25_28"];
 const BOXES = ["20GP", "40HQ"];
+const TAX_NOTICE = "本页所有拖车报价均为【含税价】(增值税已包含)。开票时不再另加税。";
 const CITY_ALIASES = {
   "青岛": "青岛", "QINGDAO": "青岛",
   "厦门": "厦门", "XIAMEN": "厦门",
@@ -37,8 +38,53 @@ function bodyOf(req) { return req.body || {}; }
 let portAliasCache = null;
 let portAliasCacheLoading = null;
 let lastPortCacheWarnAt = 0;
+let factoryAliasCache = null;
+let factoryAliasCacheLoading = null;
+let lastFactoryCacheWarnAt = 0;
 
 function portKey(v) { return clean(v).toUpperCase().replace(/\s+/g, ""); }
+function aliasKey(v) {
+  return clean(v).normalize("NFKC").toLowerCase().replace(/[\s()（）]/g, "");
+}
+
+async function ensureFactoryAliasCache(pool) {
+  if (factoryAliasCache) return factoryAliasCache;
+  if (!factoryAliasCacheLoading) {
+    factoryAliasCacheLoading = pool.query(
+      `SELECT a.alias_text, a.normalized_alias, c.name_cn
+         FROM company_aliases a
+         JOIN companies c ON c.code = a.company_code
+        WHERE a.status = 'active'
+          AND COALESCE(c.name_cn, '') <> ''`
+    ).then(({ rows }) => {
+      const map = {};
+      rows.forEach(r => {
+        [r.alias_text, r.normalized_alias].forEach(v => {
+          const key = aliasKey(v);
+          if (key) map[key] = clean(r.name_cn);
+        });
+      });
+      factoryAliasCache = map;
+      factoryAliasCacheLoading = null;
+      return map;
+    }).catch(e => {
+      const now = Date.now();
+      if (now - lastFactoryCacheWarnAt > 60000) {
+        lastFactoryCacheWarnAt = now;
+        console.warn("[forwarder-services] company_aliases cache unavailable; using raw factory names", e && e.message);
+      }
+      factoryAliasCacheLoading = null;
+      return {};
+    });
+  }
+  return factoryAliasCacheLoading;
+}
+
+function normalizeFactory(raw, aliases) {
+  const source = clean(raw) || "未标注工厂";
+  const canon = aliases && aliases[aliasKey(source)];
+  return { factory: canon || source, raw: source };
+}
 
 // 与 _lane-weeks.js:ensureLocalPortCache 同源,改一处要改两处
 async function ensurePortCache(pool) {
@@ -225,7 +271,8 @@ async function getPaidCustomsRows(pool, companyId) {
 
 async function getRates(pool, companyId, service) {
   const { rows } = await pool.query(
-    `SELECT factory, port, container_type, tier, rate_cny, updated_at
+    `SELECT factory, port, container_type, tier, rate_cny, tax_included,
+            tax_rate, service_nature, rate_cny_ex_tax, updated_at
        FROM forwarder_service_rates
       WHERE forwarder_company_id = $1 AND service = $2`,
     [companyId, service]
@@ -234,7 +281,58 @@ async function getRates(pool, companyId, service) {
 }
 
 function ratePayload(r) {
-  return { rate_cny: r.rate_cny == null ? null : Number(r.rate_cny), updated_at: r.updated_at };
+  const taxRate = r.tax_rate == null ? null : Number(r.tax_rate);
+  const exTax = r.rate_cny_ex_tax == null ? null : Number(r.rate_cny_ex_tax);
+  const nature = clean(r.service_nature) || null;
+  return {
+    rate_cny: r.rate_cny == null ? null : Number(r.rate_cny),
+    tax_included: r.tax_included !== false,
+    tax_rate: taxRate,
+    service_nature: nature,
+    rate_cny_ex_tax: exTax,
+    comparable_ex_tax: taxRate != null && exTax != null,
+    tax_identity_unconfirmed: !nature || taxRate == null,
+    updated_at: r.updated_at
+  };
+}
+
+function taxLabel(row) {
+  if (!row || row.tax_rate == null) return null;
+  const parts = [clean(row.invoice_item_name), clean(row.invoice_type)].filter(Boolean);
+  parts.push((Number(row.tax_rate) * 100).toFixed(0) + "%");
+  return parts.join(" · ");
+}
+
+async function getForwarderTax(pool, companyId, service) {
+  const { rows } = await pool.query(
+    `SELECT c.vat_taxpayer_type AS service_nature,
+            r.tax_rate, r.invoice_item_name, r.invoice_type
+       FROM companies c
+       LEFT JOIN LATERAL (
+         SELECT tax_rate, invoice_item_name, invoice_type
+           FROM fee_tax_rules
+          WHERE service_nature = c.vat_taxpayer_type
+            AND ($2 <> 'truck' OR service_nature IN ('other_agency_service', 'own_fleet_land_transport', 'intl_transport_or_forwarding'))
+          LIMIT 1
+       ) r ON TRUE
+      WHERE c.id = $1
+      LIMIT 1`,
+    [companyId, service]
+  );
+  const row = rows[0] || {};
+  const nature = clean(row.service_nature) || null;
+  const taxRate = row.tax_rate == null ? null : Number(row.tax_rate);
+  const confirmed = !!nature && Number.isFinite(taxRate);
+  return {
+    service_nature: nature,
+    tax_rate: confirmed ? taxRate : null,
+    label: confirmed ? taxLabel(row) : "开票身份待确认",
+    confirmed
+  };
+}
+
+function exTax(rate, taxRate) {
+  return taxRate == null ? null : Math.round(rate / (1 + taxRate) * 100) / 100;
 }
 
 function cargoOf(row) {
@@ -250,25 +348,31 @@ function cargoOf(row) {
 async function handleTruck(req, res, pool, token) {
   if (!token.company_id) return res.json({ ok: true, service: "truck", factories: [], tiers: TIERS, boxes: BOXES });
   await ensurePortCache(pool);
+  const aliases = await ensureFactoryAliasCache(pool);
   const rows = await getShipRows(pool, token.company_id);
   const rates = await getRates(pool, token.company_id, "truck");
+  const forwarderTax = await getForwarderTax(pool, token.company_id, "truck");
   const map = new Map();
 
   rows.forEach(row => {
-    const factory = clean(row.factory) || "未标注工厂";
+    const resolved = normalizeFactory(row.factory, aliases);
+    const factory = resolved.factory;
     const port = normalizePort(row.pol);
     if (!port) return;
-    if (!map.has(factory)) map.set(factory, { factory, city: "", ports: [], rates: {} });
+    if (!map.has(factory)) map.set(factory, { factory, factory_raw_names: [], city: "", ports: [], rates: {} });
     const item = map.get(factory);
+    if (!item.factory_raw_names.includes(resolved.raw)) item.factory_raw_names.push(resolved.raw);
     if (!item.ports.includes(port)) item.ports.push(port);
   });
 
   rates.forEach(r => {
-    const factory = clean(r.factory) || "未标注工厂";
+    const resolved = normalizeFactory(r.factory, aliases);
+    const factory = resolved.factory;
     const port = normalizePort(r.port);
     const box = normalizeBox(r.container_type);
-    if (!map.has(factory)) map.set(factory, { factory, city: "", ports: [], rates: {} });
+    if (!map.has(factory)) map.set(factory, { factory, factory_raw_names: [], city: "", ports: [], rates: {} });
     const item = map.get(factory);
+    if (!item.factory_raw_names.includes(resolved.raw)) item.factory_raw_names.push(resolved.raw);
     if (port && !item.ports.includes(port)) item.ports.push(port);
     item.rates[`${port}|${box}|${clean(r.tier)}`] = ratePayload(r);
   });
@@ -278,15 +382,17 @@ async function handleTruck(req, res, pool, token) {
     if (b.factory === "未标注工厂") return -1;
     return a.factory.localeCompare(b.factory, "zh-Hans-CN");
   });
-  return res.json({ ok: true, service: "truck", factories, tiers: TIERS, boxes: BOXES });
+  return res.json({ ok: true, service: "truck", tax_notice: TAX_NOTICE, forwarder_tax: forwarderTax, factories, tiers: TIERS, boxes: BOXES });
 }
 
 async function handleCustoms(req, res, pool, token) {
   if (!token.company_id) return res.json({ ok: true, service: "customs", ports: [] });
   await ensurePortCache(pool);
+  await ensureFactoryAliasCache(pool);
   const rows = await getShipRows(pool, token.company_id);
   const paidRows = await getPaidCustomsRows(pool, token.company_id);
   const rates = await getRates(pool, token.company_id, "customs");
+  const forwarderTax = await getForwarderTax(pool, token.company_id, "customs");
   const map = new Map();
 
   rows.forEach(row => {
@@ -302,7 +408,7 @@ async function handleCustoms(req, res, pool, token) {
     if (map.has(port)) map.get(port).rate_cny = r.rate_cny == null ? null : Number(r.rate_cny);
   });
 
-  return res.json({ ok: true, service: "customs", ports: Array.from(map.values()) });
+  return res.json({ ok: true, service: "customs", tax_notice: TAX_NOTICE, forwarder_tax: forwarderTax, ports: Array.from(map.values()) });
 }
 
 async function saveQuote(req, res, pool, token) {
@@ -321,16 +427,22 @@ async function saveQuote(req, res, pool, token) {
   const tier = service === "truck" ? clean(body.tier) : "";
   if (!port) return res.status(400).json({ ok: false, error: "port required" });
   if (service === "truck" && (!box || !TIERS.includes(tier))) return res.status(400).json({ ok: false, error: "truck key invalid" });
+  const forwarderTax = await getForwarderTax(pool, token.company_id, service);
+  const rateExTax = exTax(rate, forwarderTax.tax_rate);
 
   await pool.query(
     `INSERT INTO forwarder_service_rates
-       (forwarder_company_id, service, factory, port, container_type, tier, rate_cny, updated_at, updated_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)
+       (forwarder_company_id, service, factory, port, container_type, tier, rate_cny,
+        tax_included, tax_rate, service_nature, rate_cny_ex_tax, updated_at, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10, NOW(), $11)
      ON CONFLICT (forwarder_company_id, service, factory, port, container_type, tier)
-     DO UPDATE SET rate_cny = EXCLUDED.rate_cny, updated_at = NOW(), updated_by = EXCLUDED.updated_by`,
-    [token.company_id, service, factory, port, box, tier, rate, token.forwarder_co || token.code || ""]
+     DO UPDATE SET rate_cny = EXCLUDED.rate_cny, tax_included = true,
+       tax_rate = EXCLUDED.tax_rate, service_nature = EXCLUDED.service_nature,
+       rate_cny_ex_tax = EXCLUDED.rate_cny_ex_tax, updated_at = NOW(), updated_by = EXCLUDED.updated_by`,
+    [token.company_id, service, factory, port, box, tier, rate, forwarderTax.tax_rate,
+      forwarderTax.service_nature, rateExTax, token.forwarder_co || token.code || ""]
   );
-  return res.json({ ok: true, saved: true });
+  return res.json({ ok: true, saved: true, tax_notice: TAX_NOTICE, forwarder_tax: forwarderTax });
 }
 
 export default async function handler(req, res) {

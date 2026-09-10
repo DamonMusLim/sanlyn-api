@@ -3,7 +3,8 @@ import { localNormalizePort } from "./_lane-weeks.js";
 var RATE_SERVICES = ["truck", "customs"];
 
 export const SERVICE_STATUS_SQL = `
-SELECT service, factory, port, container_type, tier, rate_cny, updated_at
+SELECT service, factory, port, container_type, tier, rate_cny, rate_cny_ex_tax,
+       tax_rate, service_nature, updated_at
   FROM forwarder_service_rates
  WHERE forwarder_company_id = $1
    AND service = ANY($2::text[])
@@ -141,20 +142,30 @@ function buildRateMap(rows) {
     if (RATE_SERVICES.indexOf(svc) === -1) return;
     var key = rateKey(row);
     var rate = num(row && row.rate_cny);
+    var exTax = num(row && row.rate_cny_ex_tax);
+    var comparable = exTax != null && num(row && row.tax_rate) != null && text(row && row.service_nature) !== "";
     if (!key || rate == null || rate <= 0) return;
     var bySvc = map[svc] || (map[svc] = {});
     if (!bySvc[key]) {
-      bySvc[key] = { rate_cny:rate, rate_cny_max:rate, updated_at:ymd(row.updated_at) };
+      bySvc[key] = { quoted:true, comparable:comparable, updated_at:ymd(row.updated_at) };
+      if (comparable) {
+        bySvc[key].rate_cny = exTax;
+        bySvc[key].rate_cny_max = exTax;
+      }
       return;
     }
-    bySvc[key].rate_cny = Math.min(bySvc[key].rate_cny, rate);
-    bySvc[key].rate_cny_max = Math.max(bySvc[key].rate_cny_max, rate);
+    bySvc[key].quoted = true;
+    bySvc[key].comparable = bySvc[key].comparable || comparable;
+    if (!comparable) return;
+    bySvc[key].rate_cny = bySvc[key].rate_cny == null ? exTax : Math.min(bySvc[key].rate_cny, exTax);
+    bySvc[key].rate_cny_max = bySvc[key].rate_cny_max == null ? exTax : Math.max(bySvc[key].rate_cny_max, exTax);
   });
   return map;
 }
 
 function mergeHit(best, hit) {
   if (!hit) return best;
+  if (!hit.comparable) return best;
   if (!best) return { rate_cny:hit.rate_cny, rate_cny_max:hit.rate_cny_max, updated_at:hit.updated_at };
   best.rate_cny = Math.min(best.rate_cny, hit.rate_cny);
   best.rate_cny_max = Math.max(best.rate_cny_max, hit.rate_cny_max);
@@ -166,6 +177,7 @@ function finishStatus(covered, total, best) {
     state:covered > 0 ? "has_rate" : "no_rate",
     covered:covered,
     total:total,
+    comparable_ex_tax:!!best,
   };
   if (best) {
     out.rate_cny = best.rate_cny;
@@ -198,16 +210,18 @@ function statusForCustoms(combos, ports, rates) {
     var port = combo && combo.port;
     if (!port) return;
     var entry = portState[port] || (portState[port] = { covered:false, best:null });
-    var hit = mergeHit(mergeHit(null, bySvc[comboKey(combo)]), bySvc[portKey(port)]);
-    if (!hit) return;
+    var comboHit = bySvc[comboKey(combo)], portHit = bySvc[portKey(port)];
+    if (!comboHit && !portHit) return;
     entry.covered = true;
-    entry.best = mergeHit(entry.best, hit);
+    entry.best = mergeHit(mergeHit(entry.best, comboHit), portHit);
   });
   Object.keys(portState).forEach(function(port) {
     var entry = portState[port];
     if (entry.covered) return;
-    entry.best = mergeHit(entry.best, bySvc[portKey(port)]);
-    entry.covered = Boolean(entry.best);
+    var hit = bySvc[portKey(port)];
+    if (!hit) return;
+    entry.best = mergeHit(entry.best, hit);
+    entry.covered = true;
   });
   var total = Object.keys(portState).length;
   var covered = 0;
