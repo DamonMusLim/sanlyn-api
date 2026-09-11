@@ -51,7 +51,8 @@ const QUOTES_SQL = `
 `;
 
 const MINE_SQL = `
-  SELECT r.product_name,
+  SELECT r.product_code,
+         r.product_name,
          r.barcode,
          round(r.store_price::numeric, 2) AS store_price,
          r.product_status,
@@ -60,6 +61,19 @@ const MINE_SQL = `
     FROM public.petstore_ops_row r
     LEFT JOIN public.petstore_skus k ON k.product_code = r.product_code
    WHERE coalesce(r.product_name, '') <> ''
+`;
+
+const REVIEW_SQL = `
+  SELECT h5_sku_id,
+         our_product_code,
+         verdict,
+         correct_spec,
+         note,
+         reviewed_by,
+         reviewed_at,
+         near_price_at_review,
+         mine_price_at_review
+    FROM public.petstore_match_review
 `;
 
 function cleanName(s) {
@@ -161,12 +175,31 @@ function fakePrice(row) {
   return null;
 }
 
+function reviewKey(h5SkuId, productCode) {
+  return `${h5SkuId || ""}\u0001${productCode || ""}`;
+}
+
+function samePrice(a, b) {
+  if (a === null && b === null) return true;
+  if (a === null || b === null) return false;
+  return Number(a).toFixed(2) === Number(b).toFixed(2);
+}
+
+function buildReviewMap(rows) {
+  const map = new Map();
+  for (const r of rows) {
+    map.set(reviewKey(r.h5_sku_id, r.our_product_code), r);
+  }
+  return map;
+}
+
 function buildMineIndex(rows) {
   const map = new Map();
   for (const r of rows) {
     const brand = brandHead(r.product_name);
     if (!brand) continue;
     const item = {
+      product_code: r.product_code || null,
       name: r.product_name || null,
       price: num(r.store_price),
       stock: num(r.stock_num),
@@ -198,6 +231,31 @@ function pickMine(q, index) {
   return { level: "brand", mine };
 }
 
+function attachReview(row, reviewMap) {
+  const rv = reviewMap.get(reviewKey(row.sku_id, row.mine_product_code));
+  if (!rv) {
+    row.review = null;
+    return row;
+  }
+  const priceChanged = !samePrice(num(rv.near_price_at_review), row.price) || !samePrice(num(rv.mine_price_at_review), row.mine_price);
+  row.review = {
+    verdict: rv.verdict || null,
+    correct_spec: rv.correct_spec || null,
+    note: rv.note || null,
+    reviewed_by: rv.reviewed_by || null,
+    reviewed_at: rv.reviewed_at || null,
+    near_price_at_review: num(rv.near_price_at_review),
+    mine_price_at_review: num(rv.mine_price_at_review),
+    price_changed: priceChanged
+  };
+  if (priceChanged) {
+    row.doubts = row.doubts || [];
+    if (!row.doubts.includes("价已变·结论可能过期")) row.doubts.push("价已变·结论可能过期");
+    row.doubt_level = row.doubt_level === "high" ? "high" : "warn";
+  }
+  return row;
+}
+
 function rowOut(q, index) {
   const fake = fakePrice(q);
   const price = num(q.price);
@@ -217,6 +275,7 @@ function rowOut(q, index) {
     month_sales: num(q.monthly_sales),
     picture: q.picture || null,
     mine_level: hit.level,
+    mine_product_code: hit.mine?.product_code || null,
     mine_name: hit.mine?.name || null,
     mine_price: hit.mine?.price ?? null,
     mine_stock: hit.mine?.stock ?? null,
@@ -270,10 +329,11 @@ export default async function handler(req, res) {
 
   try {
     const pool = getPool();
-    const [quotesRet, mineRet] = await Promise.all([pool.query(QUOTES_SQL), pool.query(MINE_SQL)]);
+    const [quotesRet, mineRet, reviewRet] = await Promise.all([pool.query(QUOTES_SQL), pool.query(MINE_SQL), pool.query(REVIEW_SQL)]);
     const quotes = quotesRet.rows || [];
     const mineIndex = buildMineIndex(mineRet.rows || []);
-    const rows = addDoubts(quotes.map((q) => rowOut(q, mineIndex)));
+    const reviewMap = buildReviewMap(reviewRet.rows || []);
+    const rows = addDoubts(quotes.map((q) => rowOut(q, mineIndex))).map((r) => attachReview(r, reviewMap));
     const capturedAt = quotes[0]?.captured_day || null;
     const staleDays = capturedAt ? Math.floor((Date.now() - new Date(`${capturedAt}T00:00:00Z`).getTime()) / 86400000) : null;
 
@@ -286,20 +346,41 @@ export default async function handler(req, res) {
       有月销的商品数: rows.filter((r) => (r.month_sales ?? 0) > 0).length,
       我方exact命中数: rows.filter((r) => r.mine_level === "exact").length,
       我方brand命中数: rows.filter((r) => r.mine_level === "brand").length,
-      待核查数: rows.filter((r) => r.doubt_level !== "ok").length,
-      其中high: rows.filter((r) => r.doubt_level === "high").length
+      待核查数: rows.filter((r) => (!r.review && r.doubt_level !== "ok") || (r.review && r.review.price_changed)).length,
+      其中high: rows.filter((r) => ((!r.review && r.doubt_level === "high") || (r.review && r.review.price_changed && r.doubt_level === "high"))).length,
+      已核查数: rows.filter((r) => r.review).length,
+      确认真差价数: rows.filter((r) => r.review && r.review.verdict === "real_gap" && !r.review.price_changed).length,
+      我方档案要修数: rows.filter((r) => r.review && r.review.verdict === "our_sku_dirty" && !r.review.price_changed).length
     };
 
+    const confirmedGapRows = rows
+      .filter((r) => r.review && r.review.verdict === "real_gap" && !r.review.price_changed)
+      .sort((a, b) => Math.abs(num(b.price_gap) ?? 0) - Math.abs(num(a.price_gap) ?? 0));
     const needVerifyRows = rows
-      .filter((r) => r.doubt_level !== "ok")
+      .filter((r) => (!r.review && r.doubt_level !== "ok") || (r.review && r.review.price_changed))
       .sort((a, b) => (a.doubt_level === "high" ? 0 : 1) - (b.doubt_level === "high" ? 0 : 1) || (b.month_sales ?? -1) - (a.month_sales ?? -1));
+    const skuDirtyRows = rows
+      .filter((r) => r.review && r.review.verdict === "our_sku_dirty" && !r.review.price_changed)
+      .sort((a, b) => (b.month_sales ?? -1) - (a.month_sales ?? -1));
 
     const groups = [{
+      key: "confirmed_gap",
+      label: "✅ 确认差价 · 可调价",
+      tier: "green",
+      count: confirmedGapRows.length,
+      rows: confirmedGapRows
+    }, {
       key: "need_verify",
       label: "⚠️ 待核查 · 匹配存疑,别直接调价",
       tier: "red",
       count: needVerifyRows.length,
       rows: needVerifyRows
+    }, {
+      key: "sku_dirty",
+      label: "🔧 我方商品档要修 · 一码多规格",
+      tier: "orange",
+      count: skuDirtyRows.length,
+      rows: skuDirtyRows
     }].concat(GROUPS.map((g) => {
       const all = rows
         .filter((r) => g.test(r.distance_m))
