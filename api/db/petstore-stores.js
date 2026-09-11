@@ -44,8 +44,13 @@ function err(res, e) {
 async function createStore(pool, body) {
   const code = codeOf(body.code);
   const name = text(body.name, 80, "name", true);
-  const exists = await pool.query(`SELECT 1 FROM petstore_stores WHERE code = $1`, [code]);
-  if (exists.rowCount) throw Object.assign(new Error("门店编号已存在"), { status: 409 });
+  const exists = await pool.query(`SELECT is_active FROM petstore_stores WHERE code = $1`, [code]);
+  if (exists.rowCount) {
+    if (exists.rows[0]?.is_active === false) {
+      throw Object.assign(new Error("这个门店编号之前用过,现在是停用状态。勾选『显示已停用』找到它,点『启用』即可,不用重新建。"), { status: 409 });
+    }
+    throw Object.assign(new Error("门店编号已存在"), { status: 409 });
+  }
 
   const cols = ["code", "name", ...STORE_FIELDS, "is_active"];
   const vals = [code, name, ...STORE_FIELDS.map((k) => body[k] ?? null), true];
@@ -71,6 +76,12 @@ async function updateStore(pool, body) {
   return { code };
 }
 
+async function restoreStore(pool, code) {
+  const r = await pool.query(`UPDATE petstore_stores SET is_active = true, updated_at = now() WHERE code = $1`, [code]);
+  if (!r.rowCount) throw Object.assign(new Error("门店不存在"), { status: 404 });
+  return { code, message: "已启用" };
+}
+
 async function deleteStore(pool, code) {
   const count = await pool.query(`SELECT count(*)::int AS n FROM petstore_shop_order WHERE store_code = $1`, [code]);
   const n = Number(count.rows[0]?.n || 0);
@@ -88,6 +99,7 @@ export default async function handler(req, res) {
   try {
     const pool = getPool();
     if (req.method === "GET") {
+      const includeInactive = req.query?.includeInactive === "1";
       const { rows } = await pool.query(`SELECT code, short_code, name, address, phone, subtitle, badge, hours,
         is_24h, lat::float8 AS lat, lng::float8 AS lng, camera_notice, express_days, gdc_store_code,
         online_shop, is_active, sort_order,
@@ -98,8 +110,8 @@ export default async function handler(req, res) {
           ELSE '正常'
         END AS status_cn
    FROM petstore_stores
-  WHERE is_active = $1
-  ORDER BY sort_order, code`, [true]);
+  WHERE ($1::boolean IS TRUE OR is_active = true)
+  ORDER BY sort_order, code`, [includeInactive]);
       return res.status(200).json({ rows, total: rows.length });
     }
 
@@ -113,6 +125,7 @@ export default async function handler(req, res) {
       let out;
       if (action === "create") out = await createStore(pool, body);
       else if (action === "update") out = await updateStore(pool, body);
+      else if (action === "restore") out = await restoreStore(pool, codeOf(body.code));
       else if (action === "delete") out = await deleteStore(pool, codeOf(body.code));
       else throw Object.assign(new Error("action 不支持"), { status: 400 });
 
