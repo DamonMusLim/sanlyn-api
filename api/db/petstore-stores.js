@@ -102,17 +102,17 @@ export default async function handler(req, res) {
     if (req.method === "POST") {
       const body = bodyOf(req);
       const action = String(body.action || "").trim();
-      const storeCode = codeOf(body.code);
-      const gate = await requireWritable(req, res, "core_tenant", storeCode);
+      const adminStore = String(body.storeCode || "").trim() || "63350001";
+      const gate = await requireWritable(req, res, "core_tenant", adminStore);
       if (!gate) return;
 
       let out;
       if (action === "create") out = await createStore(pool, body);
       else if (action === "update") out = await updateStore(pool, body);
-      else if (action === "delete") out = await deleteStore(pool, storeCode);
+      else if (action === "delete") out = await deleteStore(pool, codeOf(body.code));
       else throw Object.assign(new Error("action 不支持"), { status: 400 });
 
-      console.log(`[petstore-stores] action=${action} code=${storeCode} by=${operatorFromReq(req)}`);
+      console.log(`[petstore-stores] action=${action} code=${out.code} by=${operatorFromReq(req)}`);
       return res.status(200).json({ ok: true, ...out });
     }
 
