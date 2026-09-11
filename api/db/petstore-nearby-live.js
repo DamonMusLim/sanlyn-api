@@ -107,6 +107,21 @@ function specs(name) {
   return out;
 }
 
+function doubtSpecs(name) {
+  const s = String(name || "")
+    .replace(/Ｋ/g, "K").replace(/ｋ/g, "k")
+    .replace(/Ｇ/g, "G").replace(/ｇ/g, "g")
+    .replace(/Ｍ/g, "M").replace(/ｍ/g, "m")
+    .replace(/Ｌ/g, "L").replace(/ｌ/g, "l");
+  const out = new Set();
+  const re = /(\d+(?:\.\d+)?)\s*(kg|KG|Kg|g|G|ml|ML|Ml|l|L|斤|片|袋|罐|支|条|粒|包)/g;
+  let m;
+  while ((m = re.exec(s))) {
+    out.add(`${Number(m[1])}${m[2].toLowerCase()}`);
+  }
+  return out;
+}
+
 function extractFlavors(title) {
   const s = String(title || "");
   const hits = FLAVOR_WORDS
@@ -211,6 +226,34 @@ function rowOut(q, index) {
   };
 }
 
+function addDoubts(rows) {
+  const mineToSkus = new Map();
+  for (const r of rows) {
+    if (r.mine_level !== "exact") continue;
+    const mineKey = r.mine_name || null;
+    if (!mineKey) continue;
+    if (!mineToSkus.has(mineKey)) mineToSkus.set(mineKey, new Set());
+    if (r.sku_id) mineToSkus.get(mineKey).add(r.sku_id);
+  }
+
+  for (const r of rows) {
+    const doubts = [];
+    if (r.mine_level === "exact") {
+      const price = num(r.price);
+      const gap = num(r.price_gap);
+      if (price !== null && price > 0 && gap !== null && Math.abs(gap) / price >= 1.0) doubts.push("差价过大");
+      if (r.mine_name && mineToSkus.has(r.mine_name) && mineToSkus.get(r.mine_name).size > 3) doubts.push("一对多");
+      if (doubtSpecs(r.title).size >= 2 || doubtSpecs(r.mine_name).size >= 2) doubts.push("多规格标题");
+      const nearFlavors = r.flavors || [];
+      const mineFlavors = extractFlavors(r.mine_name);
+      if (nearFlavors.length && mineFlavors.length && !nearFlavors.some((x) => mineFlavors.includes(x))) doubts.push("口味不一致");
+    }
+    r.doubts = doubts;
+    r.doubt_level = doubts.length === 0 ? "ok" : (doubts.length >= 2 || doubts.includes("差价过大") ? "high" : "warn");
+  }
+  return rows;
+}
+
 function makeVerdict(day, staleDays, overview) {
   const stale = staleDays > 3 ? `数据已滞后${staleDays}天,先当趋势看;` : "";
   return `${stale}附近最新有${overview.商品数}个SKU,${overview.有月销的商品数}个有月销;我方exact命中${overview.我方exact命中数}个,brand命中${overview.我方brand命中数}个。`;
@@ -230,7 +273,7 @@ export default async function handler(req, res) {
     const [quotesRet, mineRet] = await Promise.all([pool.query(QUOTES_SQL), pool.query(MINE_SQL)]);
     const quotes = quotesRet.rows || [];
     const mineIndex = buildMineIndex(mineRet.rows || []);
-    const rows = quotes.map((q) => rowOut(q, mineIndex));
+    const rows = addDoubts(quotes.map((q) => rowOut(q, mineIndex)));
     const capturedAt = quotes[0]?.captured_day || null;
     const staleDays = capturedAt ? Math.floor((Date.now() - new Date(`${capturedAt}T00:00:00Z`).getTime()) / 86400000) : null;
 
@@ -242,10 +285,22 @@ export default async function handler(req, res) {
       三公里内店数: nearShops.size,
       有月销的商品数: rows.filter((r) => (r.month_sales ?? 0) > 0).length,
       我方exact命中数: rows.filter((r) => r.mine_level === "exact").length,
-      我方brand命中数: rows.filter((r) => r.mine_level === "brand").length
+      我方brand命中数: rows.filter((r) => r.mine_level === "brand").length,
+      待核查数: rows.filter((r) => r.doubt_level !== "ok").length,
+      其中high: rows.filter((r) => r.doubt_level === "high").length
     };
 
-    const groups = GROUPS.map((g) => {
+    const needVerifyRows = rows
+      .filter((r) => r.doubt_level !== "ok")
+      .sort((a, b) => (a.doubt_level === "high" ? 0 : 1) - (b.doubt_level === "high" ? 0 : 1) || (b.month_sales ?? -1) - (a.month_sales ?? -1));
+
+    const groups = [{
+      key: "need_verify",
+      label: "⚠️ 待核查 · 匹配存疑,别直接调价",
+      tier: "red",
+      count: needVerifyRows.length,
+      rows: needVerifyRows
+    }].concat(GROUPS.map((g) => {
       const all = rows
         .filter((r) => g.test(r.distance_m))
         .sort((a, b) => (b.month_sales ?? -1) - (a.month_sales ?? -1) || (a.distance_m ?? 999999) - (b.distance_m ?? 999999));
@@ -257,7 +312,7 @@ export default async function handler(req, res) {
         truncated: all.length > 120,
         rows: all.slice(0, 120)
       };
-    });
+    }));
 
     return json(res, 200, {
       verdict: makeVerdict(capturedAt, staleDays ?? 999, overview),

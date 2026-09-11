@@ -309,14 +309,21 @@ var PAGES = {
       a = a||[];
       return a.length ? a.map(function(x){ return '<span class="pill2 p-grade">'+esc(String(x))+'</span>'; }).join("") : '<span class="dim">'+esc("未标口味")+'</span>';
     };
+    var doubt = function(r){
+      if (r.mine_level!=="exact") return '<span class="dim">'+esc("—")+'</span>';
+      if (r.doubt_level==="high") return '<span class="pill2 p-none">'+esc((r.doubts||[]).join("/"))+'</span>';
+      if (r.doubt_level==="warn") return '<span class="pill2 p-warn">'+esc((r.doubts||[]).join("/"))+'</span>';
+      return "";
+    };
     if ($("n10")) $("n10").textContent = ov["商品数"]==null ? "" : String(ov["商品数"]);
     var h = '<div class="cov">'+esc("附近 "+String(ov["店数"]||0)+" 家店 · "+String(ov["商品数"]||0)+" 个商品("+String(ov["有月销的商品数"]||0)+" 个有月销) · 3km 内 "+String(ov["三公里内店数"]||0)+" 家 | 我方对上 "+String(ov["我方exact命中数"]||0)+" 个(同规格) + "+String(ov["我方brand命中数"]||0)+" 个(同品牌) | 采于 ")+v(d.captured_at)+(Number(d.stale_days)>3?' <span class="todo">'+esc("(已过 "+String(d.stale_days)+" 天,价格可能变了)")+'</span>':'')+'</div>';
-    var order = {red:1, orange:2, gray:3};
-    groups.sort(function(a,b){ return (order[a.tier]||9)-(order[b.tier]||9); }).forEach(function(gp){
+    var order = {need_verify:0, red:1, orange:2, gray:3};
+    groups.sort(function(a,b){ return (order[a.key]||order[a.tier]||9)-(order[b.key]||order[b.tier]||9); }).forEach(function(gp){
       if (!Number(gp.count)) return;
       var rows = gp.rows||[];
       var tbl = '<div class="grp"><div class="h3"><span class="dot '+dot(gp.tier)+'"></span>'+v(gp.label)+' <span class="c">'+esc(String(gp.count))+'</span></div>'+
-        '<div class="tw"><table class="g"><tr>'+["月销","附近价","划线价","店(距离)","我方","价差","口味","商品"].map(function(x){return '<th>'+esc(x)+'</th>';}).join("")+'</tr>'+
+        (gp.key==="need_verify"?'<p class="gwhy">'+esc("这些是自动匹配存疑的,⛔ 别直接照价差调价 —— 要先用 ADB+OCR 实地核一遍")+'</p>':'')+
+        '<div class="tw"><table class="g"><tr>'+["月销","附近价","划线价","店(距离)","我方","疑点","价差","口味","商品"].map(function(x){return '<th>'+esc(x)+'</th>';}).join("")+'</tr>'+
         rows.map(function(r){
           var nearby = r.price_usable===false ? '<s>'+money(r.price)+'</s> <span class="todo">'+v(r.fake_reason)+'</span>' : money(r.price);
           var mine = na;
@@ -330,7 +337,7 @@ var PAGES = {
           }
           return '<tr><td class="r mono">'+v(r.month_sales)+'</td><td class="r amt">'+nearby+'</td><td class="r">'+money(r.orig_price)+'</td>'+
             '<td><div class="nm" title="'+esc(String(r.shop||""))+'">'+esc(cut(r.shop,12))+'</div><div class="dim">'+dist(r.distance_m)+'</div></td>'+
-            '<td>'+mine+'</td><td>'+gap+'</td><td>'+flavor(r.flavors)+'</td><td><div class="nm" title="'+esc(String(r.title||""))+'">'+(r.picture?'<img src="'+esc(String(r.picture))+'" onerror="this.style.display=\'none\'" style="width:28px;height:28px;object-fit:cover;vertical-align:middle;margin-right:6px;border-radius:4px">':'')+v(r.title)+'</div><div class="dim">'+v(r.keyword)+'</div></td></tr>';
+            '<td>'+mine+'</td><td>'+doubt(r)+'</td><td>'+gap+'</td><td>'+flavor(r.flavors)+'</td><td><div class="nm" title="'+esc(String(r.title||""))+'">'+(r.picture?'<img src="'+esc(String(r.picture))+'" onerror="this.style.display=\'none\'" style="width:28px;height:28px;object-fit:cover;vertical-align:middle;margin-right:6px;border-radius:4px">':'')+v(r.title)+'</div><div class="dim">'+v(r.keyword)+'</div></td></tr>';
         }).join("")+'</table></div>'+(gp.truncated?'<p class="gwhy">'+esc("只列了前 "+String(rows.length)+" 条(共 "+String(gp.count)+" 条)。")+'</p>':'')+'</div>';
       h += gp.tier==="gray" ? '<details><summary>'+v(gp.label)+' <span class="c">'+esc(String(gp.count))+'</span></summary>'+tbl+'</details>' : tbl;
     });
