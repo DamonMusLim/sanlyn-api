@@ -291,6 +291,49 @@ var PAGES = {
     return h;
   },
 
+  l10: async function(){
+    var d = await get("db/petstore-nearby-live");
+    if (d.error || d.ok===false) return verdict("🔴 "+(d.error||d.message||"取数失败"),"red"), "";
+    verdict(d.verdict, /^🔴/.test(d.verdict) ? "red" : "ok");
+    var ov = d.overview||{}, groups = d.groups||[], na = '<span class="na">—</span>';
+    var v = function(x){ return (x===null||x===undefined||x==="") ? na : esc(String(x)); };
+    var money = function(x){ return (x===null||x===undefined||x==="") ? na : esc("¥"+Number(x).toFixed(2)); };
+    var cut = function(x,n){ x = (x===null||x===undefined) ? "" : String(x); return x.length>n ? x.slice(0,n)+"…" : x; };
+    var dist = function(x){
+      if (x===null||x===undefined||x==="") return na;
+      x = Number(x);
+      return x<1000 ? esc(String(Math.round(x))+"m") : esc(String((x/1000).toFixed(1))+"km");
+    };
+    var dot = function(t){ return t==="red" ? "d-red" : (t==="orange" ? "d-yel" : "d-gry"); };
+    if ($("n10")) $("n10").textContent = ov["商品数"]==null ? "" : String(ov["商品数"]);
+    var h = '<div class="cov">'+esc("附近 "+String(ov["店数"]||0)+" 家店 · "+String(ov["商品数"]||0)+" 个商品("+String(ov["有月销的商品数"]||0)+" 个有月销) · 3km 内 "+String(ov["三公里内店数"]||0)+" 家 | 我方对上 "+String(ov["我方exact命中数"]||0)+" 个(同规格) + "+String(ov["我方brand命中数"]||0)+" 个(同品牌) | 采于 ")+v(d.captured_at)+(Number(d.stale_days)>3?' <span class="todo">'+esc("(已过 "+String(d.stale_days)+" 天,价格可能变了)")+'</span>':'')+'</div>';
+    var order = {red:1, orange:2, gray:3};
+    groups.sort(function(a,b){ return (order[a.tier]||9)-(order[b.tier]||9); }).forEach(function(gp){
+      if (!Number(gp.count)) return;
+      var rows = gp.rows||[];
+      var tbl = '<div class="grp"><div class="h3"><span class="dot '+dot(gp.tier)+'"></span>'+v(gp.label)+' <span class="c">'+esc(String(gp.count))+'</span></div>'+
+        '<div class="tw"><table class="g"><tr>'+["月销","附近价","划线价","店(距离)","我方","价差","商品"].map(function(x){return '<th>'+esc(x)+'</th>';}).join("")+'</tr>'+
+        rows.map(function(r){
+          var nearby = r.price_usable===false ? '<s>'+money(r.price)+'</s> <span class="todo">'+v(r.fake_reason)+'</span>' : money(r.price);
+          var mine = na;
+          if (r.mine_level==="exact") mine = '<div class="amt">'+money(r.mine_price)+' · '+esc("存")+v(r.mine_stock)+'</div><div class="dim nm" title="'+esc(String(r.mine_name||""))+'">'+esc(cut(r.mine_name,18))+'</div>';
+          if (r.mine_level==="brand") mine = '<span class="pill2 p-none">'+esc("同牌不同规")+'</span>';
+          if (r.mine_level==="none") mine = '<span class="pill2 p-none">'+esc("我们没有")+'</span>';
+          var gap = na;
+          if (r.price_gap!==null && r.price_gap!==undefined && r.price_gap!=="") {
+            var pg = Number(r.price_gap), p = Number(r.price), pct = p ? Math.round(Math.abs(pg)/p*100) : 0;
+            gap = pg>0 ? '<span class="r p-up">'+esc("+¥"+Math.abs(pg).toFixed(2)+" (贵"+String(pct)+"%)")+'</span>' : (pg<0 ? '<span class="r p-dn">'+esc("-¥"+Math.abs(pg).toFixed(2)+" (便宜"+String(pct)+"%)")+'</span>' : esc("¥0.00 (0%)"));
+          }
+          return '<tr><td class="r mono">'+v(r.month_sales)+'</td><td class="r amt">'+nearby+'</td><td class="r">'+money(r.orig_price)+'</td>'+
+            '<td><div class="nm" title="'+esc(String(r.shop||""))+'">'+esc(cut(r.shop,12))+'</div><div class="dim">'+dist(r.distance_m)+'</div></td>'+
+            '<td>'+mine+'</td><td>'+gap+'</td><td><div class="nm" title="'+esc(String(r.title||""))+'">'+(r.picture?'<img src="'+esc(String(r.picture))+'" onerror="this.style.display=\'none\'" style="width:28px;height:28px;object-fit:cover;vertical-align:middle;margin-right:6px;border-radius:4px">':'')+v(r.title)+'</div><div class="dim">'+v(r.keyword)+'</div></td></tr>';
+        }).join("")+'</table></div>'+(gp.truncated?'<p class="gwhy">'+esc("只列了前 "+String(rows.length)+" 条(共 "+String(gp.count)+" 条)。")+'</p>':'')+'</div>';
+      h += gp.tier==="gray" ? '<details><summary>'+v(gp.label)+' <span class="c">'+esc(String(gp.count))+'</span></summary>'+tbl+'</details>' : tbl;
+    });
+    h += '<div class="blind"><b>'+esc("这层盲区")+'</b><ul>'+(d.caveats||[]).map(function(x){return '<li>'+esc(String(x))+'</li>';}).join("")+'</ul></div>';
+    return h;
+  },
+
   // ── 第6层 问题商品 ──
   l6: async function(){
     var d = await get("db/petstore-problem-goods");
@@ -513,7 +556,7 @@ var PAGES = {
 
 async function show(p){
   document.querySelectorAll(".snav").forEach(function(a){a.classList.toggle("on", a.dataset.p===p)});
-  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",l8:"竞店商品档",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
+  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",l10:"附近实时 · 美团H5",l8:"竞店商品档",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
   $("body").innerHTML = '<div class="verdict">读取中…</div>';
   try { $("body").innerHTML = await PAGES[p](); }
   catch(e){ verdict("🔴 "+e.message,"red"); $("body").innerHTML=""; }
