@@ -49,8 +49,12 @@ async function createStore(pool, body) {
 
   const cols = ["code", "name", ...STORE_FIELDS, "is_active"];
   const vals = [code, name, ...STORE_FIELDS.map((k) => body[k] ?? null), true];
-  const ph = vals.map((_, i) => `$${i + 1}`).join(", ");
-  await pool.query(`INSERT INTO petstore_stores (${cols.join(", ")}) VALUES (${ph})`, vals);
+  await pool.query(`INSERT INTO petstore_stores (${cols.join(", ")}) VALUES (
+    $1, $2, $3, COALESCE($4, ''), COALESCE($5, ''), COALESCE($6, ''), COALESCE($7, ''),
+    COALESCE($8, ''), COALESCE($9, false), COALESCE($10, 0), COALESCE($11, 0),
+    COALESCE($12, ''), COALESCE($13, '3-5'), $14, COALESCE($15, false),
+    COALESCE($16, 0), $17
+  )`, vals);
   return { code };
 }
 

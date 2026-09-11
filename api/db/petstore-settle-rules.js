@@ -87,10 +87,12 @@ async function createRule(pool, body) {
   reqText(body, "effective_from");
 
   const vals = CREATE_FIELDS.map((k) => body[k] ?? null);
-  const ph = vals.map((_, i) => `$${i + 1}`).join(", ");
   const { rows } = await pool.query(
     `INSERT INTO petstore_store_settle_rule (${CREATE_FIELDS.join(", ")})
-     VALUES (${ph}) RETURNING id, store_code`,
+     VALUES (
+       $1, $2, $3, $4, COALESCE($5, 'none'), COALESCE($6, 0),
+       COALESCE($7, 0), COALESCE($8, 'store'), $9, $10, COALESCE($11, '')
+     ) RETURNING id, store_code`,
     vals
   );
   return rows[0];
