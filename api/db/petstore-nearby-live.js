@@ -18,6 +18,15 @@ const GROUPS = [
   { key: "beyond3km", label: "3km 外 · 参考", tier: "gray", test: (m) => m === null || m > 3000 }
 ];
 
+const FLAVOR_WORDS = [
+  "鸡胸", "鸡肉", "牛肉", "羊肉", "鸭肉", "猪肉", "兔肉", "鹿肉", "火鸡", "鹌鹑", "乳鸽", "鳄鱼",
+  "三文鱼", "金枪鱼", "鳕鱼", "鳀鱼", "沙丁鱼", "鲣鱼", "深海鱼", "海鱼", "鱼肉", "虾仁", "虾", "蟹肉", "蟹",
+  "蛋黄", "鸡蛋", "奶酪", "芝士", "羊奶", "牛奶",
+  "南瓜", "胡萝卜", "蔬菜", "猫草", "果蔬", "蓝莓", "苹果", "车前子",
+  "山茶花", "樱花", "茉莉", "薰衣草",
+  "原味", "无谷", "混合", "高汤", "慕斯", "冻干", "生骨肉"
+];
+
 const QUOTES_SQL = `
   WITH latest AS (
     SELECT max(captured_at::date) AS day
@@ -98,6 +107,18 @@ function specs(name) {
   return out;
 }
 
+function extractFlavors(title) {
+  const s = String(title || "");
+  const hits = FLAVOR_WORDS
+    .map((word, order) => ({ word, order, idx: s.indexOf(word) }))
+    .filter((x) => x.idx >= 0);
+  return hits
+    .filter((x) => !hits.some((y) => y.word !== x.word && y.word.includes(x.word)))
+    .sort((a, b) => a.idx - b.idx || a.order - b.order)
+    .slice(0, 3)
+    .map((x) => x.word);
+}
+
 function parseDistance(s) {
   const v = String(s || "").trim();
   const m = v.match(/^(\d+(?:\.\d+)?)\s*(m|米|km|公里)$/i);
@@ -172,6 +193,7 @@ function rowOut(q, index) {
     distance_m: parseDistance(q.distance),
     sku_id: q.raw_key || null,
     title: q.title || null,
+    flavors: extractFlavors(q.title),
     keyword: q.keyword || null,
     price,
     orig_price: num(q.orig_price),
