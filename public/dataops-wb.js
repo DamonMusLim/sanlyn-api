@@ -291,6 +291,152 @@ var PAGES = {
     return h;
   },
 
+  l11: async function(){
+    var d = await get("db/petstore-rival-merged?filter=hot&limit=300");
+    if (d.error || d.ok===false) return verdict("🔴 "+(d.error||d.message||"取数失败"),"red"), "";
+    verdict(d.verdict, /^🔴/.test(d.verdict) ? "red" : "ok");
+
+    function addStyle(){
+      if ($("#cm-l11-style")) return;
+      var s = document.createElement("style");
+      s.id = "cm-l11-style";
+      s.textContent = ".cm-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 12px}.cm-tab{border:1px solid #d7dde8;background:#fff;border-radius:8px;padding:7px 10px;cursor:pointer;color:#334155}.cm-tab.cm-on{background:#0f172a;color:#fff;border-color:#0f172a}.cm-tab b{font-weight:700}.cm-meta{color:#64748b;font-size:12px;margin:0 0 8px}.cm-wrap{overflow-x:auto}.cm-table{width:100%;min-width:1180px;border-collapse:separate;border-spacing:0;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}.cm-table th,.cm-table td{border-bottom:1px solid #e2e8f0;padding:10px 12px;text-align:left;vertical-align:top}.cm-table th{background:#f8fafc;color:#334155;font-size:12px;font-weight:700;white-space:nowrap}.cm-table tr:last-child td{border-bottom:0}.cm-product{font-weight:700;color:#0f172a;max-width:330px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cm-sub{font-size:12px;color:#64748b;margin-top:3px}.cm-shop-line{line-height:1.45;margin-bottom:4px;white-space:nowrap}.cm-shop-line.cm-extra{display:none}.cm-shop-list.cm-open .cm-extra{display:block}.cm-shop-list.cm-open .cm-cats{display:block}.cm-price-bad{text-decoration:line-through;color:#94a3b8}.cm-fake{color:#dc2626;font-size:12px;margin-left:5px}.cm-cats{display:none;color:#94a3b8;font-size:12px;margin:1px 0 4px 0;white-space:normal}.cm-more{border:0;background:#eef2ff;color:#3730a3;border-radius:6px;padding:3px 7px;cursor:pointer;font-size:12px}.cm-low{font-size:20px;font-weight:800;color:#0f172a;white-space:nowrap}.cm-low-shop{font-size:12px;color:#64748b;margin-top:2px}.cm-miss,.cm-dash{color:#94a3b8}.cm-red{color:#dc2626;font-weight:700}.cm-green{color:#16a34a;font-weight:700}.cm-yellow{color:#a16207;font-weight:700}.cm-tag{display:inline-block;border-radius:6px;padding:3px 7px;font-size:12px;font-weight:700}.cm-hook{background:#fee2e2;color:#991b1b}.cm-volume{background:#dcfce7;color:#166534}.cm-profit{background:#dbeafe;color:#1e40af}.cm-empty{padding:24px;color:#64748b;text-align:center}.cm-head-small{display:block;color:#94a3b8;font-size:11px;font-weight:400;margin-top:2px}";
+      document.head.appendChild(s);
+    }
+    function text(x){ return x == null ? "—" : esc(String(x)); }
+    function fmt(x){
+      if (x == null) return "—";
+      var n = Number(x);
+      if (!isFinite(n)) return esc(String(x));
+      return String(Math.round(n * 100) / 100);
+    }
+    function money(x){ return x == null ? "—" : "¥" + fmt(x); }
+    function pct(x){
+      if (x == null) return "—";
+      var n = Number(x);
+      if (!isFinite(n)) return "—";
+      n = Math.round(Math.abs(n) * 10) / 10;
+      return fmt(n) + "%";
+    }
+    function hasCost(rows){
+      var i;
+      for (i=0;i<rows.length;i++) if (rows[i] && ("mine_cost" in rows[i])) return true;
+      return false;
+    }
+    function tabNum(o, key){
+      return o && o[key] != null ? fmt(o[key]) : "—";
+    }
+    function shopRank(s){
+      var x = s && s.shop_short != null ? String(s.shop_short) : "";
+      if (x === "邻小虎") return 0;
+      if (x === "爪壮壮") return 1;
+      return 2;
+    }
+    function shopsHtml(row){
+      var shops = row.shops || [];
+      var arr = shops.slice(0).sort(function(a,b){
+        var ra = shopRank(a), rb = shopRank(b);
+        if (ra !== rb) return ra - rb;
+        return String(a.shop_short || a.shop || "").localeCompare(String(b.shop_short || b.shop || ""));
+      });
+      var out = '<div class="cm-shop-list">';
+      var i, s, cls, p, cats;
+      for (i=0;i<arr.length;i++){
+        s = arr[i] || {};
+        cls = i >= 2 ? " cm-extra" : "";
+        p = money(s.real_price);
+        if (s.price_usable === false) p = '<span class="cm-price-bad">' + p + '</span>';
+        out += '<div class="cm-shop-line' + cls + '"><b>' + text(s.shop_short || s.shop) + '</b> ' + p + ' <span class="cm-sub">(月销' + text(s.month_sale) + ')</span>';
+        if (s.fake_reason) out += '<span class="cm-fake">' + text(s.fake_reason) + '</span>';
+        out += '</div>';
+        cats = s.shop_cats && s.shop_cats.length ? s.shop_cats.slice(0,3).join("，") : "";
+        if (cats) out += '<div class="cm-cats' + cls + '">' + text(cats) + '</div>';
+      }
+      if (arr.length > 2) out += '<button class="cm-more" data-closed="+' + (arr.length - 2) + '家 ▾">+' + (arr.length - 2) + '家 ▾</button>';
+      out += '</div>';
+      return out;
+    }
+    function lowHtml(row){
+      var title = row.low_price == null && row.low_fake_reason ? ' title="' + text(row.low_fake_reason) + '"' : "";
+      return '<div' + title + '><div class="cm-low">' + money(row.low_price) + '</div><div class="cm-low-shop">' + text(row.low_shop) + '</div></div>';
+    }
+    function mineHtml(row){
+      if (row.mine_code == null) return '<span class="cm-miss">我们没有</span>';
+      return '<div>' + money(row.mine_price) + '<div class="cm-sub">库存 ' + text(row.mine_stock) + ' / ' + text(row.mine_status) + '</div></div>';
+    }
+    function gapHtml(row){
+      var n = row.gap_pct;
+      if (n == null) return '<span class="cm-dash">—</span>';
+      n = Number(n);
+      if (!isFinite(n)) return '<span class="cm-dash">—</span>';
+      if (n > 0) return '<span class="cm-red">贵' + pct(n) + '</span>';
+      if (n < 0) return '<span class="cm-green">便宜' + pct(n) + '</span>';
+      return "持平";
+    }
+    function tierHtml(t){
+      if (t == null) return '<span class="cm-dash">—</span>';
+      if (t === "hook") return '<span class="cm-tag cm-hook">钩子</span>';
+      if (t === "volume") return '<span class="cm-tag cm-volume">走量</span>';
+      if (t === "profit") return '<span class="cm-tag cm-profit">利润</span>';
+      return text(t);
+    }
+    function canHtml(x){
+      if (x == null) return '<span class="cm-dash">—</span>';
+      var c = String(x), cls = "";
+      if (c === "可跟") cls = "cm-green";
+      else if (c.indexOf("破成本") >= 0) cls = "cm-red";
+      else cls = "cm-yellow";
+      return '<span class="' + cls + '">' + text(c) + '</span>';
+    }
+    function render(x, active){
+      var o = x.overview || {}, rows = x.rows || [], cost = hasCost(rows), h = "";
+      h += '<div class="cm-tabs">';
+      h += '<button class="cm-tab ' + (active==="hot"?"cm-on":"") + '" data-filter="hot">可比且热销 <b>' + tabNum(o,"可比且热销") + '</b></button>';
+      h += '<button class="cm-tab ' + (active==="shared"?"cm-on":"") + '" data-filter="shared">两家以上共有 <b>' + tabNum(o,"两家以上共有") + '</b></button>';
+      h += '<button class="cm-tab ' + (active==="mine"?"cm-on":"") + '" data-filter="mine">我方也有 <b>' + tabNum(o,"我方也有") + '</b></button>';
+      h += '<button class="cm-tab ' + (active==="nomine"?"cm-on":"") + '" data-filter="nomine">我们没有 <b>—</b></button>';
+      h += '<button class="cm-tab ' + (active==="all"?"cm-on":"") + '" data-filter="all">全部 <b>' + tabNum(o,"去重后商品数") + '</b></button>';
+      h += '</div><div class="cm-meta">导出日期 ' + text(x.export_date) + ' · 原始行数 ' + tabNum(o,"原始行数") + ' · 条码数 ' + tabNum(o,"条码数") + '</div>';
+      h += '<div class="cm-wrap" style="overflow-x:auto"><table class="cm-table"><thead><tr><th>商品</th><th>附近各店</th><th>最低价</th><th>淘宝<span class="cm-head-small">待接</span></th><th>拼多多<span class="cm-head-small">待接</span></th><th>我方</th><th>价差</th>';
+      if (cost) h += '<th>成本</th><th>跟价后毛利</th><th>能不能跟</th>';
+      h += '<th>月销合计</th><th>层</th></tr></thead><tbody>';
+      if (!rows.length) h += '<tr><td colspan="' + (cost ? 12 : 9) + '" class="cm-empty">暂无数据</td></tr>';
+      for (var i=0;i<rows.length;i++){
+        var r = rows[i] || {};
+        h += '<tr><td><div class="cm-product" title="' + text(r.name) + '">' + text(r.name) + '</div><div class="cm-sub">' + text(r.barcode) + '</div><div class="cm-sub">' + text(r.spec) + '</div></td>';
+        h += '<td>' + shopsHtml(r) + '</td><td>' + lowHtml(r) + '</td><td><span class="cm-dash">—</span></td><td><span class="cm-dash">—</span></td>';
+        h += '<td>' + mineHtml(r) + '</td><td>' + gapHtml(r) + '</td>';
+        if (cost) h += '<td>' + money(("mine_cost" in r) ? r.mine_cost : null) + '</td><td>' + (r.margin_if_match == null ? '<span class="cm-dash">—</span>' : pct(r.margin_if_match)) + '</td><td>' + canHtml(r.can_match) + '</td>';
+        h += '<td>' + text(r.month_sale_total) + '</td><td>' + tierHtml(r.tier) + '</td></tr>';
+      }
+      h += '</tbody></table></div>';
+      return h;
+    }
+    function bind(){
+      var root = $("#cm-l11");
+      if (!root) return;
+      var tabs = root.querySelectorAll(".cm-tab");
+      for (var i=0;i<tabs.length;i++) tabs[i].onclick = function(){
+        var f = this.getAttribute("data-filter");
+        get("db/petstore-rival-merged?filter=" + encodeURIComponent(f) + "&limit=300").then(function(nd){
+          if (nd.error || nd.ok===false) return verdict("🔴 "+(nd.error||nd.message||"取数失败"),"red");
+          verdict(nd.verdict, /^🔴/.test(nd.verdict) ? "red" : "ok");
+          root.innerHTML = render(nd, f);
+          bind();
+        });
+      };
+      var more = root.querySelectorAll(".cm-more");
+      for (var j=0;j<more.length;j++) more[j].onclick = function(){
+        var list = this.parentNode;
+        var open = list.className.indexOf("cm-open") < 0;
+        list.className = open ? "cm-shop-list cm-open" : "cm-shop-list";
+        this.innerHTML = open ? "收起 ▴" : this.getAttribute("data-closed");
+      };
+    }
+    addStyle();
+    setTimeout(function(){ bind(); },0);
+    return '<div id="cm-l11">' + render(d, "hot") + '</div>';
+  },
   l10: async function(){
     var d = await get("db/petstore-nearby-live");
     if (d.error || d.ok===false) return verdict("🔴 "+(d.error||d.message||"取数失败"),"red"), "";
@@ -577,7 +723,7 @@ var PAGES = {
 
 async function show(p){
   document.querySelectorAll(".snav").forEach(function(a){a.classList.toggle("on", a.dataset.p===p)});
-  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",l10:"附近实时 · 美团H5",l8:"竞店商品档",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
+  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",l10:"附近实时 · 美团H5",l11:"竞争品研究中心 · 四家店合并",l8:"竞店商品档",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
   $("body").innerHTML = '<div class="verdict">读取中…</div>';
   try { $("body").innerHTML = await PAGES[p](); }
   catch(e){ verdict("🔴 "+e.message,"red"); $("body").innerHTML=""; }
