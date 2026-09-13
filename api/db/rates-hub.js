@@ -197,7 +197,7 @@ function matrixConds(q, activeOnly, alias, params) {
 
 function buildMatrices(q, activeOnly) {
   const params = [];
-  const conds = matrixConds(q, activeOnly, "m", params);
+  const conds = [`m.deleted_at IS NULL`, ...matrixConds(q, activeOnly, "m", params)];
   return {
     sql: `
 SELECT m.code, m.forwarder_company_id, m.carrier_code,
@@ -217,10 +217,10 @@ ORDER BY m.carrier_code, m.pol, m.pod, m.forwarder_company_id, m.code`,
 
 function buildMatrixItems(q, activeOnly) {
   const params = [];
-  const conds = matrixConds(q, activeOnly, "m", params);
+  const conds = [`i.deleted_at IS NULL`, `m.deleted_at IS NULL`, ...matrixConds(q, activeOnly, "m", params)];
   return {
     sql: `
-SELECT i.matrix_code, i.charge_name, i.currency, i.unit, i.container_type,
+SELECT i.id, i.matrix_code, i.charge_name, i.currency, i.unit, i.container_type,
   i.unit_price, i.qty, i.amount, i.is_required, i.sort_order
 FROM port_charge_matrix_items i
 JOIN port_charge_matrices m ON m.code = i.matrix_code
@@ -341,7 +341,7 @@ const SOURCE_META = {
   ocean_bills: { table: "freight_supplier_bills", required: ["bl_no", "cost_category", "currency", "amount", "supplier", "bill_month"], needed: ["id", "bl_no", "cost_category", "currency", "amount", "sale_amount", "supplier", "bill_month", "fee_status", "remarks", "reconcile_note", "link_plan_id"], joined: { shipping_plans: ["id", "deleted_at", "bl_no", "pol", "pod", "shipping_line", "carrier_code", "pol_port_id", "pod_port_id"], ports: ["id", "name_en"] } },
   tariff: { table: "carrier_tariff_standards", required: ["carrier", "port", "container_type", "charge_item_name", "amount_cny", "unit_basis"], needed: ["id", "carrier", "port", "container_type", "charge_item_code", "charge_item_name", "amount_cny", "unit_basis", "required_flag", "conditional_flag", "station_name", "valid_from", "valid_to", "review_status"], joined: { ports: ["name_en"] } },
   matrices: { table: "port_charge_matrices", required: ["code", "carrier_code", "pol", "pod", "total_cost_20gp", "total_cost_40hq", "cost_currency"], needed: ["code", "forwarder_company_id", "carrier_code", "pol", "pod", "bl_type", "free_days_origin", "free_days_dest", "total_cost_20gp", "total_cost_40hq", "cost_currency", "is_active", "valid_from", "valid_to"], joined: { ports: ["name_en"] } },
-  matrix_items: { table: "port_charge_matrix_items", required: ["matrix_code", "charge_name", "unit_price", "amount", "currency"], needed: ["matrix_code", "charge_name", "currency", "unit", "container_type", "unit_price", "qty", "amount", "is_required", "sort_order"] },
+  matrix_items: { table: "port_charge_matrix_items", required: ["matrix_code", "charge_name", "unit_price", "amount", "currency"], needed: ["id", "matrix_code", "charge_name", "currency", "unit", "container_type", "unit_price", "qty", "amount", "is_required", "sort_order"] },
   local: { table: "local_charges", required: ["carrier", "pol", "pod", "company_name", "charge_name", "amount", "currency"], needed: ["id", "carrier", "pol", "pod", "company_name", "container_type", "charge_name", "amount", "currency", "cost_total", "sell_total", "base_total_cny", "markup_cny", "valid_from", "valid_until", "is_active", "free_time"], joined: { ports: ["name_en"] } },
   truck: { table: "service_rates", required: ["factory_name", "pol", "container_type", "tier", "rate", "currency", "unit"], needed: ["service", "factory_name", "pol", "pod", "container_type", "tier", "rate", "currency", "unit", "valid_from", "valid_to", "is_active"], joined: { ports: ["name_en"] } },
   truck_legacy: { table: "trucking_rates", required: ["id"], needed: ["id"] },

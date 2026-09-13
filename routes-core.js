@@ -274,6 +274,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/customs-rates",      () => import("./api/db/customs-rates.js"));
   mount("/api/db/exchange-rate",      () => import("./api/db/exchange-rate.js"));
   mount("/api/db/local-charges",     () => import("./api/db/local-charges.js"));
+  mount("/api/db/port-charge-matrices", () => import("./api/db/port-charge-matrices.js"));
   mount("/api/db/seed-huihe-charges",   () => import("./api/db/seed-huihe-charges.js"));
   mount("/api/db/seed-oss-local-charges",() => import("./api/db/seed-oss-local-charges.js"));
   mount("/api/db/fix-product-prices",() => import("./api/db/fix-product-prices.js"));
