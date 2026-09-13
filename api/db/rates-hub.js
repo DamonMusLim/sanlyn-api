@@ -1,6 +1,7 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { buildOceanSql } from "./rates-hub-ocean.js";
+import { attachFreightRateBoxes, loadContainerTypeOptions } from "./rates-hub-boxes.js";
 
 const CARRIER_NORM = `COALESCE(NULLIF(COALESCE(
   (SELECT code FROM carriers c WHERE upper(c.code)=upper(btrim(%SRC%))),
@@ -429,21 +430,24 @@ export async function loadRatesHub(pool, q = {}) {
   const keys = Object.keys(built);
   const localChargeOptionsQuery = buildLocalChargeOptions();
   const portOptionsQuery = buildPortOptions(), carrierOptionsQuery = buildCarrierOptions(), sailingLanesQuery = buildSailingLanes();
-  const [packs, localChargeOptions, portOptions, carrierOptions, forwarderOptions, sailingLanes] = await Promise.all([
+  const [packs, localChargeOptions, containerTypeOptions, portOptions, carrierOptions, forwarderOptions, sailingLanes] = await Promise.all([
     Promise.all(keys.map((key) => runSource(pool, key, built[key]))),
     pool.query(localChargeOptionsQuery.sql, localChargeOptionsQuery.params).then((r) => r.rows),
+    loadContainerTypeOptions(pool),
     pool.query(portOptionsQuery.sql, portOptionsQuery.params).then((r) => r.rows),
     pool.query(carrierOptionsQuery.sql, carrierOptionsQuery.params).then((r) => r.rows),
     loadForwarderOptions(pool),
     pool.query(sailingLanesQuery.sql, sailingLanesQuery.params).then((r) => r.rows)
   ]);
   const byKey = Object.fromEntries(keys.map((key, i) => [key, packs[i]]));
+  const oceanRows = await attachFreightRateBoxes(pool, byKey.ocean.rows);
   return {
     data: {
-      ocean: byKey.ocean.rows,
+      ocean: oceanRows,
       ocean_plans: byKey.ocean_plans.rows,
       ocean_bills: byKey.ocean_bills.rows,
       local_charge_options: localChargeOptions,
+      container_type_options: containerTypeOptions,
       port_options: portOptions,
       carrier_options: carrierOptions,
       forwarder_options: forwarderOptions,

@@ -128,6 +128,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/automation-hub", () => import("./api/db/automation-hub.js")); // 自动化观测台
   mount("/api/db/carrier-tariff",  () => import("./api/db/carrier-tariff.js"));
   mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
+  mount("/api/db/freight-rate-boxes", () => import("./api/db/freight-rate-boxes.js"));
   mount("/api/db/freight-board", () => import("./api/db/freight-board.js"));
   mount("/api/db/freight-inquiry", () => import("./api/db/freight-inquiry.js"));
   mount("/api/public/ship-schedules-sync", () => import("./api/public/ship-schedules-sync.js"));
