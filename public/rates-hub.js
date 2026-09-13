@@ -1,5 +1,5 @@
-var VERSION="v2026.09.13-1";
-var state={tab:"ocean",view:"manual",filters:{pol:"",pod:"",carrier:""},expanded:{},coverage:{},data:{ocean:[],ocean_plans:[],ocean_bills:[],tariff:[],matrices:[],matrix_items:[],local:[],truck:[],truck_legacy:[],customs:[],insurance:[]},count:{}};
+var VERSION="v2026.09.13-3";
+var state={tab:"ocean",view:"manual",filters:{pol:"",pod:"",carrier:""},expanded:{},coverage:{},data:{ocean:[],ocean_plans:[],ocean_bills:[],tariff:[],matrices:[],matrix_items:[],local:[],local_charge_options:[],truck:[],truck_legacy:[],customs:[],insurance:[]},count:{}};
 var tabSources={ocean:["ocean","ocean_plans","ocean_bills"],charges:["tariff","matrices","matrix_items","local"],truck:["truck","truck_legacy"],customs:["customs"],insurance:["insurance"]};
 var cols={
   ocean:[["pol","起运港"],["pod","目的港"],["carrier","船公司"],["forwarder","货代"],["currency","币种"],["gp20","20GP成本","num","money"],["hq40","40HQ成本","num","money"],["customer_gp20","20GP客户价","num","money"],["customer_hq40","40HQ客户价","num","money"],["margin20","20GP毛差","num","margin20"],["margin40","40HQ毛差","num","margin40"],["valid","有效期"],["status","状态","status"],["remarks","备注"],["_actions","操作","actions"]],
@@ -46,8 +46,8 @@ function validText(r){var a=r.valid_from||"",b=r.valid_to||r.valid_until||"";ret
 function feeName(r){return [r.charge_item_code,r.charge_item_name].filter(Boolean).join(" · ");}
 function flagText(r){return r.required_flag?"必收":(r.conditional_flag?"条件":"未设置");}
 function freeText(v){if(blank(v))return "";if(typeof v==="object")return JSON.stringify(v);return v;}
-function statusText(v){return {active:"有效",draft:"草稿",expired:"过期",void:"作废"}[v]||(v||"");}
-function statusBadge(v){var k={active:"active",draft:"draft",expired:"expired",void:"void"}[v]||"draft";return '<span class="status-badge status-'+k+'">'+esc(statusText(v))+"</span>";}
+function statusText(v){return {active:"有效",draft:"草稿",expired:"过期",withdrawn:"作废"}[v]||(v||"");}
+function statusBadge(v){var k={active:"active",draft:"draft",expired:"expired",withdrawn:"withdrawn"}[v]||"draft";return '<span class="status-badge status-'+k+'">'+esc(statusText(v))+"</span>";}
 function feeStatusText(v){return {fee_recorded:"费用已录入",fee_completed:"费用已完成","费用已录入":"费用已录入","费用已完成":"费用已完成"}[v]||v;}
 function tierText(v){return {light:"轻柜",heavy:"重柜",xheavy:"超重柜"}[v]||v;}
 function ruleText(r){if(blank(r.base_fee)||blank(r.max_free_descs)||blank(r.extra_per_desc))return "";return r.base_fee+"元含"+r.max_free_descs+"个品名，超出每个+"+r.extra_per_desc+"元";}
@@ -121,7 +121,7 @@ function detailTarget(r,cs){
 }
 function oceanWarn(r,k){return ["gp20","hq40","customer_gp20","customer_hq40"].includes(k)&&blank(r[k]);}
 function planWarn(r,k){return ["freight_cost","freight_cost_currency","freight_sale_usd"].includes(k)&&blank(r[k]);}
-function oceanRows(){return $("showVoid")&&$("showVoid").checked?state.data.ocean:state.data.ocean.filter(function(r){return r.status!=="void";});}
+function oceanRows(){return $("showVoid")&&$("showVoid").checked?state.data.ocean:state.data.ocean.filter(function(r){return r.status!=="withdrawn";});}
 function drawOcean(){
   var rates=oceanRows();
   $("content").innerHTML='<div class="sections">'+panel("价表",rates,"行","ocean",tableHtml("ocean",rates,cols.ocean,{rowClass:function(r){return r.status==="expired"?"expired":(r.status==="draft"?"draft":"");},warn:oceanWarn,rateDetail:true}))+panel("出运票实际海运费",state.data.ocean_plans,"票","ocean_plans",tableHtml("ocean_plans",state.data.ocean_plans,cols.ocean_plans,{warn:planWarn}))+panel("海运费账单明细",state.data.ocean_bills,"行","ocean_bills",tableHtml("ocean_bills",state.data.ocean_bills,cols.ocean_bills))+"</div>";
@@ -162,7 +162,7 @@ function tabFieldStats(){
   activeKeys().forEach(function(key){rows+=(state.data[key]||[]).length;fieldRows(key).forEach(function(f){if(f.state!=="ready"||!f.total)missing++;else{total+=f.total;filled+=f.filled;if(f.filled<f.total)missing++;}});});
   return {rows:rows,total:total,filled:filled,missing:missing,rate:pctText(filled,total)};
 }
-function defaultData(){return {ocean:[],ocean_plans:[],ocean_bills:[],tariff:[],matrices:[],matrix_items:[],local:[],truck:[],truck_legacy:[],customs:[],insurance:[]};}
+function defaultData(){return {ocean:[],ocean_plans:[],ocean_bills:[],tariff:[],matrices:[],matrix_items:[],local:[],local_charge_options:[],truck:[],truck_legacy:[],customs:[],insurance:[]};}
 function businessWarnCount(){
   var n=0;
   if(state.tab==="ocean"){
@@ -201,7 +201,7 @@ function setTab(tab){
   draw();
 }
 function filterValue(id){return (state.filters[id]||"").trim();}
-function query(){var p=new URLSearchParams();["pol","pod","carrier"].forEach(function(id){var v=filterValue(id);if(v)p.set(id,v);});p.set("active_only",$("active").checked?"true":"false");return p.toString();}
+function query(){var p=new URLSearchParams();["pol","pod","carrier"].forEach(function(id){var v=filterValue(id);if(v)p.set(id,v);});p.set("active_only",$("active").checked?"true":"false");if($("showVoid")&&$("showVoid").checked)p.set("include_withdrawn","1");return p.toString();}
 function distinct(rows,key){var seen={},out=[];rows.forEach(function(r){var v=r[key];if(blank(v)||seen[v])return;seen[v]=true;out.push(String(v));});return out.sort(function(a,b){return a.localeCompare(b,"zh-CN");});}
 function filterHtml(id,label,opts){
   var cur=state.filters[id]||"";
@@ -246,13 +246,13 @@ document.querySelectorAll("[data-tab]").forEach(function(b){b.onclick=function()
 document.querySelectorAll("[data-view]").forEach(function(b){b.onclick=function(){setView(b.dataset.view);};});
 document.querySelectorAll("#manualMenu [data-step]").forEach(function(b){b.onclick=function(){setTab(b.dataset.step);};});
 ["polFilter","podFilter","carrierFilter"].forEach(function(id){$(id).addEventListener("change",function(e){var t=e.target;if(t&&t.id){state.filters[t.id]=t.value;load();}});});
-$("active").onchange=load;$("showVoid").onchange=function(){renderFilters();draw();};$("search").onclick=load;$("csv").onclick=exportCsv;$("newRate").onclick=function(){window.RatesHubEdit.openNew();};
+$("active").onchange=load;$("showVoid").onchange=load;$("search").onclick=load;$("csv").onclick=exportCsv;$("newRate").onclick=function(){window.RatesHubEdit.openNew();};
 $("openShell").onclick=function(){openWorkbenchTab("运价管理",location.pathname+"?"+query());};
 $("content").onclick=function(e){if(window.RatesHubEdit&&window.RatesHubEdit.handleClick(e))return;var m=e.target.closest("[data-matrix]");if(m){state.expanded[m.dataset.matrix]=!state.expanded[m.dataset.matrix];draw();return;}var rr=e.target.closest("tr[data-rate-row]");if(rr){window.RatesHubEdit.openDetail(findOceanRow(rr.dataset.rateRow));return;}var row=e.target.closest("tr[data-url]");if(!row||e.target.closest("button"))return;openWorkbenchTab(row.dataset.title,row.dataset.url);};
 $("manualStrip").onclick=function(e){var b=e.target.closest("[data-step-tab]");if(b)setTab(b.dataset.stepTab);};
 window.addEventListener("message",onShellMessage);
 function findOceanRow(id){return state.data.ocean.find(function(r){return String(r.id)===String(id);})||null;}
-window.RatesHubEdit.init({token:function(){return SanlynTable.token();},refresh:load,findRow:findOceanRow});
+window.RatesHubEdit.init({token:function(){return SanlynTable.token();},refresh:load,findRow:findOceanRow,localChargeOptions:function(){return state.data.local_charge_options||[];}});
 initFromUrl();
 setView(state.view);
 postReady();

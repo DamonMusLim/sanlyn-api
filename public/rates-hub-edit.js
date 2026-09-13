@@ -57,10 +57,20 @@
     var box=root.querySelector(".drawer-error");
     if(box){box.hidden=false;box.textContent=msg;}
   }
+  function localChargeOptions(){return api&&api.localChargeOptions?api.localChargeOptions():[];}
+  function localChargeSelect(name,value){
+    var opts=localChargeOptions();
+    if(!opts.length)return null;
+    return '<select name="'+attr(name)+'"><option value="">未设置</option>'+opts.map(function(o){
+      var v=o.charge_code||"",t=[o.charge_code,o.carrier,o.pol,o.container_type].filter(Boolean).join(" · ");
+      return '<option value="'+attr(v)+'"'+(String(value||"")===String(v)?" selected":"")+">"+esc(t||v)+"</option>";
+    }).join("")+"</select>";
+  }
   function sectionHtml(group,form){
     return '<section class="drawer-section"><h3>'+esc(groupNames[group])+'</h3><div class="drawer-grid">'+fields.filter(function(x){return x.group===group;}).map(function(x){
       var cls="drawer-field"+(x.full?" full":"");
       if(x.type==="textarea")return '<div class="'+cls+'"><label>'+esc(x.label)+'</label><textarea name="'+attr(x.name)+'">'+esc(form[x.name])+'</textarea></div>';
+      if(x.name==="local_charge_code"){var select=localChargeSelect(x.name,form[x.name]);if(select)return '<div class="'+cls+'"><label>'+esc(x.label)+'</label>'+select+'</div>';}
       return '<div class="'+cls+'"><label>'+esc(x.label)+'</label><input name="'+attr(x.name)+'" type="'+attr(x.type||"text")+'" value="'+attr(form[x.name])+'"></div>';
     }).join("")+'</div></section>';
   }
@@ -77,7 +87,7 @@
   function open(mode,row){
     current={mode:mode,row:row||{},initial:mode==="new"?emptyForm():formFromRow(row||{})};
     root.innerHTML=drawerHtml(mode,row||{});
-    root.querySelectorAll("input,textarea").forEach(function(el){el.addEventListener("input",markDirty);});
+    root.querySelectorAll("input,textarea,select").forEach(function(el){el.addEventListener("input",markDirty);el.addEventListener("change",markDirty);});
   }
   function close(){current=null;root.innerHTML="";}
   function markDirty(){
@@ -107,10 +117,10 @@
       btns.forEach(function(b){b.disabled=false;b.textContent="保存";});
     }
   }
-  async function voidRate(id){
+  async function withdrawRate(id){
     if(!id||!confirm("确认作废这条运价？"))return;
     try{
-      var r=await fetch("/api/db/freight-rates",{method:"PATCH",headers:authHeaders(true),body:JSON.stringify({id:id,status:"void"})});
+      var r=await fetch("/api/db/freight-rates",{method:"PATCH",headers:authHeaders(true),body:JSON.stringify({id:id,status:"withdrawn"})});
       var j=await r.json().catch(function(){return {};});
       if(!r.ok||j.success===false)throw new Error(j.error||("HTTP "+r.status));
       api.refresh();
@@ -130,8 +140,8 @@
   }
   function actionsHtml(row){
     if(!row||!row.id)return "";
-    if(row.status==="void")return '<span class="na">已作废</span>';
-    return '<span class="row-actions"><button class="linkbtn" type="button" data-rate-detail="'+attr(row.id)+'">详情</button><button class="mini-btn danger" type="button" data-rate-void="'+attr(row.id)+'">作废</button></span>';
+    if(row.status==="withdrawn")return '<span class="na">已作废</span>';
+    return '<span class="row-actions"><button class="linkbtn" type="button" data-rate-detail="'+attr(row.id)+'">详情</button><button class="mini-btn danger" type="button" data-rate-withdrawn="'+attr(row.id)+'">作废</button></span>';
   }
   function portalHtml(row){
     if(!row||!row.supplier_id)return "";
@@ -140,9 +150,9 @@
   function handleClick(e){
     var closeBtn=e.target.closest("[data-rate-close]");if(closeBtn){close();return true;}
     var saveBtn=e.target.closest("[data-rate-save]");if(saveBtn){save();return true;}
-    var cancelBtn=e.target.closest("[data-rate-cancel]");if(cancelBtn&&current){root.innerHTML=drawerHtml("edit",current.row);root.querySelectorAll("input,textarea").forEach(function(el){el.addEventListener("input",markDirty);});return true;}
+    var cancelBtn=e.target.closest("[data-rate-cancel]");if(cancelBtn&&current){root.innerHTML=drawerHtml("edit",current.row);root.querySelectorAll("input,textarea,select").forEach(function(el){el.addEventListener("input",markDirty);el.addEventListener("change",markDirty);});return true;}
     var detail=e.target.closest("[data-rate-detail]");if(detail){open("edit",api.findRow(detail.dataset.rateDetail));return true;}
-    var voidBtn=e.target.closest("[data-rate-void]");if(voidBtn){voidRate(voidBtn.dataset.rateVoid);return true;}
+    var withdrawBtn=e.target.closest("[data-rate-withdrawn]");if(withdrawBtn){withdrawRate(withdrawBtn.dataset.rateWithdrawn);return true;}
     var portalBtn=e.target.closest("[data-rate-portal]");if(portalBtn){portal(api.findRow(portalBtn.dataset.ratePortal),portalBtn);return true;}
     return false;
   }

@@ -29,7 +29,8 @@ function carrierParam(params, value) {
 
 function buildOcean(q, activeOnly) {
   const params = [];
-  const conds = [`f.status IS DISTINCT FROM 'withdrawn'`];
+  const conds = [];
+  if (!truthy(q.include_withdrawn, false)) conds.push(`f.status IS DISTINCT FROM 'withdrawn'`);
   if (q.pol) conds.push(`COALESCE(pol_p.name_en, f.pol) ILIKE ${likeParam(params, q.pol)}`);
   if (q.pod) conds.push(`COALESCE(pod_p.name_en, f.pod) ILIKE ${likeParam(params, q.pod)}`);
   if (q.carrier) {
@@ -59,9 +60,20 @@ SELECT f.id,
 FROM freight_rates f
 LEFT JOIN ports pol_p ON pol_p.id = f.pol_port_id
 LEFT JOIN ports pod_p ON pod_p.id = f.pod_port_id
-WHERE ${conds.join(" AND ")}
+${conds.length ? "WHERE " + conds.join(" AND ") : ""}
 ORDER BY COALESCE(f.valid_to,'9999-12-31'::date) DESC, f.pol, f.pod, f.carrier, f.forwarder`,
     params
+  };
+}
+
+function buildLocalChargeOptions() {
+  return {
+    sql: `
+SELECT charge_code, carrier, pol, container_type
+FROM local_charges
+WHERE is_active = true
+ORDER BY charge_code`,
+    params: []
   };
 }
 
@@ -395,13 +407,18 @@ export async function loadRatesHub(pool, q = {}) {
     insurance: buildInsurance(q),
   };
   const keys = Object.keys(built);
-  const packs = await Promise.all(keys.map((key) => runSource(pool, key, built[key])));
+  const localChargeOptionsQuery = buildLocalChargeOptions();
+  const [packs, localChargeOptions] = await Promise.all([
+    Promise.all(keys.map((key) => runSource(pool, key, built[key]))),
+    pool.query(localChargeOptionsQuery.sql, localChargeOptionsQuery.params).then((r) => r.rows)
+  ]);
   const byKey = Object.fromEntries(keys.map((key, i) => [key, packs[i]]));
   return {
     data: {
       ocean: byKey.ocean.rows,
       ocean_plans: byKey.ocean_plans.rows,
       ocean_bills: byKey.ocean_bills.rows,
+      local_charge_options: localChargeOptions,
       tariff: byKey.tariff.rows,
       matrices: byKey.matrices.rows,
       matrix_items: byKey.matrix_items.rows,
