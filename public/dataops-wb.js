@@ -291,6 +291,57 @@ var PAGES = {
     return h;
   },
 
+  l12: async function(){
+    var d = await get("db/petstore-rival-live");
+    if (d.error || d.ok===false) return verdict("🔴 "+(d.error||d.message||"取数失败"),"red"), "";
+    verdict(d.verdict, /^🔴/.test(d.verdict) ? "red" : "ok");
+    function esc(v){ return String(v===null||v===undefined?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+    function money(v){ return (v===null||v===undefined) ? '<span class="cm-na">—</span>' : ("¥"+Number(v).toFixed(2)); }
+    function pct(v){ return (v===null||v===undefined) ? '<span class="cm-na">—</span>' : (Number(v).toFixed(1)+"%"); }
+    function addStyle(){
+      if ($("#cm-l12-style")) return;
+      var s2=document.createElement("style"); s2.id="cm-l12-style";
+      s2.textContent=".cm-l12 table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:18px}"
+        +".cm-l12 th,.cm-l12 td{border-bottom:1px solid #eee;padding:6px 8px;text-align:left;white-space:nowrap}"
+        +".cm-l12 th{background:#fafafa;font-weight:600}"
+        +".cm-l12 .cm-na{color:#bbb}.cm-l12 .cm-med{color:#c0392b}"
+        +".cm-l12 h3{margin:16px 0 6px;font-size:14px}"
+        +".cm-l12 .cm-cap{color:#888;font-size:12px;line-height:1.7;margin-top:14px}"
+        +".cm-l12 .cm-name{white-space:normal;max-width:420px}";
+      document.head.appendChild(s2);
+    }
+    var h = '<div class="cm-l12">';
+    h += '<div style="color:#666;font-size:12px;margin-bottom:10px">采集时段 '
+       + esc(String(d.captured_from||"").slice(0,16).replace("T"," ")) + ' → '
+       + esc(String(d.captured_to||"").slice(0,16).replace("T"," ")) + '</div>';
+    for (var i=0;i<(d.shops||[]).length;i++){
+      var sp = d.shops[i];
+      h += '<h3>' + esc(sp.shop) + ' · ' + sp.items + ' 个不重复商品 · 月销合计 ' + sp.month_sale + '</h3>';
+      h += '<table><thead><tr><th>品类</th><th>品数</th><th>品数占比</th><th>月销</th><th>月销占比</th><th>单品效率</th><th>中位到手价</th></tr></thead><tbody>';
+      for (var j=0;j<sp.cats.length;j++){
+        var c = sp.cats[j];
+        h += '<tr><td>' + esc(c.cat) + '</td><td>' + c.items + '</td><td>' + pct(c.item_pct)
+           + '</td><td>' + c.month_sale + '</td><td>' + pct(c.sale_pct)
+           + '</td><td>' + c.per_item + '</td><td>' + money(c.median_price) + '</td></tr>';
+      }
+      h += '</tbody></table>';
+    }
+    h += '<h3>卖得好的链接（月销≥20）</h3>';
+    h += '<table><thead><tr><th>店</th><th>月销</th><th>到手价</th><th>划线价</th><th>机制</th><th>券</th><th>品类</th><th>商品</th></tr></thead><tbody>';
+    for (var k=0;k<(d.top||[]).length;k++){
+      var r = d.top[k];
+      h += '<tr' + (r.is_med ? ' class="cm-med"' : '') + '><td>' + esc(r.shop) + '</td><td>' + r.month_sale
+         + '</td><td>' + money(r.price) + '</td><td>' + money(r.list_price)
+         + '</td><td>' + esc(r.tier_text || "—") + '</td><td>' + esc(r.coupon || "—")
+         + '</td><td>' + esc(r.cat) + (r.is_med ? ' ⛔' : '') + '</td><td class="cm-name">' + esc(r.name) + '</td></tr>';
+    }
+    h += '</tbody></table>';
+    h += '<div class="cm-cap"><b>口径说明</b><br>';
+    for (var m=0;m<(d.caveats||[]).length;m++) h += '· ' + esc(d.caveats[m]) + '<br>';
+    h += '</div></div>';
+    addStyle();
+    return h;
+  },
   l11: async function(){
     var d = await get("db/petstore-rival-merged?filter=hot&limit=300");
     if (d.error || d.ok===false) return verdict("🔴 "+(d.error||d.message||"取数失败"),"red"), "";
@@ -723,7 +774,7 @@ var PAGES = {
 
 async function show(p){
   document.querySelectorAll(".snav").forEach(function(a){a.classList.toggle("on", a.dataset.p===p)});
-  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",l10:"附近实时 · 美团H5",l11:"竞争品研究中心 · 四家店合并",l8:"竞店商品档",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
+  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",l10:"附近实时 · 美团H5",l11:"竞争品研究中心 · 四家店合并",l12:"竞品实时行情 · OCR线",l8:"竞店商品档",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
   $("body").innerHTML = '<div class="verdict">读取中…</div>';
   try { $("body").innerHTML = await PAGES[p](); }
   catch(e){ verdict("🔴 "+e.message,"red"); $("body").innerHTML=""; }
