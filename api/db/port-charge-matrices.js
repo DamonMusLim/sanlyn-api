@@ -5,7 +5,7 @@ const MATRIX_TABLE = "port_charge_matrices";
 const ITEM_TABLE = "port_charge_matrix_items";
 
 const MATRIX_FIELDS = [
-  "code", "forwarder_company_id", "carrier_code", "pol", "pod", "bl_type",
+  "code", "forwarder_company_id", "owner_company_id", "carrier_code", "pol", "pod", "bl_type",
   "free_days_origin", "free_days_dest", "total_cost_20gp", "total_cost_40hq",
   "cost_currency", "is_active", "valid_from", "valid_to",
 ];
@@ -14,10 +14,10 @@ const ITEM_FIELDS = [
   "unit_price", "qty", "amount", "is_required", "sort_order",
 ];
 const MATRIX_REQUIRED = [
-  "code", "carrier_code", "pol", "pod", "total_cost_20gp",
+  "code", "forwarder_company_id", "carrier_code", "pol", "pod", "total_cost_20gp",
   "total_cost_40hq", "cost_currency",
 ];
-const ITEM_REQUIRED = ["matrix_code", "charge_name", "unit_price", "amount", "currency"];
+const ITEM_REQUIRED = ["matrix_code", "charge_name", "unit_price"];
 const NUMDATE_COLS = new Set([
   "total_cost_20gp", "total_cost_40hq", "free_days_origin", "free_days_dest",
   "unit_price", "qty", "amount", "sort_order", "valid_from", "valid_to",
@@ -51,6 +51,57 @@ async function insertRow(pool, table, fields, body) {
   if (!cols.length) return { status: 400, json: { success: false, error: "no fields" } };
   const r = await pool.query(
     `INSERT INTO ${table} (${cols.join(",")}) VALUES (${vals.join(",")}) RETURNING *`,
+    params
+  );
+  return { status: 201, json: { success: true, data: r.rows[0] } };
+}
+
+async function resolveMatrixOwner(pool, body) {
+  if (hasValue(body.owner_company_id)) return { ownerCompanyId: body.owner_company_id };
+  const r = await pool.query(
+    `SELECT owner_company_id
+       FROM ${MATRIX_TABLE}
+      WHERE deleted_at IS NULL
+      GROUP BY owner_company_id`
+  );
+  if (r.rows.length === 1 && hasValue(r.rows[0].owner_company_id)) {
+    return { ownerCompanyId: r.rows[0].owner_company_id };
+  }
+  return {
+    error: {
+      status: 400,
+      json: { success: false, error: "owner_company_id required" },
+    },
+  };
+}
+
+async function insertMatrix(pool, body) {
+  const owner = await resolveMatrixOwner(pool, body);
+  if (owner.error) return owner.error;
+  return insertRow(pool, MATRIX_TABLE, MATRIX_FIELDS, {
+    ...body,
+    owner_company_id: owner.ownerCompanyId,
+  });
+}
+
+async function insertItem(pool, body) {
+  const owner = await pool.query(
+    `SELECT owner_company_id
+       FROM ${MATRIX_TABLE}
+      WHERE code = $1
+        AND deleted_at IS NULL
+      LIMIT 1`,
+    [body.matrix_code]
+  );
+  if (!owner.rows.length) {
+    return { status: 400, json: { success: false, error: "matrix_code 不存在" } };
+  }
+  const { cols, vals, params } = editablePayload(body, ITEM_FIELDS);
+  cols.push("owner_company_id");
+  params.push(owner.rows[0].owner_company_id);
+  vals.push(`$${params.length}`);
+  const r = await pool.query(
+    `INSERT INTO ${ITEM_TABLE} (${cols.join(",")}) VALUES (${vals.join(",")}) RETURNING *`,
     params
   );
   return { status: 201, json: { success: true, data: r.rows[0] } };
@@ -91,12 +142,12 @@ async function handlePost(pool, body) {
   if (body.kind === "matrix") {
     const missing = missingRequired(body, MATRIX_REQUIRED);
     if (missing.length) return { status: 400, json: { success: false, error: `missing required: ${missing.join(", ")}` } };
-    return insertRow(pool, MATRIX_TABLE, MATRIX_FIELDS, body);
+    return insertMatrix(pool, body);
   }
   if (body.kind === "item") {
     const missing = missingRequired(body, ITEM_REQUIRED);
     if (missing.length) return { status: 400, json: { success: false, error: `missing required: ${missing.join(", ")}` } };
-    return insertRow(pool, ITEM_TABLE, ITEM_FIELDS, body);
+    return insertItem(pool, body);
   }
   return { status: 400, json: { success: false, error: "bad kind" } };
 }
