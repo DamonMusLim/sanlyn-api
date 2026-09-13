@@ -51,6 +51,17 @@ function normalizeRateBody(body) {
   return out;
 }
 
+async function resolveSubmitter(pool, req) {
+  const user = req.user || {};
+  const account = user.username || user.account || null;
+  let staffNo = user.staff_no || null;
+  if (staffNo) {
+    const r = await pool.query("SELECT staff_no FROM ai_staff WHERE staff_no = $1", [staffNo]);
+    staffNo = r.rows[0]?.staff_no || null;
+  }
+  return { staffNo, account };
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -61,6 +72,9 @@ export default async function handler(req, res) {
     if (!requireAuth(req, res)) return;
     try {
       const body = normalizeRateBody(req.body || {});
+      const submitter = await resolveSubmitter(pool, req);
+      body.submitted_by_staff_no = submitter.staffNo;
+      body.submitted_by_account = submitter.account;
       const id = parseInt(body.id, 10);
       if (!Number.isFinite(id)) return res.status(400).json({ success:false, error:"id required" });
       if (Object.prototype.hasOwnProperty.call(body, "forwarder") && !String(body.forwarder || "").trim()) {
@@ -73,7 +87,7 @@ export default async function handler(req, res) {
       const EDITABLE = ["pol","pod","carrier","forwarder","route_code","via","gp20","hq40",
         "customer_gp20","customer_hq40","transit_days","thc","local_charge_code","valid_from",
         "valid_to","remarks","status","currency","raw","freetime",
-        "free_days_base","free_days_ext","terminal","next_sailing","supplier_id"];
+        "free_days_base","free_days_ext","terminal","next_sailing","supplier_id","submitted_by_staff_no","submitted_by_account"];
       const JSON_COLS = ["raw"];
       const sets = [], params = [];
       for (const k of EDITABLE) if (Object.prototype.hasOwnProperty.call(body, k)) {
@@ -94,6 +108,9 @@ export default async function handler(req, res) {
     if (!requireAuth(req, res)) return;
     try {
       const body = normalizeRateBody(req.body || {});
+      const submitter = await resolveSubmitter(pool, req);
+      body.submitted_by_staff_no = submitter.staffNo;
+      body.submitted_by_account = submitter.account;
       if (!String(body.forwarder || "").trim()) {
         return res.status(400).json({ success:false, error:"forwarder required" });
       }
@@ -101,7 +118,7 @@ export default async function handler(req, res) {
       if (overlap) return res.status(409).json({ success:false, error: overlap });
       const EDITABLE = ["pol","pod","carrier","forwarder","route_code","via","gp20","hq40",
         "customer_gp20","customer_hq40","transit_days","thc","local_charge_code","valid_from",
-        "valid_to","remarks","status","currency","raw","freetime","this_week","next_sailing","eta_date","free_days_base","free_days_ext","terminal","supplier_id"];
+        "valid_to","remarks","status","currency","raw","freetime","this_week","next_sailing","eta_date","free_days_base","free_days_ext","terminal","supplier_id","submitted_by_staff_no","submitted_by_account"];
       const cols = [], vals = [], params = [];
       for (const k of EDITABLE) if (Object.prototype.hasOwnProperty.call(body, k)) {
         const v = blankToNull(k, body[k]); cols.push(k);
