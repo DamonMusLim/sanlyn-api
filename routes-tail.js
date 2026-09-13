@@ -47,6 +47,8 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/business-report", () => import("./api/db/business-report.js")); // 0826 业务报表:只读真实字段覆盖率
   mount("/api/db/financial-report", () => import("./api/db/financial-report.js")); // 0826 财务报表:只读真实财务字段覆盖率
   mount("/api/db/consolidated-fee-details", () => import("./api/db/consolidated-fee-details.js")); // 0826 集运费用明细：只读货代账单真源
+  mount("/api/db/hgj-2025-bill-import", () => import("./api/db/hgj-2025-bill-import.js")); // 0906 海管家2025账单导入hy预检:只读
+  mount("/api/db/hgj-template-195", () => import("./api/db/hgj-template-195.js")); // 0911 海管家195模板:占位符映射+通用渲染器只读
   mount("/api/db/biz-alerts", () => import("./api/db/biz-alerts.js")); // 0825 业务预警：额度/合同未设置不反推假数
   mount("/api/db/order-services", () => import("./api/db/order-services.js")); // 0826 服务项目12项: explicit + derived read lens
   mount("/api/db/order-staff-slots", () => import("./api/db/order-staff-slots.js")); // 0826 订单8个人员角色槽: 对接ai_staff花名册
@@ -62,6 +64,7 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/custom-nav", () => import("./api/db/custom-nav.js")); // 0826 工作台自定义导航:复用system_settings配置真源
   mount("/api/db/rates-hub",              () => import("./api/db/rates-hub.js")); // 0825 价表总台(海运周价/官方港杂/本地费)
   mount("/api/db/online-customs", () => import("./api/db/online-customs.js")); // 0826 在线报关:只读接入状态,不对外发送
+  mount("/api/db/manifest-fields", () => import("./api/db/manifest-fields.js")); // 0906 舱单字段补齐:只读真实字段覆盖率
   mount("/api/db/manifest-message-channel", () => import("./api/db/manifest-message-channel.js")); // 0826 报文生成+校验+落地待发:不对外发送
   mount("/api/db/manifest-send", () => import("./api/db/manifest-send.js")); // 0826 上海舱单发送:申报通道只读接入状态
   mount("/api/db/tianjin-dalian-manifest-send", () => import("./api/db/tianjin-dalian-manifest-send.js")); // 0826 天津/大连舱单:只读接入状态,不对外发送
@@ -192,4 +195,5 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/order-merge-groups", () => import("./api/db/order-merge-groups.js"));
   mount("/api/db/order-merge-groups/:id/dissolve", () => import("./api/db/order-merge-groups.js"));
   mount("/api/db/order-merge-groups/:id/remove-item", () => import("./api/db/order-merge-groups.js"));
+  mount("/api/public/container-types", () => import("./api/public/container-types.js"));
 }
