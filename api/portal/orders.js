@@ -108,7 +108,7 @@ export default async function handler(req, res) {
     const order = oRes.rows[0];
 
     // 服务端 scoping:非内部角色须校验 company_code
-    const internalRoles = ['admin', 'internal_sanlyn', 'finance', 'logistics'];
+    const internalRoles = ['admin', 'internal_sanlyn', 'finance'];
     if (!internalRoles.includes(role)) {
       const orderCode = order.company_code || order.raw?.company_code;
       if (companyCodes.length > 0 && orderCode && !companyCodes.includes(orderCode)) {
