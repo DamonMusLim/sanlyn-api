@@ -206,6 +206,12 @@ export function assertModuleAccess(permissions, module) {
   }
 }
 
+// 仅当明确是内部物流方才给完整物流字段;其余(customer/未知)一律按客户安全视图裁字段
+export function isLogisticsParty(permissions) {
+  const t = permissions?.user?.user_type || permissions?.user_type;
+  return t === 'logistics';
+}
+
 // ──────────────────────────────────────────────────────────────
 // DB 查询层：可见 shipment_no 集合
 // ──────────────────────────────────────────────────────────────

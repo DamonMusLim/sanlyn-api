@@ -14,8 +14,10 @@
  */
 
 import { getPool, setCors } from '../db.js';
-import { assertModuleAccess, buildFilterWithOffset } from './auth-check.js';
+import { assertModuleAccess, buildFilterWithOffset, isLogisticsParty } from './auth-check.js';
 import { parsePortalAuth } from './middleware.js';
+
+const hasDoc = v => Array.isArray(v) ? v.length > 0 : (v && typeof v === 'object' ? Object.keys(v).length > 0 : !!v);
 
 export default async function handler(req, res) {
   setCors(req, res);
@@ -82,6 +84,17 @@ export default async function handler(req, res) {
 
   try {
     const result = await pool.query(sql, params);
+    if (!isLogisticsParty(permissions)) {
+      for (const row of result.rows) {
+        row.bl_final = hasDoc(row.bl_final);
+        row.bl_draft = hasDoc(row.bl_draft);
+        row.customs_dec = hasDoc(row.customs_dec);
+        row.customs_dec_official = hasDoc(row.customs_dec_official);
+        row.booking_note = hasDoc(row.booking_note);
+        row.release_note = hasDoc(row.release_note);
+        row.origin_cert = hasDoc(row.origin_cert);
+      }
+    }
     return res.json({ success: true, data: result.rows, count: result.rowCount });
   } catch (err) {
     console.error('[portal/documents] query error:', err.message);

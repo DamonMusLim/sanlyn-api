@@ -14,7 +14,7 @@
  */
 
 import { getPool, setCors } from '../db.js';
-import { assertModuleAccess, buildFilterWithOffset } from './auth-check.js';
+import { assertModuleAccess, buildFilterWithOffset, isLogisticsParty } from './auth-check.js';
 import { parsePortalAuth } from './middleware.js';
 
 export default async function handler(req, res) {
@@ -81,6 +81,13 @@ export default async function handler(req, res) {
 
   try {
     const result = await pool.query(sql, params);
+    if (!isLogisticsParty(permissions)) {
+      for (const row of result.rows) {
+        delete row.bl_no;
+        delete row.vessel;
+        delete row.voyage;
+      }
+    }
     return res.json({ success: true, data: result.rows, count: result.rowCount });
   } catch (err) {
     console.error('[portal/shipping] query error:', err.message);
