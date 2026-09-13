@@ -66,11 +66,66 @@
       return '<option value="'+attr(v)+'"'+(String(value||"")===String(v)?" selected":"")+">"+esc(t||v)+"</option>";
     }).join("")+"</select>";
   }
+  function data(){return (window.state&&window.state.data)||{};}
+  function norm(v){return String(v==null?"":v).trim();}
+  function sortVals(a){return a.sort(function(x,y){return x.localeCompare(y,"zh-CN");});}
+  function unique(items){
+    var seen={},out=[];
+    items.forEach(function(v){v=norm(v);if(!v||seen[v])return;seen[v]=1;out.push(v);});
+    return sortVals(out);
+  }
+  function diffVals(items,used){return items.filter(function(v){return !used[v];});}
+  function portGroups(name,value){
+    var d=data(),used={},rate=unique((d.ocean||[]).map(function(r){return r[name];}));
+    rate.forEach(function(v){used[v]=1;});
+    var sail=unique((d.sailing_lanes||[]).map(function(r){return r[name];}));
+    sail=diffVals(sail,used);sail.forEach(function(v){used[v]=1;});
+    var master=unique((d.port_options||[]).map(function(p){return p.name_en;}));
+    master=diffVals(master,used);
+    return groupsWithCurrent([["本航线已有",rate],["维运网有船期",sail],["港口主数据",master]],value);
+  }
+  function carrierGroups(value){
+    var d=data(),rate=[],sail=[];
+    (d.carrier_options||[]).forEach(function(o){(o.source==="rate"?rate:sail).push(o.carrier);});
+    return groupsWithCurrent([["本航线已有",unique(rate)],["维运网有船期",unique(sail)]],value);
+  }
+  function forwarderGroups(value){
+    var d=data();
+    return groupsWithCurrent([["已报过价",unique((d.forwarder_options||[]).map(function(o){return o.forwarder;}))]],value);
+  }
+  function groupsWithCurrent(groups,value){
+    var v=norm(value),seen={},has=false;
+    groups.forEach(function(g){g[1].forEach(function(x){seen[x]=1;if(x===v)has=true;});});
+    if(v&&!has)groups.unshift(["当前值",[v]]);
+    return groups.filter(function(g){return g[1].length;});
+  }
+  function choiceGroups(name,value){
+    if(name==="pol"||name==="pod")return portGroups(name,value);
+    if(name==="carrier")return carrierGroups(value);
+    if(name==="forwarder")return forwarderGroups(value);
+    return [];
+  }
+  function choiceSelect(name,value){
+    var groups=choiceGroups(name,value),v=norm(value),has=false;
+    if(!groups.length)return null;
+    groups.forEach(function(g){g[1].forEach(function(x){if(x===v)has=true;});});
+    var html='<select data-rate-choice="'+attr(name)+'"><option value="">未设置</option>';
+    groups.forEach(function(g){html+='<optgroup label="'+attr(g[0])+'">'+g[1].map(function(x){return '<option value="'+attr(x)+'"'+(x===v?" selected":"")+">"+esc(x)+"</option>";}).join("")+"</optgroup>";});
+    html+='<option value="__other__"'+(v&&!has?" selected":"")+'>其它(手工填写)</option></select>';
+    return html+'<input name="'+attr(name)+'" type="'+(v&&!has?"text":"hidden")+'" value="'+attr(value)+'">';
+  }
+  function syncChoice(el){
+    var name=el.dataset.rateChoice,input=root.querySelector("input[name='"+name+"']");
+    if(!input)return;
+    if(el.value==="__other__"){input.type="text";input.focus();return;}
+    input.type="hidden";input.value=el.value;
+  }
   function sectionHtml(group,form){
     return '<section class="drawer-section"><h3>'+esc(groupNames[group])+'</h3><div class="drawer-grid">'+fields.filter(function(x){return x.group===group;}).map(function(x){
       var cls="drawer-field"+(x.full?" full":"");
       if(x.type==="textarea")return '<div class="'+cls+'"><label>'+esc(x.label)+'</label><textarea name="'+attr(x.name)+'">'+esc(form[x.name])+'</textarea></div>';
       if(x.name==="local_charge_code"){var select=localChargeSelect(x.name,form[x.name]);if(select)return '<div class="'+cls+'"><label>'+esc(x.label)+'</label>'+select+'</div>';}
+      if(x.name==="pol"||x.name==="pod"||x.name==="carrier"||x.name==="forwarder"){var choice=choiceSelect(x.name,form[x.name]);if(choice)return '<div class="'+cls+'"><label>'+esc(x.label)+'</label>'+choice+'</div>';}
       return '<div class="'+cls+'"><label>'+esc(x.label)+'</label><input name="'+attr(x.name)+'" type="'+attr(x.type||"text")+'" value="'+attr(form[x.name])+'"></div>';
     }).join("")+'</div></section>';
   }
@@ -159,6 +214,7 @@
   function init(opts){
     api=opts;root=document.getElementById("rateDrawerRoot");
     root.addEventListener("click",handleClick);
+    root.addEventListener("change",function(e){var el=e.target.closest("[data-rate-choice]");if(el){syncChoice(el);markDirty();}});
   }
   window.RatesHubEdit={init:init,openNew:function(){open("new");},openDetail:function(row){open("edit",row);},handleClick:handleClick,actionsHtml:actionsHtml,portalHtml:portalHtml};
 })();

@@ -77,6 +77,47 @@ ORDER BY charge_code`,
   };
 }
 
+function buildPortOptions() { return { sql: `SELECT id, code, unlocode, name_en, name_cn FROM ports ORDER BY name_en`, params: [] }; }
+function buildCarrierOptions() { return { sql: `
+WITH rate AS (
+  SELECT DISTINCT btrim(carrier) AS carrier FROM freight_rates WHERE NULLIF(btrim(carrier),'') IS NOT NULL
+), sailing AS (
+  SELECT DISTINCT btrim(carrier) AS carrier FROM market_sailings
+  WHERE captured_on = (SELECT max(captured_on) FROM market_sailings) AND NULLIF(btrim(carrier),'') IS NOT NULL
+), all_carriers AS (
+  SELECT carrier, 'rate' AS source FROM rate UNION ALL SELECT carrier, 'sailing' AS source FROM sailing
+)
+SELECT carrier, CASE WHEN bool_or(source='rate') THEN 'rate' ELSE 'sailing' END AS source
+FROM all_carriers GROUP BY carrier ORDER BY carrier`, params: [] };
+}
+function buildSailingLanes() { return { sql: `
+SELECT DISTINCT s.pol_name, COALESCE(pol.name_en, s.pol_name) AS pol,
+  s.pod_name, COALESCE(pod.name_en, s.pod_name) AS pod,
+  (pol.id IS NULL OR pod.id IS NULL) AS unmatched
+FROM market_sailings s
+LEFT JOIN ports pol ON pol.name_cn = s.pol_name
+LEFT JOIN ports pod ON pod.name_cn = s.pod_name
+WHERE s.captured_on = (SELECT max(captured_on) FROM market_sailings) ORDER BY pol, pod`, params: [] }; }
+
+async function loadForwarderOptions(pool) {
+  const rateSql = `SELECT DISTINCT btrim(forwarder) AS forwarder, 'rate' AS source FROM freight_rates WHERE NULLIF(btrim(forwarder),'') IS NOT NULL`;
+  try {
+    const r = await pool.query(`
+WITH x AS (
+  ${rateSql}
+  UNION ALL
+  SELECT DISTINCT btrim(COALESCE(name_cn,name_en)) AS forwarder, 'company' AS source
+  FROM companies WHERE type = 'forwarder' AND NULLIF(btrim(COALESCE(name_cn,name_en)),'') IS NOT NULL
+)
+SELECT forwarder, CASE WHEN bool_or(source='rate') THEN 'rate' ELSE 'company' END AS source
+FROM x GROUP BY forwarder ORDER BY forwarder`);
+    return r.rows;
+  } catch (_err) {
+    const r = await pool.query(`${rateSql} ORDER BY forwarder`);
+    return r.rows;
+  }
+}
+
 function buildOceanPlans(q) {
   const params = [];
   const conds = [`sp.deleted_at IS NULL`];
@@ -408,9 +449,14 @@ export async function loadRatesHub(pool, q = {}) {
   };
   const keys = Object.keys(built);
   const localChargeOptionsQuery = buildLocalChargeOptions();
-  const [packs, localChargeOptions] = await Promise.all([
+  const portOptionsQuery = buildPortOptions(), carrierOptionsQuery = buildCarrierOptions(), sailingLanesQuery = buildSailingLanes();
+  const [packs, localChargeOptions, portOptions, carrierOptions, forwarderOptions, sailingLanes] = await Promise.all([
     Promise.all(keys.map((key) => runSource(pool, key, built[key]))),
-    pool.query(localChargeOptionsQuery.sql, localChargeOptionsQuery.params).then((r) => r.rows)
+    pool.query(localChargeOptionsQuery.sql, localChargeOptionsQuery.params).then((r) => r.rows),
+    pool.query(portOptionsQuery.sql, portOptionsQuery.params).then((r) => r.rows),
+    pool.query(carrierOptionsQuery.sql, carrierOptionsQuery.params).then((r) => r.rows),
+    loadForwarderOptions(pool),
+    pool.query(sailingLanesQuery.sql, sailingLanesQuery.params).then((r) => r.rows)
   ]);
   const byKey = Object.fromEntries(keys.map((key, i) => [key, packs[i]]));
   return {
@@ -419,6 +465,10 @@ export async function loadRatesHub(pool, q = {}) {
       ocean_plans: byKey.ocean_plans.rows,
       ocean_bills: byKey.ocean_bills.rows,
       local_charge_options: localChargeOptions,
+      port_options: portOptions,
+      carrier_options: carrierOptions,
+      forwarder_options: forwarderOptions,
+      sailing_lanes: sailingLanes,
       tariff: byKey.tariff.rows,
       matrices: byKey.matrices.rows,
       matrix_items: byKey.matrix_items.rows,
