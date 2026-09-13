@@ -43,7 +43,8 @@ SELECT f.id,
   COALESCE(pol_p.name_en, f.pol) AS pol,
   COALESCE(pod_p.name_en, f.pod) AS pod,
   f.pol AS pol_raw, f.pod AS pod_raw,
-  f.carrier, f.forwarder, f.currency,
+  f.carrier, f.forwarder, f.supplier_id, f.currency,
+  f.route_code, f.via, f.thc, f.local_charge_code,
   f.gp20, f.hq40, f.customer_gp20, f.customer_hq40,
   f.official_gp20, f.official_hq40, f.profit_20gp, f.profit_40hq,
   to_char(f.valid_from,'YYYY-MM-DD') AS valid_from,
@@ -302,62 +303,116 @@ ORDER BY i.etd DESC NULLS LAST, i.bl_no`,
   };
 }
 
+const SOURCE_META = {
+  ocean: { table: "freight_rates", required: ["pol", "pod", "carrier", "forwarder", "gp20", "hq40", "valid_to"], needed: ["id", "pol", "pod", "carrier", "forwarder", "currency", "gp20", "hq40", "customer_gp20", "customer_hq40", "official_gp20", "official_hq40", "profit_20gp", "profit_40hq", "valid_from", "valid_to", "status", "source", "remarks", "sail_date", "vessel_name", "voyage_no", "eta_date", "doc_cutoff", "cargo_cutoff", "transit_days", "freetime", "pol_port_id", "pod_port_id"], joined: { ports: ["id", "name_en"] } },
+  ocean_plans: { table: "shipping_plans", required: ["bl_no", "pol", "pod", "carrier_code", "freight_cost", "freight_cost_currency", "freight_sale_usd"], needed: ["id", "deleted_at", "bl_no", "pol", "pod", "carrier_code", "forwarder_cn", "container_type", "container_qty", "etd", "freight_cost", "freight_cost_currency", "freight_sale_usd", "shipment_no", "pol_port_id", "pod_port_id"], joined: { ports: ["id", "name_en"] } },
+  ocean_bills: { table: "freight_supplier_bills", required: ["bl_no", "cost_category", "currency", "amount", "supplier", "bill_month"], needed: ["id", "bl_no", "cost_category", "currency", "amount", "sale_amount", "supplier", "bill_month", "fee_status", "remarks", "reconcile_note", "link_plan_id"], joined: { shipping_plans: ["id", "deleted_at", "bl_no", "pol", "pod", "shipping_line", "carrier_code", "pol_port_id", "pod_port_id"], ports: ["id", "name_en"] } },
+  tariff: { table: "carrier_tariff_standards", required: ["carrier", "port", "container_type", "charge_item_name", "amount_cny", "unit_basis"], needed: ["id", "carrier", "port", "container_type", "charge_item_code", "charge_item_name", "amount_cny", "unit_basis", "required_flag", "conditional_flag", "station_name", "valid_from", "valid_to", "review_status"], joined: { ports: ["name_en"] } },
+  matrices: { table: "port_charge_matrices", required: ["code", "carrier_code", "pol", "pod", "total_cost_20gp", "total_cost_40hq", "cost_currency"], needed: ["code", "forwarder_company_id", "carrier_code", "pol", "pod", "bl_type", "free_days_origin", "free_days_dest", "total_cost_20gp", "total_cost_40hq", "cost_currency", "is_active", "valid_from", "valid_to"], joined: { ports: ["name_en"] } },
+  matrix_items: { table: "port_charge_matrix_items", required: ["matrix_code", "charge_name", "unit_price", "amount", "currency"], needed: ["matrix_code", "charge_name", "currency", "unit", "container_type", "unit_price", "qty", "amount", "is_required", "sort_order"] },
+  local: { table: "local_charges", required: ["carrier", "pol", "pod", "company_name", "charge_name", "amount", "currency"], needed: ["id", "carrier", "pol", "pod", "company_name", "container_type", "charge_name", "amount", "currency", "cost_total", "sell_total", "base_total_cny", "markup_cny", "valid_from", "valid_until", "is_active", "free_time"], joined: { ports: ["name_en"] } },
+  truck: { table: "service_rates", required: ["factory_name", "pol", "container_type", "tier", "rate", "currency", "unit"], needed: ["service", "factory_name", "pol", "pod", "container_type", "tier", "rate", "currency", "unit", "valid_from", "valid_to", "is_active"], joined: { ports: ["name_en"] } },
+  truck_legacy: { table: "trucking_rates", required: ["id"], needed: ["id"] },
+  customs: { table: "customs_rates", required: ["vendor_cn", "pol", "base_fee", "max_free_descs", "extra_per_desc", "currency"], needed: ["vendor_cn", "pol", "base_fee", "extra_per_desc", "max_free_descs", "currency", "notes", "valid_from", "valid_to"], joined: { ports: ["name_en"] } },
+  insurance: { table: "insurance_policies", required: ["bl_no", "insured_name", "policyholder_name", "invoice_amount", "insured_amount", "markup_pct", "insurance_rate"], needed: ["bl_no", "insured_name", "policyholder_name", "markup_pct", "insured_amount", "invoice_amount", "currency", "status", "pol", "pod", "etd", "vessel_voyage", "cargo_description"], joined: { shipping_plans: ["bl_no", "insurance_required", "insurance_rate", "insurance_cost", "insurance_policy_no", "insurance_cn"], ports: ["name_en"] } },
+};
+
+function hasValue(v) {
+  return v !== null && v !== undefined && String(v).trim() !== "";
+}
+
+function pct(filled, total) {
+  if (!total) return null;
+  return Math.round((filled * 1000) / total) / 10;
+}
+
+async function tableExists(pool, table) {
+  const r = await pool.query("SELECT to_regclass($1) AS name", [`public.${table}`]);
+  return Boolean(r.rows[0]?.name);
+}
+
+async function tableColumns(pool, table) {
+  const r = await pool.query(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = $1`,
+    [table]
+  );
+  return new Set(r.rows.map((x) => x.column_name));
+}
+
+function sourceCoverage(key, rows, cols, missingTable = false) {
+  const meta = SOURCE_META[key], total = rows.length;
+  const fields = meta.required.map((name) => {
+    if (missingTable || (!cols.has(name) && !rows.some((r) => Object.prototype.hasOwnProperty.call(r, name)))) return { name, state: "not_connected", filled: 0, total, fill_rate: null };
+    const filled = rows.filter((r) => hasValue(r[name])).length;
+    return { name, state: "ready", filled, total, fill_rate: pct(filled, total) };
+  });
+  return {
+    table: meta.table,
+    state: missingTable || !total || fields.some((f) => f.state !== "ready") ? "not_connected" : "ready",
+    missing_fields: missingTable || !total ? meta.required : meta.required.filter((name) => !cols.has(name)),
+    total_rows: total,
+    fields,
+  };
+}
+
+async function runSource(pool, key, built) {
+  const meta = SOURCE_META[key];
+  if (!(await tableExists(pool, meta.table))) return { rows: [], coverage: sourceCoverage(key, [], new Set(), true) };
+  const cols = await tableColumns(pool, meta.table);
+  const missingNeeded = meta.needed.filter((name) => !cols.has(name));
+  const joinedCols = new Set(), missingJoined = [];
+  for (const [table, names] of Object.entries(meta.joined || {})) {
+    if (!(await tableExists(pool, table))) {
+      names.forEach((name) => missingJoined.push(`${table}.${name}`));
+      continue;
+    }
+    const c = await tableColumns(pool, table);
+    names.forEach((name) => { if (c.has(name)) joinedCols.add(name); else missingJoined.push(`${table}.${name}`); });
+  }
+  if (missingNeeded.length || missingJoined.length) {
+    const coverage = sourceCoverage(key, [], cols, false);
+    coverage.missing_fields = [...new Set(coverage.missing_fields.concat(missingNeeded, missingJoined))];
+    return { rows: [], coverage };
+  }
+  const r = await pool.query(built.sql, built.params);
+  return { rows: r.rows, coverage: sourceCoverage(key, r.rows, new Set([...cols, ...joinedCols]), false) };
+}
+
 export async function loadRatesHub(pool, q = {}) {
   const activeOnly = truthy(q.active_only, false);
-  const ocean = buildOcean(q, activeOnly);
-  const oceanPlans = buildOceanPlans(q);
-  const oceanBills = buildOceanBills(q);
-  const tariff = buildTariff(q, activeOnly);
-  const matrices = buildMatrices(q, activeOnly);
-  const matrixItems = buildMatrixItems(q, activeOnly);
-  const local = buildLocal(q, activeOnly);
-  const truck = buildTruck(q, activeOnly);
-  const truckLegacy = buildTruckLegacy();
-  const customs = buildCustoms(q, activeOnly);
-  const insurance = buildInsurance(q);
-  const [
-    oceanRes, oceanPlansRes, oceanBillsRes, tariffRes, matricesRes, matrixItemsRes, localRes,
-    truckRes, truckLegacyRes, customsRes, insuranceRes
-  ] = await Promise.all([
-    pool.query(ocean.sql, ocean.params),
-    pool.query(oceanPlans.sql, oceanPlans.params),
-    pool.query(oceanBills.sql, oceanBills.params),
-    pool.query(tariff.sql, tariff.params),
-    pool.query(matrices.sql, matrices.params),
-    pool.query(matrixItems.sql, matrixItems.params),
-    pool.query(local.sql, local.params),
-    pool.query(truck.sql, truck.params),
-    pool.query(truckLegacy.sql, truckLegacy.params),
-    pool.query(customs.sql, customs.params),
-    pool.query(insurance.sql, insurance.params),
-  ]);
+  const built = {
+    ocean: buildOcean(q, activeOnly),
+    ocean_plans: buildOceanPlans(q),
+    ocean_bills: buildOceanBills(q),
+    tariff: buildTariff(q, activeOnly),
+    matrices: buildMatrices(q, activeOnly),
+    matrix_items: buildMatrixItems(q, activeOnly),
+    local: buildLocal(q, activeOnly),
+    truck: buildTruck(q, activeOnly),
+    truck_legacy: buildTruckLegacy(),
+    customs: buildCustoms(q, activeOnly),
+    insurance: buildInsurance(q),
+  };
+  const keys = Object.keys(built);
+  const packs = await Promise.all(keys.map((key) => runSource(pool, key, built[key])));
+  const byKey = Object.fromEntries(keys.map((key, i) => [key, packs[i]]));
   return {
     data: {
-      ocean: oceanRes.rows,
-      ocean_plans: oceanPlansRes.rows,
-      ocean_bills: oceanBillsRes.rows,
-      tariff: tariffRes.rows,
-      matrices: matricesRes.rows,
-      matrix_items: matrixItemsRes.rows,
-      local: localRes.rows,
-      truck: truckRes.rows,
-      truck_legacy: truckLegacyRes.rows,
-      customs: customsRes.rows,
-      insurance: insuranceRes.rows,
+      ocean: byKey.ocean.rows,
+      ocean_plans: byKey.ocean_plans.rows,
+      ocean_bills: byKey.ocean_bills.rows,
+      tariff: byKey.tariff.rows,
+      matrices: byKey.matrices.rows,
+      matrix_items: byKey.matrix_items.rows,
+      local: byKey.local.rows,
+      truck: byKey.truck.rows,
+      truck_legacy: byKey.truck_legacy.rows,
+      customs: byKey.customs.rows,
+      insurance: byKey.insurance.rows,
     },
-    count: {
-      ocean: oceanRes.rowCount,
-      ocean_plans: oceanPlansRes.rowCount,
-      ocean_bills: oceanBillsRes.rowCount,
-      tariff: tariffRes.rowCount,
-      matrices: matricesRes.rowCount,
-      matrix_items: matrixItemsRes.rowCount,
-      local: localRes.rowCount,
-      truck: truckRes.rowCount,
-      truck_legacy: truckLegacyRes.rowCount,
-      customs: customsRes.rowCount,
-      insurance: insuranceRes.rowCount,
-    },
+    count: Object.fromEntries(keys.map((key) => [key, byKey[key].rows.length])),
+    coverage: Object.fromEntries(keys.map((key) => [key, byKey[key].coverage])),
   };
 }
 
@@ -368,7 +423,7 @@ export default async function handler(req, res) {
   if (!requireAuth(req, res)) return;
   try {
     const out = await loadRatesHub(getPool(), req.query);
-    res.status(200).json({ success: true, data: out.data, count: out.count });
+    res.status(200).json({ success: true, generated_at: new Date().toISOString(), data: out.data, count: out.count, coverage: out.coverage });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

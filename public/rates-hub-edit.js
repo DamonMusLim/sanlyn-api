@@ -1,0 +1,154 @@
+(function(){
+  var api=null,root=null,current=null;
+  var fields=[
+    {name:"pol",label:"POL *",group:"route"},
+    {name:"pod",label:"POD *",group:"route"},
+    {name:"carrier",label:"船公司 Carrier",group:"route"},
+    {name:"forwarder",label:"货代 Forwarder",group:"route"},
+    {name:"route_code",label:"航线代码 Route Code",group:"route"},
+    {name:"via",label:"中转 Via",group:"route"},
+    {name:"transit_days",label:"航程天数",type:"number",group:"route"},
+    {name:"freetime",label:"免箱期 Free Time",group:"route"},
+    {name:"gp20",label:"20GP 成本",type:"number",group:"cost"},
+    {name:"hq40",label:"40HQ 成本",type:"number",group:"cost"},
+    {name:"thc",label:"THC 港杂",type:"number",group:"cost"},
+    {name:"local_charge_code",label:"本地费代码",group:"cost"},
+    {name:"customer_gp20",label:"20GP 报价",type:"number",group:"quote"},
+    {name:"customer_hq40",label:"40HQ 报价",type:"number",group:"quote"},
+    {name:"valid_from",label:"有效期起",type:"date",group:"quote"},
+    {name:"valid_to",label:"有效期止",type:"date",group:"quote"},
+    {name:"remarks",label:"备注",type:"textarea",group:"quote",full:true}
+  ];
+  var groupNames={route:"航线 / Route",cost:"成本价 / Carrier Cost (内部)",quote:"客户报价 / Customer Quote"};
+  var numeric={gp20:1,hq40:1,thc:1,customer_gp20:1,customer_hq40:1,transit_days:1};
+  var aliases={route_code:["routeCode"],customer_gp20:["customerGp20"],customer_hq40:["customerHq40"],valid_from:["validFrom"],valid_to:["validTo"],transit_days:["transitDays"],local_charge_code:["localChargeCode"]};
+
+  function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+  function attr(s){return esc(s).replace(/'/g,"&#39;");}
+  function val(row,name){
+    if(!row)return "";
+    if(row[name]!=null)return row[name];
+    var a=aliases[name]||[];
+    for(var i=0;i<a.length;i++)if(row[a[i]]!=null)return row[a[i]];
+    return "";
+  }
+  function emptyForm(){var f={};fields.forEach(function(x){f[x.name]=""});return f;}
+  function formFromRow(row){var f=emptyForm();fields.forEach(function(x){var n=x.name,v=(n==="pol"?val(row,"pol_raw"):(n==="pod"?val(row,"pod_raw"):val(row,n)));if((n==="pol"||n==="pod")&&v==="")v=val(row,n);f[n]=v==null?"":String(v).slice(0,x.type==="date"?10:999);});return f;}
+  function formValues(){var out={};fields.forEach(function(x){var el=root.querySelector("[name='"+x.name+"']");out[x.name]=el?el.value:"";});return out;}
+  function toPayload(form,initial){
+    var out={};
+    fields.forEach(function(x){
+      if(initial&&String(initial[x.name]||"")===String(form[x.name]||""))return;
+      var v=form[x.name];
+      if(v==="")out[x.name]=null;
+      else out[x.name]=numeric[x.name]?Number(v):v;
+    });
+    return out;
+  }
+  function changed(a,b){
+    return fields.some(function(x){return String(a[x.name]||"")!==String(b[x.name]||"");});
+  }
+  function authHeaders(json){
+    var h={Authorization:"Bearer "+api.token()};
+    if(json)h["Content-Type"]="application/json";
+    return h;
+  }
+  function showError(msg){
+    var box=root.querySelector(".drawer-error");
+    if(box){box.hidden=false;box.textContent=msg;}
+  }
+  function sectionHtml(group,form){
+    return '<section class="drawer-section"><h3>'+esc(groupNames[group])+'</h3><div class="drawer-grid">'+fields.filter(function(x){return x.group===group;}).map(function(x){
+      var cls="drawer-field"+(x.full?" full":"");
+      if(x.type==="textarea")return '<div class="'+cls+'"><label>'+esc(x.label)+'</label><textarea name="'+attr(x.name)+'">'+esc(form[x.name])+'</textarea></div>';
+      return '<div class="'+cls+'"><label>'+esc(x.label)+'</label><input name="'+attr(x.name)+'" type="'+attr(x.type||"text")+'" value="'+attr(form[x.name])+'"></div>';
+    }).join("")+'</div></section>';
+  }
+  function drawerHtml(mode,row){
+    var form=mode==="new"?emptyForm():formFromRow(row);
+    var title=mode==="new"?"新增海运费率":((row.pol||"未设置")+" -> "+(row.pod||"未设置"));
+    var sub=mode==="new"?"New Freight Rate":("ID #"+row.id+" · "+(row.carrier||""));
+    return '<div class="drawer-mask" data-rate-close="1"></div><aside class="rate-drawer" role="dialog" aria-modal="true">'+
+      '<div class="drawer-head"><button type="button" data-rate-close="1">关闭</button><div class="drawer-title"><b>'+esc(title)+'</b><span>'+esc(sub)+'</span></div>'+
+      (mode==="new"?'<button class="primary" type="button" data-rate-save="1">保存</button>':'<span class="dirty-actions" hidden><button type="button" data-rate-cancel="1">取消</button> <button class="primary" type="button" data-rate-save="1">保存</button></span>')+'</div>'+
+      '<div class="drawer-body"><div class="drawer-error" hidden></div>'+sectionHtml("route",form)+sectionHtml("cost",form)+sectionHtml("quote",form)+'</div>'+
+      '<div class="drawer-foot">'+(mode==="new"?'<button type="button" data-rate-close="1">取消</button><button class="primary" type="button" data-rate-save="1">保存</button>':'<span class="dirty-actions" hidden><button type="button" data-rate-cancel="1">取消</button><button class="primary" type="button" data-rate-save="1">保存</button></span>')+'</div></aside>';
+  }
+  function open(mode,row){
+    current={mode:mode,row:row||{},initial:mode==="new"?emptyForm():formFromRow(row||{})};
+    root.innerHTML=drawerHtml(mode,row||{});
+    root.querySelectorAll("input,textarea").forEach(function(el){el.addEventListener("input",markDirty);});
+  }
+  function close(){current=null;root.innerHTML="";}
+  function markDirty(){
+    if(!current||current.mode==="new")return;
+    var isDirty=changed(current.initial,formValues());
+    root.querySelectorAll(".dirty-actions").forEach(function(x){x.hidden=!isDirty;});
+  }
+  async function save(){
+    if(!current)return;
+    var form=formValues();
+    if(!form.pol.trim()||!form.pod.trim()){showError("POL 和 POD 必填。");return;}
+    if(!form.forwarder.trim()){showError("货代必填");return;}
+    var payload=toPayload(form,current.mode==="edit"?current.initial:null);
+    if(current.mode==="edit"){
+      payload.id=current.row.id;
+      if(!changed(current.initial,form))return;
+    }
+    var btns=root.querySelectorAll("[data-rate-save]");
+    btns.forEach(function(b){b.disabled=true;b.textContent="保存中...";});
+    try{
+      var r=await fetch("/api/db/freight-rates",{method:current.mode==="new"?"POST":"PATCH",headers:authHeaders(true),body:JSON.stringify(payload)});
+      var j=await r.json().catch(function(){return {};});
+      if(!r.ok||j.success===false)throw new Error(j.error||("HTTP "+r.status));
+      close();api.refresh();
+    }catch(e){
+      showError("保存失败："+e.message);
+      btns.forEach(function(b){b.disabled=false;b.textContent="保存";});
+    }
+  }
+  async function voidRate(id){
+    if(!id||!confirm("确认作废这条运价？"))return;
+    try{
+      var r=await fetch("/api/db/freight-rates",{method:"PATCH",headers:authHeaders(true),body:JSON.stringify({id:id,status:"void"})});
+      var j=await r.json().catch(function(){return {};});
+      if(!r.ok||j.success===false)throw new Error(j.error||("HTTP "+r.status));
+      api.refresh();
+    }catch(e){alert("作废失败："+e.message);}
+  }
+  async function portal(row,button){
+    if(!row||!row.supplier_id)return;
+    button.disabled=true;
+    try{
+      var r=await fetch("/api/db/portal-short-code",{method:"POST",headers:authHeaders(true),body:JSON.stringify({company_id:row.supplier_id})});
+      var j=await r.json().catch(function(){return {};});
+      if(!r.ok||!j.url)throw new Error(j.error||("HTTP "+r.status));
+      button.title=j.url;
+      if(navigator.clipboard)navigator.clipboard.writeText(j.url).catch(function(){});
+    }catch(e){alert("报价门户失败："+e.message);}
+    finally{button.disabled=false;}
+  }
+  function actionsHtml(row){
+    if(!row||!row.id)return "";
+    if(row.status==="void")return '<span class="na">已作废</span>';
+    return '<span class="row-actions"><button class="linkbtn" type="button" data-rate-detail="'+attr(row.id)+'">详情</button><button class="mini-btn danger" type="button" data-rate-void="'+attr(row.id)+'">作废</button></span>';
+  }
+  function portalHtml(row){
+    if(!row||!row.supplier_id)return "";
+    return '<button class="portal-btn" type="button" data-rate-portal="'+attr(row.id)+'" title="生成并复制报价门户链接">报价门户</button>';
+  }
+  function handleClick(e){
+    var closeBtn=e.target.closest("[data-rate-close]");if(closeBtn){close();return true;}
+    var saveBtn=e.target.closest("[data-rate-save]");if(saveBtn){save();return true;}
+    var cancelBtn=e.target.closest("[data-rate-cancel]");if(cancelBtn&&current){root.innerHTML=drawerHtml("edit",current.row);root.querySelectorAll("input,textarea").forEach(function(el){el.addEventListener("input",markDirty);});return true;}
+    var detail=e.target.closest("[data-rate-detail]");if(detail){open("edit",api.findRow(detail.dataset.rateDetail));return true;}
+    var voidBtn=e.target.closest("[data-rate-void]");if(voidBtn){voidRate(voidBtn.dataset.rateVoid);return true;}
+    var portalBtn=e.target.closest("[data-rate-portal]");if(portalBtn){portal(api.findRow(portalBtn.dataset.ratePortal),portalBtn);return true;}
+    return false;
+  }
+  function init(opts){
+    api=opts;root=document.getElementById("rateDrawerRoot");
+    root.addEventListener("click",handleClick);
+  }
+  window.RatesHubEdit={init:init,openNew:function(){open("new");},openDetail:function(row){open("edit",row);},handleClick:handleClick,actionsHtml:actionsHtml,portalHtml:portalHtml};
+})();
