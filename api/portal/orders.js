@@ -61,27 +61,12 @@ export default async function handler(req, res) {
   let role = 'customer';
   let companyCodes = [];
 
-  // 1) 先试 Portal Token
-  try {
-    const perms = await parsePortalAuth(req, res, pool);
-    if (!perms) return; // 已 401
-    role = perms.user_type || 'customer';
-    companyCodes = perms.company_codes || [];
-  } catch {
-    // 2) 降级:试内部 JWT(Admin 登录的那种)
-    try {
-      const auth = req.headers.authorization || '';
-      const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-      if (token) {
-        const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
-        role = payload.role || 'customer';
-        const cc = payload.company_codes || payload.companyCodes;
-        companyCodes = Array.isArray(cc) ? cc : (payload.company_code ? [payload.company_code] : []);
-      }
-    } catch { /* 匿名,fallthrough to 401 */ }
-    if (!role || (role === 'customer' && companyCodes.length === 0)) {
-      return res.status(401).json({ ok: false, error: '需要登录' });
-    }
+  const perms = await parsePortalAuth(req, res, pool);
+  if (!perms) return; // 已 401
+  role = perms.user_type || perms.user?.user_type || 'customer';
+  companyCodes = perms.company_codes || perms.company?.company_codes || (perms.company?.company_code ? [perms.company.company_code] : []);
+  if (!role || (role === 'customer' && companyCodes.length === 0)) {
+    return res.status(401).json({ ok: false, error: '需要登录' });
   }
 
   try {
