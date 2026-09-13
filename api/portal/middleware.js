@@ -57,7 +57,7 @@ export function createPortalToken(userId) {
  * 导出供 portalGate 中间件复用（避免重复实现）。
  *
  * @param {string} token
- * @returns {{ userId: string }|null}
+ * @returns {{ userId: string, ts: number }|null}
  */
 export function verifyPortalToken(token) {
   try {
@@ -92,7 +92,7 @@ export function verifyPortalToken(token) {
     if (givenBuf.length !== expectedBuf.length) return null;
     if (!timingSafeEqual(givenBuf, expectedBuf)) return null;
 
-    return { userId };
+    return { userId, ts };
   } catch {
     return null;
   }

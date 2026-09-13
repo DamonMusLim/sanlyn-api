@@ -1,5 +1,5 @@
 // server.js — Express adapter for Alibaba Cloud FC routes.
-import { registerPetHrRoutes } from "./routes-pet-hr.mjs";
+import { registerPetHrRoutes } from "./routes-pet-hr.mjs"; import { mountPortalRoutes } from "./portal-routes.js";
 export function registerCoreRoutes(app, mount) {
   mount("/api/db/auth-login",        () => import("./api/db/auth-login.js"));
   mount("/api/db/version",           () => import("./api/db/version.js")); // 版本自检:commit+部署时间 2026-07-07
@@ -415,6 +415,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/pricing-desk/unpublish", () => import("./api/db/pricing-desk.js")); // 下架客户牌价
   mount("/api/public/collab-master", () => import("./api/public/collab-master.js")); // 协同总表统一投影层 [Claude 0723 #bp-collab-master-build-0723]
   mount("/api/public/customer-myportal", () => import("./api/public/customer-myportal.js")); // P1 只读客户门户(orders/docs/missing/price) [Claude 0723 #bp-p1-customer-portal-0723]
+  mount("/api/public/customer-bargain", () => import("./api/public/customer-bargain.js")); // customer target price loop (议价闭环, off ntfy)
   mount("/api/db/customer-quote-link", () => import("./api/public/customer-quote.js")); // issue customer quote magic link
   mount("/api/public/customer-quote",  () => import("./api/public/customer-quote.js")); // customer quote lens
   mount("/api/public/forwarder-rfqs",  () => import("./api/public/forwarder-rfqs.js")); // forwarder RFQ center lens
@@ -508,11 +509,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/m3/run-merge",    () => import("./api/m3/run-merge.js"));
   mount("/api/m3/scan-missing", () => import("./api/m3/scan-missing.js"));
   // ── Portal 读接口（Phase 2 + Phase 3 登录）──────────────────
-  mount("/api/portal/login",     () => import("./api/portal/login.js"));
-  mount("/api/portal/shipping",  () => import("./api/portal/shipping.js"));
-  mount("/api/portal/documents", () => import("./api/portal/documents.js"));
-  mount("/api/portal/missing",   () => import("./api/portal/missing.js"));
-  mount("/api/portal/orders",    () => import("./api/portal/orders.js"));    // Stage C1
+  mountPortalRoutes(mount);
   // MiniMax chat completion proxy for Task Workspace V1.5 (read-only).
   // Hard contract: keys stay in process.env.MINIMAX_API_KEY; rate-limited
   // 30s/task+role; daily cap 100; max_tokens hard 800; prompt 4000 chars.
