@@ -24,6 +24,7 @@ import bcrypt          from 'bcryptjs';
 import { getPool, setCors } from '../db.js';
 import { createPortalToken } from './middleware.js';
 import { loadUserPermissions, canAccessModule } from './auth-check.js';
+import { checkRateLimit, recordFailure, resetKey } from './login-ratelimit.js';
 
 // Portal 目前暴露的所有可查询模块
 const PORTAL_MODULES = [
@@ -34,6 +35,24 @@ const PORTAL_MODULES = [
   'port_charges',
   'customs_broker_quotes',
 ];
+
+const DUMMY_PASSWORD_HASH = '$2b$12$4QYv9Loj19UbrPFx3oHw6uBiRklkE6Xr8a4NcCpN3T9OgV4BczSZm';
+
+function getClientIp(req) {
+  // 可信客户端 IP:nginx 设的 X-Real-IP=$remote_addr(覆盖伪造);退回 XFF 末跳(nginx 追加的真跳,非客户端可伪造的首跳);再退 socket。
+  const xri = req.headers['x-real-ip'];
+  if (xri) return String(xri).trim();
+  const xff = req.headers['x-forwarded-for'];
+  if (xff) { const parts = String(xff).split(','); return parts[parts.length - 1].trim(); }
+  return req.socket?.remoteAddress || 'unknown';
+}
+
+function getRateLimitKeys(ip, username) {
+  return {
+    ipKey: `ip:${ip}`,
+    ipUsernameKey: `ip:username:${ip}:${username}`,
+  };
+}
 
 // ── 密码校验（bcrypt + 明文自动升级）────────────────────────────
 async function verifyPassword(pool, userId, inputPlain, storedValue) {
@@ -60,7 +79,14 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { username, password } = req.body || {};
+  const { username: rawUsername, password } = req.body || {};
+  const username = String(rawUsername || '').trim();
+  const ip = getClientIp(req);
+  const { ipKey, ipUsernameKey } = getRateLimitKeys(ip, username);
+
+  if (checkRateLimit(ipKey) || checkRateLimit(ipUsernameKey)) {
+    return res.status(429).json({ error: '尝试过于频繁,请稍后再试', code: 'RATE_LIMITED' });
+  }
 
   if (!username || !password) {
     return res.status(400).json({ error: 'username and password required', code: 'MISSING_PARAMS' });
@@ -87,19 +113,35 @@ export default async function handler(req, res) {
        FROM portal_users u
        JOIN portal_companies c ON c.id = u.company_id
        WHERE u.username = $1`,
-      [username.trim()]
+      [username]
     );
-    if (result.rows.length === 0) {
-      // 不透露是否用户名存在
-      return res.status(401).json({ error: '用户名或密码错误', code: 'INVALID_CREDENTIALS' });
-    }
     userRow = result.rows[0];
   } catch (err) {
     console.error('[portal/login] db query error:', err.message);
     return res.status(500).json({ error: 'Internal error', code: 'DB_ERROR' });
   }
 
-  // ── 2. 状态检查 ──
+  // ── 2. 密码校验 ──
+  let passwordOk;
+  try {
+    if (userRow) {
+      passwordOk = await verifyPassword(pool, userRow.id, password, userRow.password_hash);
+    } else {
+      await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
+      passwordOk = false;
+    }
+  } catch (err) {
+    console.error('[portal/login] bcrypt error:', err.message);
+    return res.status(500).json({ error: 'Internal error', code: 'AUTH_ERROR' });
+  }
+
+  if (!passwordOk) {
+    recordFailure(ipKey);
+    recordFailure(ipUsernameKey);
+    return res.status(401).json({ error: '用户名或密码错误', code: 'INVALID_CREDENTIALS' });
+  }
+
+  // ── 3. 状态检查 ──
   if (userRow.user_status !== 'active') {
     return res.status(403).json({
       error: '账户未激活或已停用，请联系管理员',
@@ -113,18 +155,8 @@ export default async function handler(req, res) {
     });
   }
 
-  // ── 3. 密码校验 ──
-  let passwordOk;
-  try {
-    passwordOk = await verifyPassword(pool, userRow.id, password, userRow.password_hash);
-  } catch (err) {
-    console.error('[portal/login] bcrypt error:', err.message);
-    return res.status(500).json({ error: 'Internal error', code: 'AUTH_ERROR' });
-  }
-
-  if (!passwordOk) {
-    return res.status(401).json({ error: '用户名或密码错误', code: 'INVALID_CREDENTIALS' });
-  }
+  resetKey(ipKey);
+  resetKey(ipUsernameKey);
 
   // ── 4. 生成 Token ──
   const token = createPortalToken(userRow.id);
