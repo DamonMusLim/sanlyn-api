@@ -95,8 +95,8 @@ SELECT DISTINCT s.pol_name, COALESCE(pol.name_en, s.pol_name) AS pol,
   s.pod_name, COALESCE(pod.name_en, s.pod_name) AS pod,
   (pol.id IS NULL OR pod.id IS NULL) AS unmatched
 FROM market_sailings s
-LEFT JOIN ports pol ON pol.name_cn = s.pol_name
-LEFT JOIN ports pod ON pod.name_cn = s.pod_name
+LEFT JOIN LATERAL (SELECT id, name_en FROM (SELECT p.id, p.name_en, 0 AS src, 0 AS alias_id FROM ports p WHERE p.name_cn = s.pol_name UNION ALL SELECT p.id, p.name_en, 1 AS src, pa.id AS alias_id FROM port_aliases pa JOIN ports p ON p.id = pa.port_id WHERE pa.alias = s.pol_name AND pa.is_active) x ORDER BY src, alias_id, id LIMIT 1) pol ON true
+LEFT JOIN LATERAL (SELECT id, name_en FROM (SELECT p.id, p.name_en, 0 AS src, 0 AS alias_id FROM ports p WHERE p.name_cn = s.pod_name UNION ALL SELECT p.id, p.name_en, 1 AS src, pa.id AS alias_id FROM port_aliases pa JOIN ports p ON p.id = pa.port_id WHERE pa.alias = s.pod_name AND pa.is_active) x ORDER BY src, alias_id, id LIMIT 1) pod ON true
 WHERE s.captured_on = (SELECT max(captured_on) FROM market_sailings) ORDER BY pol, pod`, params: [] }; }
 
 async function loadForwarderOptions(pool) {
