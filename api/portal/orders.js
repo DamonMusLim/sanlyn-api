@@ -28,6 +28,21 @@ const HIDDEN_FOR_FACTORY = new Set([
   'profit', 'profit_rate', 'ocean_freight',
 ]);
 
+// 递归删除任意层级的敏感键(成本/工厂/货代/供应商/利润/采购),键名大小写与驼峰都覆盖
+const SENSITIVE_KEY_RE = /(cost|factory|supplier|profit|purchase|forwarder|freight_quote|ocean_freight)/i;
+function deepScrub(v) {
+  if (Array.isArray(v)) return v.map(deepScrub);
+  if (v && typeof v === 'object') {
+    const o = {};
+    for (const [k, val] of Object.entries(v)) {
+      if (SENSITIVE_KEY_RE.test(k)) continue;
+      o[k] = deepScrub(val);
+    }
+    return o;
+  }
+  return v;
+}
+
 function scopeOrder(order, role) {
   if (!order) return null;
   if (role === 'admin' || role === 'internal_sanlyn' || role === 'finance') return order;
@@ -42,6 +57,9 @@ function scopeOrder(order, role) {
     for (const k of hidden) { if (k in cleanRaw) delete cleanRaw[k]; }
     out.raw = cleanRaw;
   }
+  // 深度清洗 raw 与 line_items 数组元素(防成本/工厂从嵌套或数组漏出)
+  if (out.raw != null) out.raw = deepScrub(out.raw);
+  if (Array.isArray(out.line_items)) out.line_items = out.line_items.map(deepScrub);
   return out;
 }
 
