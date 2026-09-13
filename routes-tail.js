@@ -196,4 +196,5 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/order-merge-groups/:id/dissolve", () => import("./api/db/order-merge-groups.js"));
   mount("/api/db/order-merge-groups/:id/remove-item", () => import("./api/db/order-merge-groups.js"));
   mount("/api/public/container-types", () => import("./api/public/container-types.js"));
+  mount("/api/public/forwarder-lane-quote/:code", () => import("./api/public/forwarder-lane-quote.js"));
 }

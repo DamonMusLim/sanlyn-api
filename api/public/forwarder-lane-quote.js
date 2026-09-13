@@ -1,5 +1,7 @@
 import { getPool, setCors } from "../db.js";
 import { normalizePort } from "../db/_official-port-charges.js";
+import { containerType } from "./_container-type.js";
+import { upsertRate } from "./_forwarder-lane-rates.js";
 
 function cleanCode(req) {
   var p = req.params && req.params.code;
@@ -53,20 +55,19 @@ function cleanDate(v) {
   return ymd(s);
 }
 
-function containerType(v) {
-  var s = text(v || "40HQ").toUpperCase().replace(/\s+/g, "");
-  s = s.replace("40HC", "40HQ").replace("HC", "HQ");
-  if (s === "20" || s === "20GP") return "20GP";
-  if (s === "40" || s === "40HQ") return "40HQ";
-  return "";
-}
-
-function rateColumn(ct) {
-  return ct === "20GP" ? "gp20" : "hq40";
-}
-
 function route(pol, pod) {
   return pol + "→" + pod;
+}
+
+async function loadActiveContainerTypes(pool) {
+  const { rows } = await pool.query(
+    `SELECT code
+       FROM container_types
+      WHERE is_active`
+  );
+  return new Set(rows.map(function(row) {
+    return text(row.code).toUpperCase();
+  }).filter(Boolean));
 }
 
 async function loadToken(pool, code) {
@@ -217,129 +218,6 @@ async function upsertItem(client, rfqId, line) {
   return ins.rows[0].id;
 }
 
-async function findRate(client, line) {
-  var col = rateColumn(line.container_type);
-  const { rows } = await client.query(
-    `SELECT id
-       FROM freight_rates fr
-      WHERE fr.forwarder_company_id = $1
-        AND COALESCE(fr.carrier, '') = COALESCE($2, '')
-        AND lower(btrim(fr.pol)) = lower(btrim($3))
-        AND lower(btrim(fr.pod)) = lower(btrim($4))
-        AND fr.source = 'portal_quote'
-        AND fr.${col} IS NOT NULL
-        AND COALESCE(fr.sail_date::date::text, '') = COALESCE($5::text, '')
-      ORDER BY fr.updated_at DESC NULLS LAST, fr.id DESC
-      LIMIT 1
-      FOR UPDATE`,
-    [line.forwarder_company_id, line.carrier, line.pol, line.pod, line.etd]
-  );
-  return rows[0] ? rows[0].id : null;
-}
-
-async function expireOverlaps(client, line, keepId) {
-  var col = rateColumn(line.container_type);
-  await client.query(
-    `UPDATE freight_rates
-        SET status = 'expired', updated_at = now()
-      WHERE freight_rates.forwarder_company_id = $1
-        AND COALESCE(freight_rates.carrier, '') = COALESCE($2, '')
-        AND lower(btrim(freight_rates.pol)) = lower(btrim($3))
-        AND lower(btrim(freight_rates.pod)) = lower(btrim($4))
-        AND freight_rates.source = 'portal_quote'
-        AND freight_rates.${col} IS NOT NULL
-        AND freight_rates.status = 'active'
-        AND COALESCE(freight_rates.sail_date::date::text, '') = COALESCE($5::text, '')
-        AND ($6::int IS NULL OR freight_rates.id <> $6)`,
-    [line.forwarder_company_id, line.carrier, line.pol, line.pod, line.etd, keepId]
-  );
-}
-
-async function upsertRate(client, line, rfqItemId, code) {
-  var col = rateColumn(line.container_type);
-  var otherCol = col === "gp20" ? "hq40" : "gp20";
-  var existingId = await findRate(client, line);
-  var raw = {
-    rfq_item_id: rfqItemId,
-    submitted_by_portal_code: code,
-    forwarder_company_code: line.forwarder_company_code,
-    week_idx: line.week_idx,
-    week_from: line.week_from,
-    week_to: line.week_to,
-    etd: line.etd,
-    vessel: line.vessel,
-    voyage: line.voyage,
-    guaranteed_usd: line.guaranteed_usd,
-    penalty_cny: line.penalty_cny,
-    deposit_cny: line.deposit_cny,
-  };
-  await expireOverlaps(client, line, existingId);
-  if (existingId) {
-    const upd = await client.query(
-      `UPDATE freight_rates
-          SET forwarder = $2,
-              carrier = $3,
-              pol = $4,
-              pod = $5,
-              ${col} = $6,
-              ${otherCol} = NULL,
-              valid_from = $7,
-              valid_to = $8,
-              sail_date = $9::date,
-              vessel_name = $10,
-              voyage_no = $11,
-              transit_days = $12,
-              status = 'active',
-              source = 'portal_quote',
-              raw = COALESCE(raw, '{}'::jsonb) || $13::jsonb,
-              updated_at = now()
-        WHERE id = $1
-        RETURNING id`,
-      [
-        existingId,
-        line.forwarder_name,
-        line.carrier,
-        line.pol,
-        line.pod,
-        line.unguaranteed_usd,
-        line.valid_from,
-        line.valid_to,
-        line.etd,
-        line.vessel,
-        line.voyage,
-        line.transit_days,
-        JSON.stringify(raw),
-      ]
-    );
-    return upd.rows[0].id;
-  }
-
-  const ins = await client.query(
-    `INSERT INTO freight_rates
-       (forwarder_company_id, forwarder, carrier, pol, pod, ${col},
-        valid_from, valid_to, sail_date, vessel_name, voyage_no, transit_days,
-        status, source, raw, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10,$11,$12,'active','portal_quote',$13::jsonb,now(),now())
-     RETURNING id`,
-    [
-      line.forwarder_company_id,
-      line.forwarder_name,
-      line.carrier,
-      line.pol,
-      line.pod,
-      line.unguaranteed_usd,
-      line.valid_from,
-      line.valid_to,
-      line.etd,
-      line.vessel,
-      line.voyage,
-      line.transit_days,
-      JSON.stringify(raw),
-    ]
-  );
-  return ins.rows[0].id;
-}
-
 function lineValidTo(line, bodyValidTo, defaultValidTo) {
   var etd = cleanDate(line && line.etd);
   var weekTo = cleanDate(line && line.week_to);
@@ -349,7 +227,7 @@ function lineValidTo(line, bodyValidTo, defaultValidTo) {
   return { value: defaultValidTo, source: "default_14d", etd: etd, week_to: weekTo };
 }
 
-function buildLines(body, token, company, validFrom, bodyValidTo, defaultValidTo) {
+function buildLines(body, token, company, validFrom, bodyValidTo, defaultValidTo, activeContainerTypes) {
   var pol = normalizePort(body.pol);
   var pod = normalizePort(body.pod);
   var rawLines = Array.isArray(body.lines) ? body.lines : [];
@@ -358,7 +236,7 @@ function buildLines(body, token, company, validFrom, bodyValidTo, defaultValidTo
     rawLines.forEach(function(line) {
       out.skipped.push({
         carrier: text(line && line.carrier),
-        container_type: containerType(line && line.container_type) || text(line && line.container_type),
+        container_type: containerType(line && line.container_type, activeContainerTypes) || text(line && line.container_type),
         reason: "pol_or_pod_required",
       });
     });
@@ -367,7 +245,7 @@ function buildLines(body, token, company, validFrom, bodyValidTo, defaultValidTo
   rawLines.forEach(function(line) {
     var carrier = text(line && line.carrier);
     var rawContainerType = text(line && line.container_type);
-    var ct = containerType(line && line.container_type);
+    var ct = containerType(line && line.container_type, activeContainerTypes);
     if (!ct) {
       out.skipped.push({
         carrier: carrier,
@@ -432,7 +310,8 @@ export default async function handler(req, res) {
   var validFrom = cleanDate(body.valid_from) || ymd(today);
   var bodyValidTo = cleanDate(body.valid_to);
   var defaultValidTo = ymd(addDays(today, 14));
-  var prepared = buildLines(body, loaded.token, company, validFrom, bodyValidTo, defaultValidTo);
+  var activeContainerTypes = await loadActiveContainerTypes(pool);
+  var prepared = buildLines(body, loaded.token, company, validFrom, bodyValidTo, defaultValidTo, activeContainerTypes);
   if (!prepared.lines.length) {
     return send(res, 400, { ok: false, error: "no_valid_lines", saved: [], skipped: prepared.skipped });
   }
