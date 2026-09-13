@@ -116,7 +116,7 @@ function missingSummary(keys){
 }
 function registerCell(k,v){return "<th>"+esc(k)+"</th><td>"+esc(v)+"</td>";}
 function renderManualRegister(s,keys,source){
-  var missing=missingSummary(keys),readonly="只读；不改价、不写费用事实";
+  var missing=missingSummary(keys),readonly="运价可写（新增/改价/作废）；不写费用事实";
   var real=s.rows?"真实记录 "+s.rows:"未接入：缺 "+missing;
   var fields=(keys.map(function(k){return (required[k]||[]).map(function(f){return k+"."+f;}).join(" / ");}).filter(Boolean).join(" / "))||"未接入";
   $("manualRegister").innerHTML=[
