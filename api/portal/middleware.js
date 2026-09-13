@@ -80,7 +80,7 @@ export function verifyPortalToken(token) {
     // 时效校验
     const ts  = parseInt(tsStr, 10);
     const now = Math.floor(Date.now() / 1000);
-    if (isNaN(ts) || now - ts > TOKEN_TTL) return null;
+    if (isNaN(ts) || now - ts > TOKEN_TTL || ts > now + 60) return null;
 
     // HMAC 校验（timing-safe）
     const expectedMac = createHmac('sha256', PORTAL_SECRET)
