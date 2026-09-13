@@ -23,6 +23,7 @@
 import { verifyPortalToken }                 from './middleware.js';
 import { loadUserPermissions, PortalAuthError } from './auth-check.js';
 import { getPool }                            from '../db.js';
+import { verifyToken }                        from "../auth.js";
 
 // login 路径不需要 token（在此前签发）
 const PORTAL_PUBLIC_PATHS = new Set(["/login"]);
@@ -53,8 +54,8 @@ export async function portalGate(req, res, next) {
     const ah = (req.headers["authorization"] || "").trim();
     if (ah.startsWith("Bearer ")) {
       try {
-        const payload = JSON.parse(Buffer.from(ah.slice(7).split(".")[1], "base64").toString());
-        if (payload.role === "admin" || payload.role === "logistics" || payload.role === "finance") {
+        const payload = verifyToken(ah.slice(7).trim());
+        if (payload && (payload.role === "admin" || payload.role === "logistics" || payload.role === "finance")) {
           req.portalPermissions = { user_type: payload.role, company_codes: payload.company_codes || [] };
           return next();
         }

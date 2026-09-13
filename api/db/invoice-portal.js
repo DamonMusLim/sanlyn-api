@@ -5,6 +5,7 @@
 // POST {token, action:'upload', invoice_no, issue_date, amount_ex_tax, total_tax, amount_incl_tax, tax_rate, file_b64, filename}
 //                                       → 存OSS + document_uploads + finance_invoices_in(seller=工厂)
 import { getPool, setCors } from "../db.js";
+import { requireAuth } from "../auth.js";
 import crypto from "crypto";
 import OSS from "ali-oss";
 
@@ -37,6 +38,8 @@ export default async function handler(req, res){
   try{
     // 签发链接(管理端,简单JWT存在即可)
     if(req.method==="GET" && req.query.action==="gen"){
+      if(!requireAuth(req,res)) return;
+      if(!["admin","finance","logistics","internal_sanlyn"].includes(req.user.role)) return res.status(403).json({success:false,error:"forbidden"});
       const orderNo = String(req.query.order_no||"");
       if(!orderNo) return res.status(400).json({success:false,error:"需 order_no"});
       await ensureLinkTable(pool);
