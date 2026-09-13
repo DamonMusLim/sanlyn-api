@@ -56,7 +56,7 @@ export async function portalGate(req, res, next) {
       try {
         const payload = verifyToken(ah.slice(7).trim());
         if (payload && (payload.role === "admin" || payload.role === "logistics" || payload.role === "finance")) {
-          req.portalPermissions = { user_type: payload.role, company_codes: payload.company_codes || [] };
+          req.portalPermissions = { user_type: payload.role, company_codes: payload.company_codes || payload.companyCodes || [] };
           return next();
         }
       } catch { /* fallthrough to portal token */ }
