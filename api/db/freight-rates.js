@@ -40,7 +40,8 @@ async function rejectRateOverlap(pool, body, selfId = null) {
 
 
 // 数字/日期列空串→null(前端留空常传"",直插 numeric/date 列会 500)
-const NUMDATE_COLS = new Set(["gp20","hq40","customer_gp20","customer_hq40","transit_days",
+const NUMDATE_COLS = new Set(["gp20","hq40","customer_gp20","customer_hq40",
+  "rf20","rh40","customer_rf20","customer_rh40","reefer_temp_c","transit_days",
   "thc","valid_from","valid_to","eta_date","free_days_base","free_days_ext","supplier_id",
   "markup_sales","markup_customer","min_container_qty"]);
 const blankToNull = (k, v) => (NUMDATE_COLS.has(k) && v === "" ? null : v);
@@ -86,7 +87,8 @@ export default async function handler(req, res) {
       const overlap = await rejectRateOverlap(pool, { ...old.rows[0], ...body }, id);
       if (overlap) return res.status(409).json({ success:false, error: overlap });
       const EDITABLE = ["pol","pod","carrier","forwarder","route_code","via","gp20","hq40",
-        "customer_gp20","customer_hq40","transit_days","thc","local_charge_code","valid_from",
+        "customer_gp20","customer_hq40","rf20","rh40","customer_rf20","customer_rh40","reefer_temp_c",
+        "transit_days","thc","local_charge_code","valid_from",
         "valid_to","remarks","status","currency","raw","freetime",
         "markup_sales","markup_customer","min_container_qty","payment_method","applicable_commodity","space_status",
         "free_days_base","free_days_ext","terminal","next_sailing","supplier_id","submitted_by_staff_no","submitted_by_account"];
@@ -119,7 +121,8 @@ export default async function handler(req, res) {
       const overlap = await rejectRateOverlap(pool, body);
       if (overlap) return res.status(409).json({ success:false, error: overlap });
       const EDITABLE = ["pol","pod","carrier","forwarder","route_code","via","gp20","hq40",
-        "customer_gp20","customer_hq40","transit_days","thc","local_charge_code","valid_from",
+        "customer_gp20","customer_hq40","rf20","rh40","customer_rf20","customer_rh40","reefer_temp_c",
+        "transit_days","thc","local_charge_code","valid_from",
         "valid_to","remarks","status","currency","raw","freetime",
         "markup_sales","markup_customer","min_container_qty","payment_method","applicable_commodity","space_status",
         "this_week","next_sailing","eta_date","free_days_base","free_days_ext","terminal","supplier_id","submitted_by_staff_no","submitted_by_account"];

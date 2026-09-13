@@ -15,6 +15,11 @@
     {name:"local_charge_code",label:"本地费代码",group:"cost"},
     {name:"customer_gp20",label:"20GP 报价",type:"number",group:"quote"},
     {name:"customer_hq40",label:"40HQ 报价",type:"number",group:"quote"},
+    {name:"rf20",label:"20RF 成本",type:"number",group:"reefer"},
+    {name:"rh40",label:"40RH 成本",type:"number",group:"reefer"},
+    {name:"customer_rf20",label:"20RF 客户价",type:"number",group:"reefer"},
+    {name:"customer_rh40",label:"40RH 客户价",type:"number",group:"reefer"},
+    {name:"reefer_temp_c",label:"设定温度℃",type:"number",group:"reefer",placeholder:"冷冻 -18 / 冷藏 0~4"},
     {name:"valid_from",label:"有效期起",type:"date",group:"quote"},
     {name:"valid_to",label:"有效期止",type:"date",group:"quote"},
     {name:"remarks",label:"备注",type:"textarea",group:"quote",full:true},
@@ -25,8 +30,8 @@
     {name:"applicable_commodity",label:"适用品名",group:"rules"},
     {name:"space_status",label:"舱位情况",group:"rules",options:["充足","无舱位","爆舱"]}
   ];
-  var groupNames={route:"航线 / Route",cost:"成本价 / Carrier Cost (内部)",quote:"客户报价 / Customer Quote",rules:"报价规则 / Quote Rules"};
-  var numeric={gp20:1,hq40:1,thc:1,customer_gp20:1,customer_hq40:1,transit_days:1,markup_sales:1,markup_customer:1,min_container_qty:1};
+  var groupNames={route:"航线 / Route",cost:"成本价 / Carrier Cost (内部)",quote:"客户报价 / Customer Quote",reefer:"冷冻柜 / Reefer",rules:"报价规则 / Quote Rules"};
+  var numeric={gp20:1,hq40:1,thc:1,customer_gp20:1,customer_hq40:1,rf20:1,rh40:1,customer_rf20:1,customer_rh40:1,reefer_temp_c:1,transit_days:1,markup_sales:1,markup_customer:1,min_container_qty:1};
   var aliases={route_code:["routeCode"],customer_gp20:["customerGp20"],customer_hq40:["customerHq40"],valid_from:["validFrom"],valid_to:["validTo"],transit_days:["transitDays"],local_charge_code:["localChargeCode"]};
 
   function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
@@ -140,7 +145,7 @@
       if(x.options)return '<div class="'+cls+'"><label>'+esc(x.label)+'</label>'+fixedSelect(x.name,form[x.name],x.options)+'</div>';
       if(x.name==="local_charge_code"){var select=localChargeSelect(x.name,form[x.name]);if(select)return '<div class="'+cls+'"><label>'+esc(x.label)+'</label>'+select+'</div>';}
       if(x.name==="pol"||x.name==="pod"||x.name==="carrier"||x.name==="forwarder"){var choice=choiceSelect(x.name,form[x.name]);if(choice)return '<div class="'+cls+'"><label>'+esc(x.label)+'</label>'+choice+'</div>';}
-      return '<div class="'+cls+'"><label>'+esc(x.label)+'</label><input name="'+attr(x.name)+'" type="'+attr(x.type||"text")+'" value="'+attr(form[x.name])+'"></div>';
+      return '<div class="'+cls+'"><label>'+esc(x.label)+'</label><input name="'+attr(x.name)+'" type="'+attr(x.type||"text")+'" value="'+attr(form[x.name])+'"'+(x.placeholder?' placeholder="'+attr(x.placeholder)+'"':"")+"></div>";
     }).join("")+'</div></section>';
   }
   function drawerHtml(mode,row){
@@ -150,7 +155,7 @@
     return '<div class="drawer-mask" data-rate-close="1"></div><aside class="rate-drawer" role="dialog" aria-modal="true">'+
       '<div class="drawer-head"><button type="button" data-rate-close="1">关闭</button><div class="drawer-title"><b>'+esc(title)+'</b><span>'+esc(sub)+'</span></div>'+
       (mode==="new"?'<button class="primary" type="button" data-rate-save="1">保存</button>':'<span class="dirty-actions" hidden><button type="button" data-rate-cancel="1">取消</button> <button class="primary" type="button" data-rate-save="1">保存</button></span>')+'</div>'+
-      '<div class="drawer-body"><div class="drawer-error" hidden></div>'+sectionHtml("route",form)+sectionHtml("cost",form)+sectionHtml("quote",form)+sectionHtml("rules",form)+'</div>'+
+      '<div class="drawer-body"><div class="drawer-error" hidden></div>'+sectionHtml("route",form)+sectionHtml("cost",form)+sectionHtml("quote",form)+sectionHtml("reefer",form)+sectionHtml("rules",form)+'</div>'+
       '<div class="drawer-foot">'+(mode==="new"?'<button type="button" data-rate-close="1">取消</button><button class="primary" type="button" data-rate-save="1">保存</button>':'<span class="dirty-actions" hidden><button type="button" data-rate-cancel="1">取消</button><button class="primary" type="button" data-rate-save="1">保存</button></span>')+'</div></aside>';
   }
   function open(mode,row){
