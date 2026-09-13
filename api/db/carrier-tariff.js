@@ -116,6 +116,21 @@ async function confirmStandards(pool, req, res) {
   return res.status(200).json({ success: true, data: r.rows, count: r.rowCount });
 }
 
+async function expireStandard(pool, req, res) {
+  const id = intVal(req.body?.id, null);
+  if (!id) return res.status(400).json({ success: false, error: "id required" });
+  const validTo = req.body?.valid_to || null;
+  const r = await pool.query(
+    `UPDATE carrier_tariff_standards
+        SET valid_to=COALESCE($1::date, CURRENT_DATE),
+            updated_at=now()
+      WHERE id=$2
+      RETURNING id, valid_to`,
+    [validTo, id]
+  );
+  return res.status(200).json({ success: true, data: r.rows[0] || null });
+}
+
 async function updateMapping(pool, req, res) {
   const body = req.body || {};
   const id = intVal(body.id, null);
@@ -155,7 +170,10 @@ export default async function handler(req, res) {
       if (req.body?.action === "set_active") return setActive(pool, req, res);
       if (req.body?.action === "confirm_standards") return confirmStandards(pool, req, res);
     }
-    if (req.method === "PATCH") return updateMapping(pool, req, res);
+    if (req.method === "PATCH") {
+      if (req.body?.action === "expire_standard") return expireStandard(pool, req, res);
+      return updateMapping(pool, req, res);
+    }
     return res.status(405).json({ success: false, error: "Method not allowed" });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });

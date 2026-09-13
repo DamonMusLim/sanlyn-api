@@ -33,6 +33,7 @@
   var groupNames={route:"航线 / Route",cost:"成本价 / Carrier Cost (内部)",quote:"客户报价 / Customer Quote",reefer:"冷冻柜 / Reefer",rules:"报价规则 / Quote Rules"};
   var numeric={gp20:1,hq40:1,thc:1,customer_gp20:1,customer_hq40:1,rf20:1,rh40:1,customer_rf20:1,customer_rh40:1,reefer_temp_c:1,transit_days:1,markup_sales:1,markup_customer:1,min_container_qty:1};
   var aliases={route_code:["routeCode"],customer_gp20:["customerGp20"],customer_hq40:["customerHq40"],valid_from:["validFrom"],valid_to:["validTo"],transit_days:["transitDays"],local_charge_code:["localChargeCode"]};
+  var mainBoxes={"20GP":1,"40HQ":1,"20RF":1,"40RH":1};
 
   function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
   function attr(s){return esc(s).replace(/'/g,"&#39;");}
@@ -148,6 +149,64 @@
       return '<div class="'+cls+'"><label>'+esc(x.label)+'</label><input name="'+attr(x.name)+'" type="'+attr(x.type||"text")+'" value="'+attr(form[x.name])+'"'+(x.placeholder?' placeholder="'+attr(x.placeholder)+'"':"")+"></div>";
     }).join("")+'</div></section>';
   }
+  function boxRows(){return current&&current.row&&Array.isArray(current.row.boxes)?current.row.boxes:[];}
+  function boxOptions(){
+    var used={};boxRows().forEach(function(b){used[norm(b.container_type)]=1;});
+    return ((data().container_type_options)||[]).filter(function(o){var c=norm(o.code);return c&&!mainBoxes[c]&&!used[c];});
+  }
+  function boxSelect(name){
+    var opts=boxOptions(),groups=[["常用",opts.filter(function(o){return o.is_common===true;})],["全部",opts.filter(function(o){return o.is_common!==true;})]];
+    var html='<select name="'+attr(name)+'"><option value="">选择箱型</option>';
+    groups.forEach(function(g){if(!g[1].length)return;html+='<optgroup label="'+attr(g[0])+'">'+g[1].map(function(o){return '<option value="'+attr(o.code)+'">'+esc(o.code+" · "+(o.name_cn||""))+"</option>";}).join("")+"</optgroup>";});
+    return html+"</select>";
+  }
+  function boxesHtml(){
+    if(!current||current.mode!=="edit")return '<section class="drawer-section"><h3>其它箱型 / More Box Types</h3><p class="na">保存后可添加其它箱型</p></section>';
+    var rows=boxRows(),html='<section class="drawer-section" data-box-section><h3>其它箱型 / More Box Types</h3><div class="table-wrap"><table><thead><tr><th>箱型</th><th>成本</th><th>客户价</th><th>备注</th><th>操作</th></tr></thead><tbody>';
+    if(!rows.length)html+='<tr><td colspan="5"><span class="na">未添加其它箱型</span></td></tr>';
+    rows.forEach(function(b){
+      html+='<tr><td>'+cellBox(b.container_type)+'</td><td><input data-box-field="cost" data-box-id="'+attr(b.id)+'" type="number" value="'+attr(b.cost)+'"></td><td><input data-box-field="customer_price" data-box-id="'+attr(b.id)+'" type="number" value="'+attr(b.customer_price)+'"></td><td><input data-box-field="remarks" data-box-id="'+attr(b.id)+'" value="'+attr(b.remarks)+'"></td><td><button class="mini-btn danger" type="button" data-box-delete="'+attr(b.id)+'">删除</button></td></tr>';
+    });
+    html+='</tbody></table></div><div class="box-add" hidden data-box-add-row>'+boxSelect("box_container_type")+'<input name="box_cost" type="number" placeholder="成本"><input name="box_customer_price" type="number" placeholder="客户价"><input name="box_remarks" placeholder="备注"><button class="primary" type="button" data-box-create="1">添加</button></div><button type="button" data-box-add="1" '+(boxOptions().length?"":"hidden")+'>+ 添加箱型</button></section>';
+    return html;
+  }
+  function cellBox(v){return blankBox(v)?'<span class="na">未设置</span>':esc(v);}
+  function blankBox(v){return v===null||v===undefined||v==="";}
+  function updateBoxesSection(){
+    var old=root.querySelector("[data-box-section]");
+    if(old)old.outerHTML=boxesHtml();
+  }
+  function boxPayload(row){
+    var out={};
+    ["cost","customer_price","remarks"].forEach(function(k){var v=row[k];out[k]=v===""?null:(k==="remarks"?v:Number(v));});
+    return out;
+  }
+  async function sendBox(method,payload){
+    var r=await fetch("/api/db/freight-rate-boxes",{method:method,headers:authHeaders(true),body:JSON.stringify(payload)});
+    var j=await r.json().catch(function(){return {};});
+    if(!r.ok||j.success===false)throw new Error(j.error||("HTTP "+r.status));
+    return j;
+  }
+  async function patchBox(el){
+    var id=el.dataset.boxId,box=boxRows().find(function(b){return String(b.id)===String(id);});
+    if(!box)return;
+    var payload={id:id};payload[el.dataset.boxField]=el.value===""?null:(el.dataset.boxField==="remarks"?el.value:Number(el.value));
+    try{await sendBox("PATCH",payload);box[el.dataset.boxField]=payload[el.dataset.boxField];api.refresh();}
+    catch(e){showError(e.message);}
+  }
+  async function createBox(btn){
+    var wrap=btn.closest("[data-box-add-row]");if(!wrap||!current||!current.row.id)return;
+    var payload={rate_id:current.row.id,container_type:wrap.querySelector("[name='box_container_type']").value};
+    ["cost","customer_price","remarks"].forEach(function(k){var el=wrap.querySelector("[name='box_"+k+"']"),v=el?el.value:"";if(v!=="")payload[k]=k==="remarks"?v:Number(v);});
+    if(!payload.container_type){showError("请选择箱型");return;}
+    try{var j=await sendBox("POST",payload);current.row.boxes=boxRows().concat([j.data||payload]);api.refresh();updateBoxesSection();}
+    catch(e){showError(e.message);}
+  }
+  async function deleteBox(id){
+    if(!id||!confirm("确认删除这个箱型？"))return;
+    try{await sendBox("DELETE",{id:id});current.row.boxes=boxRows().filter(function(b){return String(b.id)!==String(id);});api.refresh();updateBoxesSection();}
+    catch(e){showError(e.message);}
+  }
   function drawerHtml(mode,row){
     var form=mode==="new"?emptyForm():formFromRow(row);
     var title=mode==="new"?"新增海运费率":((row.pol||"未设置")+" -> "+(row.pod||"未设置"));
@@ -155,7 +214,7 @@
     return '<div class="drawer-mask" data-rate-close="1"></div><aside class="rate-drawer" role="dialog" aria-modal="true">'+
       '<div class="drawer-head"><button type="button" data-rate-close="1">关闭</button><div class="drawer-title"><b>'+esc(title)+'</b><span>'+esc(sub)+'</span></div>'+
       (mode==="new"?'<button class="primary" type="button" data-rate-save="1">保存</button>':'<span class="dirty-actions" hidden><button type="button" data-rate-cancel="1">取消</button> <button class="primary" type="button" data-rate-save="1">保存</button></span>')+'</div>'+
-      '<div class="drawer-body"><div class="drawer-error" hidden></div>'+sectionHtml("route",form)+sectionHtml("cost",form)+sectionHtml("quote",form)+sectionHtml("reefer",form)+sectionHtml("rules",form)+'</div>'+
+      '<div class="drawer-body"><div class="drawer-error" hidden></div>'+sectionHtml("route",form)+sectionHtml("cost",form)+sectionHtml("quote",form)+sectionHtml("reefer",form)+boxesHtml()+sectionHtml("rules",form)+'</div>'+
       '<div class="drawer-foot">'+(mode==="new"?'<button type="button" data-rate-close="1">取消</button><button class="primary" type="button" data-rate-save="1">保存</button>':'<span class="dirty-actions" hidden><button type="button" data-rate-cancel="1">取消</button><button class="primary" type="button" data-rate-save="1">保存</button></span>')+'</div></aside>';
   }
   function open(mode,row){
@@ -228,12 +287,16 @@
     var detail=e.target.closest("[data-rate-detail]");if(detail){open("edit",api.findRow(detail.dataset.rateDetail));return true;}
     var withdrawBtn=e.target.closest("[data-rate-withdrawn]");if(withdrawBtn){withdrawRate(withdrawBtn.dataset.rateWithdrawn);return true;}
     var portalBtn=e.target.closest("[data-rate-portal]");if(portalBtn){portal(api.findRow(portalBtn.dataset.ratePortal),portalBtn);return true;}
+    var addBox=e.target.closest("[data-box-add]");if(addBox){var row=root.querySelector("[data-box-add-row]");if(row)row.hidden=false;addBox.hidden=true;return true;}
+    var create=e.target.closest("[data-box-create]");if(create){createBox(create);return true;}
+    var delBox=e.target.closest("[data-box-delete]");if(delBox){deleteBox(delBox.dataset.boxDelete);return true;}
     return false;
   }
   function init(opts){
     api=opts;root=document.getElementById("rateDrawerRoot");
     root.addEventListener("click",handleClick);
     root.addEventListener("change",function(e){var el=e.target.closest("[data-rate-choice]");if(el){syncChoice(el);markDirty();}});
+    root.addEventListener("change",function(e){var el=e.target.closest("[data-box-field]");if(el)patchBox(el);});
   }
   window.RatesHubEdit={init:init,openNew:function(){open("new");},openDetail:function(row){open("edit",row);},handleClick:handleClick,actionsHtml:actionsHtml,portalHtml:portalHtml};
 })();

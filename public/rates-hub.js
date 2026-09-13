@@ -128,6 +128,7 @@ function drawOcean(){
   statParts([["价表",rates,"ocean"],["出运票",state.data.ocean_plans,"ocean_plans"],["账单",state.data.ocean_bills,"ocean_bills"]]);renderDashboard();
 }
 function drawCharges(){
+  if(window.RatesHubCharges&&window.RatesHubCharges.render){window.RatesHubCharges.render();return;}
   var itemsBy={},mrows=[];
   state.data.matrix_items.forEach(function(i){(itemsBy[i.matrix_code]=itemsBy[i.matrix_code]||[]).push(i);});
   state.data.matrices.forEach(function(m){mrows.push(m);if(state.expanded[m.code])itemsBy[m.code]&&itemsBy[m.code].forEach(function(i){mrows.push(Object.assign({code:"  · "+i.matrix_code,carrier_code:"明细",pol:i.charge_name,pod:i.container_type,bl_type:i.unit,free_days_origin:i.qty,total_cost_20gp:i.unit_price,total_cost_40hq:i.amount,cost_currency:i.currency,is_active:i.is_required,valid_from:"",valid_to:""}));});});
@@ -248,7 +249,7 @@ document.querySelectorAll("#manualMenu [data-step]").forEach(function(b){b.oncli
 ["polFilter","podFilter","carrierFilter"].forEach(function(id){$(id).addEventListener("change",function(e){var t=e.target;if(t&&t.id){state.filters[t.id]=t.value;load();}});});
 $("active").onchange=load;$("showVoid").onchange=load;$("search").onclick=load;$("csv").onclick=exportCsv;$("newRate").onclick=function(){window.RatesHubEdit.openNew();};
 $("openShell").onclick=function(){openWorkbenchTab("运价管理",location.pathname+"?"+query());};
-$("content").onclick=function(e){if(window.RatesHubEdit&&window.RatesHubEdit.handleClick(e))return;var m=e.target.closest("[data-matrix]");if(m){state.expanded[m.dataset.matrix]=!state.expanded[m.dataset.matrix];draw();return;}var rr=e.target.closest("tr[data-rate-row]");if(rr){window.RatesHubEdit.openDetail(findOceanRow(rr.dataset.rateRow));return;}var row=e.target.closest("tr[data-url]");if(!row||e.target.closest("button"))return;openWorkbenchTab(row.dataset.title,row.dataset.url);};
+$("content").onclick=function(e){if(window.RatesHubEdit&&window.RatesHubEdit.handleClick(e))return;if(window.RatesHubCharges&&window.RatesHubCharges.handleClick(e))return;var m=e.target.closest("[data-matrix]");if(m){state.expanded[m.dataset.matrix]=!state.expanded[m.dataset.matrix];draw();return;}var rr=e.target.closest("tr[data-rate-row]");if(rr){window.RatesHubEdit.openDetail(findOceanRow(rr.dataset.rateRow));return;}var row=e.target.closest("tr[data-url]");if(!row||e.target.closest("button"))return;openWorkbenchTab(row.dataset.title,row.dataset.url);};
 $("manualStrip").onclick=function(e){var b=e.target.closest("[data-step-tab]");if(b)setTab(b.dataset.stepTab);};
 window.addEventListener("message",onShellMessage);
 function findOceanRow(id){return state.data.ocean.find(function(r){return String(r.id)===String(id);})||null;}
