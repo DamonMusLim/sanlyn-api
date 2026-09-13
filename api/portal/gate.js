@@ -111,6 +111,15 @@ export async function portalGate(req, res, next) {
     });
   }
 
+  // 会话吊销:token 签发早于 sessions_valid_after 则失效(登出后旧 token 立即作废)
+  const sva = permissions.user && permissions.user.sessions_valid_after;
+  if (sva && verified && verified.ts != null) {
+    const svaSec = Math.floor(new Date(sva).getTime() / 1000);
+    if (verified.ts < svaSec) {
+      return res.status(401).json({ error: "会话已失效,请重新登录", code: "SESSION_REVOKED" });
+    }
+  }
+
   // ── 5. 注入权限上下文，供下游 handler 直接复用 ──
   req.portalPermissions = permissions;
   next();

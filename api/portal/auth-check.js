@@ -82,6 +82,7 @@ export async function loadUserPermissions(userId, pool) {
   const userRes = await pool.query(
     `SELECT
        u.id, u.username, u.display_name, u.user_type, u.status, u.company_id,
+       u.sessions_valid_after,
        c.company_code, c.company_name, c.company_type, c.status AS company_status
      FROM portal_users u
      JOIN portal_companies c ON c.id = u.company_id
@@ -115,6 +116,7 @@ export async function loadUserPermissions(userId, pool) {
     user_type:    row.user_type,
     status:       row.status,
     company_id:   row.company_id,
+    sessions_valid_after: row.sessions_valid_after,
   };
   const company = {
     id:           row.company_id,
