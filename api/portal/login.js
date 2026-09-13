@@ -64,7 +64,10 @@ async function verifyPassword(pool, userId, inputPlain, storedValue) {
   }
 
   // 明文比对（旧数据）→ 自动升级到 bcrypt
-  if (inputPlain !== storedValue) return false;
+  if (inputPlain !== storedValue) {
+    await bcrypt.compare(inputPlain, DUMMY_PASSWORD_HASH);
+    return false;
+  }
   const hash = await bcrypt.hash(inputPlain, 12);
   await pool.query(
     'UPDATE portal_users SET password_hash = $1 WHERE id = $2',
