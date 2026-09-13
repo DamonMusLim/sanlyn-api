@@ -29,7 +29,7 @@ const HIDDEN_FOR_FACTORY = new Set([
 ]);
 
 // 递归删除任意层级的敏感键(成本/工厂/货代/供应商/利润/采购),键名大小写与驼峰都覆盖
-const SENSITIVE_KEY_RE = /(cost|factory|supplier|profit|purchase|forwarder|freight_quote|ocean_freight)/i;
+const SENSITIVE_KEY_RE = /(cost|factory|supplier|profit|purchase|forwarder|freight_quote|ocean_freight|margin|vendor|buy_price|price_buy|买价)/i;
 function deepScrub(v) {
   if (Array.isArray(v)) return v.map(deepScrub);
   if (v && typeof v === 'object') {
