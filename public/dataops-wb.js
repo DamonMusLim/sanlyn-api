@@ -311,6 +311,14 @@ var PAGES = {
       document.head.appendChild(s2);
     }
     var h = '<div class="cm-l12">';
+    // 防误读标注:两家模型(codex+DeepSeek)独立同判的误读点,钉在页顶
+    h += '<div style="background:#fff4f4;border-left:3px solid #c0392b;padding:8px 10px;'
+       + 'margin-bottom:12px;font-size:12px;line-height:1.8;color:#8a3b3b">'
+       + '<b>⛔ 这三条不看会读错</b><br>'
+       + '· <b>月销含竞价投放,不代表自然需求</b> —— 位置是买的不是挣的<br>'
+       + '· <b>我方低价猫砂已验证无效</b>:天王梦2kg 成本¥8 卖¥8(毛利0%) 月销仍只有3<br>'
+       + '· <b>兽药只记录不建议</b>(标⛔的行);多袋装低单价≠好卖(邻小虎5袋装¥3.19/kg全表最便宜,月销1)'
+       + '</div>';
     h += '<div style="color:#666;font-size:12px;margin-bottom:10px">采集时段 '
        + esc(String(d.captured_from||"").slice(0,16).replace("T"," ")) + ' → '
        + esc(String(d.captured_to||"").slice(0,16).replace("T"," ")) + '</div>';
@@ -774,7 +782,7 @@ var PAGES = {
 
 async function show(p){
   document.querySelectorAll(".snav").forEach(function(a){a.classList.toggle("on", a.dataset.p===p)});
-  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",l10:"附近实时 · 美团H5",l11:"竞争品研究中心 · 四家店合并",l12:"竞品实时行情 · OCR线",l8:"竞店商品档",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
+  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",l10:"附近实时 · 美团H5",l11:"竞品历史库 · Excel导出2026-06-17 · ⛔已89天未更新,不代表当前在售",l12:"竞品今日行情 · 对手打法",l8:"竞店商品档(逐行明细,已并入历史库)",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
   $("body").innerHTML = '<div class="verdict">读取中…</div>';
   try { $("body").innerHTML = await PAGES[p](); }
   catch(e){ verdict("🔴 "+e.message,"red"); $("body").innerHTML=""; }
