@@ -298,25 +298,28 @@ var PAGES = {
     function esc(v){ return String(v===null||v===undefined?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
     function money(v){ return (v===null||v===undefined) ? '<span class="cm-na">—</span>' : ("¥"+Number(v).toFixed(2)); }
     function pct(v){ return (v===null||v===undefined) ? '<span class="cm-na">—</span>' : (Number(v).toFixed(1)+"%"); }
+    function n(v){ return (v===null||v===undefined) ? '<span class="cm-na">—</span>' : esc(v); }
+    function tm(a,b){ return esc(String(a||"").slice(0,16).replace("T"," "))+" → "+esc(String(b||"").slice(0,16).replace("T"," ")); }
+    function mech(v){
+      return ({hook_price:"≤¥1引流",first_item_price:"首件价",first_n_each_price:"前N件单价",buy_n_pay_n_minus_1:"买N-1送1",multi_pack:"多袋装",plain:"无活动"})[v] || v || "—";
+    }
     function addStyle(){
       if ($("#cm-l12-style")) return;
       var s2=document.createElement("style"); s2.id="cm-l12-style";
-      s2.textContent=".cm-l12 table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:18px}"
-        +".cm-l12 th,.cm-l12 td{border-bottom:1px solid #eee;padding:6px 8px;text-align:left;white-space:nowrap}"
+      s2.textContent=".cm-l12 table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:18px;table-layout:auto}"
+        +".cm-l12 th,.cm-l12 td{border-bottom:1px solid #eee;padding:6px 8px;text-align:left;vertical-align:top;white-space:nowrap}"
         +".cm-l12 th{background:#fafafa;font-weight:600}"
-        +".cm-l12 .cm-na{color:#bbb}.cm-l12 .cm-med{color:#c0392b}"
+        +".cm-l12 .cm-na{color:#bbb}.cm-l12 .cm-med{color:#c0392b}.cm-l12 .cm-hook{color:#c0392b;font-weight:600}.cm-l12 .cm-warn{color:#888;font-size:12px;margin-left:6px}"
         +".cm-l12 h3{margin:16px 0 6px;font-size:14px}"
         +".cm-l12 .cm-cap{color:#888;font-size:12px;line-height:1.7;margin-top:14px}"
-        +".cm-l12 .cm-name{white-space:normal;max-width:420px}";
+        +".cm-l12 .cm-name{white-space:normal;max-width:420px;word-break:break-word}.cm-l12 .cm-shop{white-space:normal;max-width:130px;word-break:break-all}";
       document.head.appendChild(s2);
     }
     var h = '<div class="cm-l12">';
-    // 防误读标注:两家模型(codex+DeepSeek)独立同判的误读点,钉在页顶
     h += '<div style="background:#fff4f4;border-left:3px solid #c0392b;padding:8px 10px;'
        + 'margin-bottom:12px;font-size:12px;line-height:1.8;color:#8a3b3b">'
-       + '<b>⛔ 这三条不看会读错</b><br>'
+       + '<b>⛔ 这两条不看会读错</b><br>'
        + '· <b>月销含竞价投放,不代表自然需求</b> —— 位置是买的不是挣的<br>'
-       + '· <b>我方低价猫砂已验证无效</b>:天王梦2kg 成本¥8 卖¥8(毛利0%) 月销仍只有3<br>'
        + '· <b>兽药只记录不建议</b>(标⛔的行);多袋装低单价≠好卖(邻小虎5袋装¥3.19/kg全表最便宜,月销1)'
        + '</div>';
     h += '<div style="color:#666;font-size:12px;margin-bottom:10px">采集时段 '
@@ -324,24 +327,44 @@ var PAGES = {
        + esc(String(d.captured_to||"").slice(0,16).replace("T"," ")) + '</div>';
     for (var i=0;i<(d.shops||[]).length;i++){
       var sp = d.shops[i];
-      h += '<h3>' + esc(sp.shop) + ' · ' + sp.items + ' 个不重复商品 · 月销合计 ' + sp.month_sale + '</h3>';
+      h += '<h3>' + esc(sp.shop) + ' · ' + n(sp.items) + ' 个不重复商品 · 月销合计 ' + n(sp.month_sale) + '</h3>';
       h += '<table><thead><tr><th>品类</th><th>品数</th><th>品数占比</th><th>月销</th><th>月销占比</th><th>单品效率</th><th>中位到手价</th></tr></thead><tbody>';
-      for (var j=0;j<sp.cats.length;j++){
+      for (var j=0;j<(sp.cats||[]).length;j++){
         var c = sp.cats[j];
-        h += '<tr><td>' + esc(c.cat) + '</td><td>' + c.items + '</td><td>' + pct(c.item_pct)
-           + '</td><td>' + c.month_sale + '</td><td>' + pct(c.sale_pct)
-           + '</td><td>' + c.per_item + '</td><td>' + money(c.median_price) + '</td></tr>';
+        h += '<tr><td>' + esc(c.category) + '</td><td>' + n(c.sku_count) + '</td><td>' + pct(c.sku_share)
+           + '</td><td>' + n(c.sales_sum) + '</td><td>' + pct(c.sales_share)
+           + '</td><td>' + n(c.sales_per_sku) + '</td><td>' + money(c.median_hand_price) + '</td></tr>';
       }
       h += '</tbody></table>';
     }
+    h += '<h3>机制打法</h3>';
+    h += '<table><thead><tr><th>店</th><th>机制</th><th>品数</th><th>月销</th></tr></thead><tbody>';
+    for (var a=0;a<(d.mechanism||[]).length;a++){
+      var mr = d.mechanism[a];
+      h += '<tr><td class="cm-shop">' + esc(mr.shop) + '</td><td>' + esc(mech(mr.mechanism_type))
+         + '</td><td>' + n(mr.sku_count) + '</td><td>' + n(mr.sales_sum) + '</td></tr>';
+    }
+    h += '</tbody></table>';
+    h += '<h3>热卖同款汇总</h3>';
+    h += '<table><thead><tr><th>商品</th><th>在卖店数</th><th>总月销</th><th>最高月销</th><th>最低正常到手价(&gt;¥1)</th><th>引流价</th><th>中位价</th><th>采集时段</th></tr></thead><tbody>';
+    for (var b=0;b<(d.hot_same||[]).length;b++){
+      var x = d.hot_same[b];
+      h += '<tr><td class="cm-name">' + esc(x.product_name || x.product_code)
+         + (x.match_suspect ? '<span class="cm-warn">疑似匹配错,勿用</span>' : '') + '</td><td>' + n(x.rival_shop_count)
+         + '</td><td>' + n(x.rival_sales_total) + '</td><td>' + n(x.rival_sales_max) + '<br><span class="cm-shop">' + esc(x.rival_sales_max_shop||"") + '</span>'
+         + '</td><td>' + money(x.normal_price_min) + '<br><span class="cm-shop">' + esc(x.normal_price_min_shop||"") + '</span>'
+         + '</td><td>' + (x.has_hook_price ? '<span class="cm-hook">有≤¥1引流</span>' : '<span class="cm-na">—</span>')
+         + '</td><td>' + money(x.rival_price_median) + '</td><td>' + tm(x.rival_captured_from,x.rival_captured_to) + '</td></tr>';
+    }
+    h += '</tbody></table>';
     h += '<h3>卖得好的链接（月销≥20）</h3>';
     h += '<table><thead><tr><th>店</th><th>月销</th><th>到手价</th><th>划线价</th><th>机制</th><th>券</th><th>品类</th><th>商品</th></tr></thead><tbody>';
     for (var k=0;k<(d.top||[]).length;k++){
       var r = d.top[k];
-      h += '<tr' + (r.is_med ? ' class="cm-med"' : '') + '><td>' + esc(r.shop) + '</td><td>' + r.month_sale
-         + '</td><td>' + money(r.price) + '</td><td>' + money(r.list_price)
+      h += '<tr' + (r.is_med ? ' class="cm-med"' : '') + '><td class="cm-shop">' + esc(r.shop_name_raw || r.shop) + '</td><td>' + n(r.month_sale)
+         + '</td><td>' + money(r.hand_price) + '</td><td>' + money(r.list_price)
          + '</td><td>' + esc(r.tier_text || "—") + '</td><td>' + esc(r.coupon || "—")
-         + '</td><td>' + esc(r.cat) + (r.is_med ? ' ⛔' : '') + '</td><td class="cm-name">' + esc(r.name) + '</td></tr>';
+         + '</td><td>' + esc(r.category) + (r.is_med ? ' ⛔' : '') + '</td><td class="cm-name">' + esc(r.product_name) + '</td></tr>';
     }
     h += '</tbody></table>';
     h += '<div class="cm-cap"><b>口径说明</b><br>';
