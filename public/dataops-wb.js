@@ -38,6 +38,33 @@ function item(lv, nm, v, why){
 }
 
 var PAGES = {
+  rival: async function(){
+    var tabs = [
+      ["l12","今日行情"],
+      ["l10","附近实时"],
+      ["l9","竞争商品档案"],
+      ["l11","历史库(89天前)"]
+    ];
+    var ok = {l12:1,l10:1,l9:1,l11:1};
+    if(!window.__rivalTab){
+      try { window.__rivalTab = localStorage.getItem("dataops_rival_tab") || "l12"; }
+      catch(e){ window.__rivalTab = "l12"; }
+    }
+    if(!ok[window.__rivalTab]) window.__rivalTab = "l12";
+    try { localStorage.setItem("dataops_rival_tab", window.__rivalTab); } catch(e){}
+    if(!$("rvtabs-style")){
+      var st = document.createElement("style");
+      st.id = "rvtabs-style";
+      st.textContent = ".rvtabs{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}.rvtab{border:1px solid #d7dce3;border-radius:6px;background:#fff;color:#263241;padding:7px 12px;cursor:pointer}.rvtab.on{background:#263241;color:#fff;border-color:#263241}";
+      document.head.appendChild(st);
+    }
+    var t = window.__rivalTab;
+    var html = await PAGES[t]();
+    if($("nrival") && $("n10")) $("nrival").textContent = $("n10").textContent || "";
+    return '<div class="rvtabs">'+tabs.map(function(x){
+      return '<button class="rvtab '+(x[0]===t?'on':'')+'" data-t="'+x[0]+'">'+x[1]+'</button>';
+    }).join("")+'</div>'+html;
+  },
   l0: async function(){
     var d = await get("db/petstore-table-registry");
     if (d.error) return verdict("🔴 "+d.error,"red"), "";
@@ -804,13 +831,30 @@ var PAGES = {
 };
 
 async function show(p){
+  var rivalTitles = {l10:"附近实时 · 美团H5",l11:"竞品历史库 · Excel导出2026-06-17 · ⛔已89天未更新,不代表当前在售",l12:"竞品今日行情 · 对手打法",l9:"竞争商品档案 · PK"};
+  if(rivalTitles[p]){
+    window.__rivalTab = p;
+    try { localStorage.setItem("dataops_rival_tab", p); } catch(e){}
+    p = "rival";
+  }
+  if(p==="rival" && !window.__rivalTab){
+    try { window.__rivalTab = localStorage.getItem("dataops_rival_tab") || "l12"; }
+    catch(e){ window.__rivalTab = "l12"; }
+  }
   document.querySelectorAll(".snav").forEach(function(a){a.classList.toggle("on", a.dataset.p===p)});
-  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",l10:"附近实时 · 美团H5",l11:"竞品历史库 · Excel导出2026-06-17 · ⛔已89天未更新,不代表当前在售",l12:"竞品今日行情 · 对手打法",l8:"竞店商品档(逐行明细,已并入历史库)",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
+  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",rival:rivalTitles[window.__rivalTab||"l12"],l10:"附近实时 · 美团H5",l11:"竞品历史库 · Excel导出2026-06-17 · ⛔已89天未更新,不代表当前在售",l12:"竞品今日行情 · 对手打法",l8:"竞店商品档(逐行明细,已并入历史库)",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
   $("body").innerHTML = '<div class="verdict">读取中…</div>';
   try { $("body").innerHTML = await PAGES[p](); }
   catch(e){ verdict("🔴 "+e.message,"red"); $("body").innerHTML=""; }
 }
 document.addEventListener("click", function(e){
+  var t = e.target.closest(".rvtab[data-t]");
+  if(t){
+    window.__rivalTab = t.dataset.t;
+    try { localStorage.setItem("dataops_rival_tab", t.dataset.t); } catch(e){}
+    show("rival");
+    return;
+  }
   var a = e.target.closest(".snav[data-p]"); if(a) show(a.dataset.p);
 });
 $("bsub").textContent = new Date().toISOString().slice(0,16).replace("T"," ")+" UTC";
