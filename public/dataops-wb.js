@@ -37,21 +37,47 @@ function item(lv, nm, v, why){
    (why?'<span class="wy">'+esc(why)+'</span>':'')+'</div>';
 }
 
+function rvEsc(v){ return String(v===null||v===undefined?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function rvMoney(v){ return (v===null||v===undefined) ? '<span class="cm-na">—</span>' : ("¥"+Number(v).toFixed(2)); }
+function rvPct(v){ return (v===null||v===undefined) ? '<span class="cm-na">—</span>' : (Number(v).toFixed(1)+"%"); }
+function rvN(v){ return (v===null||v===undefined) ? '<span class="cm-na">—</span>' : rvEsc(v); }
+function rvTm(a,b){ return rvEsc(String(a||"").slice(0,16).replace("T"," "))+" → "+rvEsc(String(b||"").slice(0,16).replace("T"," ")); }
+function rvMech(v){
+  return ({hook_price:"≤¥1引流",first_item_price:"首件价",first_n_each_price:"前N件单价",buy_n_pay_n_minus_1:"买N-1送1",multi_pack:"多袋装",plain:"无活动"})[v] || v || "—";
+}
+function rvLive(){
+  var c = window.__rivalLive, now = Date.now();
+  if(c && now-c.t<60000) return c.p || Promise.resolve(c.d);
+  var p = get("db/petstore-rival-live").then(function(d){ window.__rivalLive={t:Date.now(),d:d}; return d; }, function(e){ window.__rivalLive=null; throw e; });
+  window.__rivalLive = {t:now,p:p};
+  return p;
+}
+function rvAddStyle(){
+  if ($("cm-l12-style")) return;
+  var s2=document.createElement("style"); s2.id="cm-l12-style";
+  s2.textContent=".cm-l12 table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:18px;table-layout:auto}"
+    +".cm-l12 th,.cm-l12 td{border-bottom:1px solid #eee;padding:6px 8px;text-align:left;vertical-align:top;white-space:nowrap}"
+    +".cm-l12 th{background:#fafafa;font-weight:600}"
+    +".cm-l12 .cm-na{color:#bbb}.cm-l12 .cm-med{color:#c0392b}.cm-l12 .cm-hook{color:#c0392b;font-weight:600}.cm-l12 .cm-warn{color:#888;font-size:12px;margin-left:6px}"
+    +".cm-l12 h3{margin:16px 0 6px;font-size:14px}"
+    +".cm-l12 .cm-cap{color:#888;font-size:12px;line-height:1.7;margin-top:14px}"
+    +".cm-l12 .cm-name{white-space:normal;min-width:220px;max-width:420px;word-break:break-word}.cm-l12{overflow-x:auto}.cm-l12 .cm-shop{white-space:normal;max-width:130px;word-break:break-all}";
+  document.head.appendChild(s2);
+}
+
 var PAGES = {
   rival: async function(){
     var tabs = [
-      ["l12","今日行情"],
-      ["l7","我方比价"],
-      ["l10","附近实时"],
-      ["l9","竞争商品档案"],
-      ["l11","历史库(89天前)"]
+      ["ov","竞品总览"],
+      ["opp","机会商品"],
+      ["l7","定价决策"]
     ];
-    var ok = {l12:1,l7:1,l10:1,l9:1,l11:1};
+    var ok = {ov:1,opp:1,l7:1};
     if(!window.__rivalTab){
-      try { window.__rivalTab = localStorage.getItem("dataops_rival_tab") || "l12"; }
-      catch(e){ window.__rivalTab = "l12"; }
+      try { window.__rivalTab = localStorage.getItem("dataops_rival_tab") || "ov"; }
+      catch(e){ window.__rivalTab = "ov"; }
     }
-    if(!ok[window.__rivalTab]) window.__rivalTab = "l12";
+    if(!ok[window.__rivalTab]) window.__rivalTab = "ov";
     try { localStorage.setItem("dataops_rival_tab", window.__rivalTab); } catch(e){}
     if(!$("rvtabs-style")){
       var st = document.createElement("style");
@@ -60,8 +86,8 @@ var PAGES = {
       document.head.appendChild(st);
     }
     var t = window.__rivalTab;
-    var html = await PAGES[t]();
-    if($("nrival") && $("n10")) $("nrival").textContent = $("n10").textContent || "";
+    var html = await PAGES[t==="ov"?"rivalOv":t==="opp"?"rivalOpp":"l7"]();
+    if($("nrival")) $("nrival").textContent = "";
     return '<div class="rvtabs">'+tabs.map(function(x){
       return '<button class="rvtab '+(x[0]===t?'on':'')+'" data-t="'+x[0]+'">'+x[1]+'</button>';
     }).join("")+'</div>'+html;
@@ -319,30 +345,10 @@ var PAGES = {
     return h;
   },
 
-  l12: async function(){
-    var d = await get("db/petstore-rival-live");
+  rivalOv: async function(){
+    var d = await rvLive();
     if (d.error || d.ok===false) return verdict("🔴 "+(d.error||d.message||"取数失败"),"red"), "";
     verdict(d.verdict, /^🔴/.test(d.verdict) ? "red" : "ok");
-    function esc(v){ return String(v===null||v===undefined?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-    function money(v){ return (v===null||v===undefined) ? '<span class="cm-na">—</span>' : ("¥"+Number(v).toFixed(2)); }
-    function pct(v){ return (v===null||v===undefined) ? '<span class="cm-na">—</span>' : (Number(v).toFixed(1)+"%"); }
-    function n(v){ return (v===null||v===undefined) ? '<span class="cm-na">—</span>' : esc(v); }
-    function tm(a,b){ return esc(String(a||"").slice(0,16).replace("T"," "))+" → "+esc(String(b||"").slice(0,16).replace("T"," ")); }
-    function mech(v){
-      return ({hook_price:"≤¥1引流",first_item_price:"首件价",first_n_each_price:"前N件单价",buy_n_pay_n_minus_1:"买N-1送1",multi_pack:"多袋装",plain:"无活动"})[v] || v || "—";
-    }
-    function addStyle(){
-      if ($("#cm-l12-style")) return;
-      var s2=document.createElement("style"); s2.id="cm-l12-style";
-      s2.textContent=".cm-l12 table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:18px;table-layout:auto}"
-        +".cm-l12 th,.cm-l12 td{border-bottom:1px solid #eee;padding:6px 8px;text-align:left;vertical-align:top;white-space:nowrap}"
-        +".cm-l12 th{background:#fafafa;font-weight:600}"
-        +".cm-l12 .cm-na{color:#bbb}.cm-l12 .cm-med{color:#c0392b}.cm-l12 .cm-hook{color:#c0392b;font-weight:600}.cm-l12 .cm-warn{color:#888;font-size:12px;margin-left:6px}"
-        +".cm-l12 h3{margin:16px 0 6px;font-size:14px}"
-        +".cm-l12 .cm-cap{color:#888;font-size:12px;line-height:1.7;margin-top:14px}"
-        +".cm-l12 .cm-name{white-space:normal;min-width:220px;max-width:420px;word-break:break-word}.cm-l12{overflow-x:auto}.cm-l12 .cm-shop{white-space:normal;max-width:130px;word-break:break-all}";
-      document.head.appendChild(s2);
-    }
     var h = '<div class="cm-l12">';
     h += '<div style="background:#fff4f4;border-left:3px solid #c0392b;padding:8px 10px;'
        + 'margin-bottom:12px;font-size:12px;line-height:1.8;color:#8a3b3b">'
@@ -351,17 +357,17 @@ var PAGES = {
        + '· <b>兽药只记录不建议</b>(标⛔的行);多袋装低单价≠好卖(邻小虎5袋装¥3.19/kg全表最便宜,月销1)'
        + '</div>';
     h += '<div style="color:#666;font-size:12px;margin-bottom:10px">采集时段 '
-       + esc(String(d.captured_from||"").slice(0,16).replace("T"," ")) + ' → '
-       + esc(String(d.captured_to||"").slice(0,16).replace("T"," ")) + '</div>';
+       + rvEsc(String(d.captured_from||"").slice(0,16).replace("T"," ")) + ' → '
+       + rvEsc(String(d.captured_to||"").slice(0,16).replace("T"," ")) + '</div>';
     for (var i=0;i<(d.shops||[]).length;i++){
       var sp = d.shops[i];
-      h += '<h3>' + esc(sp.shop) + ' · ' + n(sp.items) + ' 个不重复商品 · 月销合计 ' + n(sp.month_sale) + '</h3>';
+      h += '<h3>' + rvEsc(sp.shop) + ' · ' + rvN(sp.items) + ' 个不重复商品 · 月销合计 ' + rvN(sp.month_sale) + '</h3>';
       h += '<table><thead><tr><th>品类</th><th>品数</th><th>品数占比</th><th>月销</th><th>月销占比</th><th>单品效率</th><th>中位到手价</th></tr></thead><tbody>';
       for (var j=0;j<(sp.cats||[]).length;j++){
         var c = sp.cats[j];
-        h += '<tr><td>' + esc(c.category) + '</td><td>' + n(c.sku_count) + '</td><td>' + pct(c.sku_share)
-           + '</td><td>' + n(c.sales_sum) + '</td><td>' + pct(c.sales_share)
-           + '</td><td>' + n(c.sales_per_sku) + '</td><td>' + money(c.median_hand_price) + '</td></tr>';
+        h += '<tr><td>' + rvEsc(c.category) + '</td><td>' + rvN(c.sku_count) + '</td><td>' + rvPct(c.sku_share)
+           + '</td><td>' + rvN(c.sales_sum) + '</td><td>' + rvPct(c.sales_share)
+           + '</td><td>' + rvN(c.sales_per_sku) + '</td><td>' + rvMoney(c.median_hand_price) + '</td></tr>';
       }
       h += '</tbody></table>';
     }
@@ -369,36 +375,44 @@ var PAGES = {
     h += '<table><thead><tr><th>店</th><th>机制</th><th>品数</th><th>月销</th></tr></thead><tbody>';
     for (var a=0;a<(d.mechanism||[]).length;a++){
       var mr = d.mechanism[a];
-      h += '<tr><td class="cm-shop">' + esc(mr.shop) + '</td><td>' + esc(mech(mr.mechanism_type))
-         + '</td><td>' + n(mr.sku_count) + '</td><td>' + n(mr.sales_sum) + '</td></tr>';
+      h += '<tr><td class="cm-shop">' + rvEsc(mr.shop) + '</td><td>' + rvEsc(rvMech(mr.mechanism_type))
+         + '</td><td>' + rvN(mr.sku_count) + '</td><td>' + rvN(mr.sales_sum) + '</td></tr>';
     }
-    h += '</tbody></table>';
+    h += '</tbody></table></div>';
+    rvAddStyle();
+    return h;
+  },
+  rivalOpp: async function(){
+    var d = await rvLive();
+    if (d.error || d.ok===false) return verdict("🔴 "+(d.error||d.message||"取数失败"),"red"), "";
+    verdict(d.verdict, /^🔴/.test(d.verdict) ? "red" : "ok");
+    var h = '<div class="cm-l12">';
     h += '<h3>热卖同款汇总</h3>';
     h += '<table><thead><tr><th>商品</th><th>在卖店数</th><th>总月销</th><th>最高月销</th><th>最低正常到手价(&gt;¥1)</th><th>引流价</th><th>中位价</th><th>采集时段</th></tr></thead><tbody>';
     for (var b=0;b<(d.hot_same||[]).length;b++){
       var x = d.hot_same[b];
-      h += '<tr><td class="cm-name">' + esc(x.product_name || x.product_code)
-         + (x.match_suspect ? '<span class="cm-warn">疑似匹配错,勿用</span>' : '') + '</td><td>' + n(x.rival_shop_count)
-         + '</td><td>' + n(x.rival_sales_total) + '</td><td>' + n(x.rival_sales_max) + '<br><span class="cm-shop">' + esc(x.rival_sales_max_shop||"") + '</span>'
-         + '</td><td>' + money(x.normal_price_min) + '<br><span class="cm-shop">' + esc(x.normal_price_min_shop||"") + '</span>'
+      h += '<tr><td class="cm-name">' + rvEsc(x.product_name || x.product_code)
+         + (x.match_suspect ? '<span class="cm-warn">疑似匹配错,勿用</span>' : '') + '</td><td>' + rvN(x.rival_shop_count)
+         + '</td><td>' + rvN(x.rival_sales_total) + '</td><td>' + rvN(x.rival_sales_max) + '<br><span class="cm-shop">' + rvEsc(x.rival_sales_max_shop||"") + '</span>'
+         + '</td><td>' + rvMoney(x.normal_price_min) + '<br><span class="cm-shop">' + rvEsc(x.normal_price_min_shop||"") + '</span>'
          + '</td><td>' + (x.has_hook_price ? '<span class="cm-hook">有≤¥1引流</span>' : '<span class="cm-na">—</span>')
-         + '</td><td>' + money(x.rival_price_median) + '</td><td>' + tm(x.rival_captured_from,x.rival_captured_to) + '</td></tr>';
+         + '</td><td>' + rvMoney(x.rival_price_median) + '</td><td>' + rvTm(x.rival_captured_from,x.rival_captured_to) + '</td></tr>';
     }
     h += '</tbody></table>';
     h += '<h3>卖得好的链接（月销≥20）</h3>';
     h += '<table><thead><tr><th>店</th><th>月销</th><th>到手价</th><th>划线价</th><th>机制</th><th>券</th><th>品类</th><th>商品</th></tr></thead><tbody>';
     for (var k=0;k<(d.top||[]).length;k++){
       var r = d.top[k];
-      h += '<tr' + (r.is_med ? ' class="cm-med"' : '') + '><td class="cm-shop">' + esc(r.shop_name_raw || r.shop) + '</td><td>' + n(r.month_sale)
-         + '</td><td>' + money(r.hand_price) + '</td><td>' + money(r.list_price)
-         + '</td><td>' + esc(r.tier_text || "—") + '</td><td>' + esc(r.coupon || "—")
-         + '</td><td>' + esc(r.category) + (r.is_med ? ' ⛔' : '') + '</td><td class="cm-name">' + esc(r.product_name) + '</td></tr>';
+      h += '<tr' + (r.is_med ? ' class="cm-med"' : '') + '><td class="cm-shop">' + rvEsc(r.shop_name_raw || r.shop) + '</td><td>' + rvN(r.month_sale)
+         + '</td><td>' + rvMoney(r.hand_price) + '</td><td>' + rvMoney(r.list_price)
+         + '</td><td>' + rvEsc(r.tier_text || "—") + '</td><td>' + rvEsc(r.coupon || "—")
+         + '</td><td>' + rvEsc(r.category) + (r.is_med ? ' ⛔' : '') + '</td><td class="cm-name">' + rvEsc(r.product_name) + '</td></tr>';
     }
     h += '</tbody></table>';
     h += '<div class="cm-cap"><b>口径说明</b><br>';
-    for (var m=0;m<(d.caveats||[]).length;m++) h += '· ' + esc(d.caveats[m]) + '<br>';
+    for (var m=0;m<(d.caveats||[]).length;m++) h += '· ' + rvEsc(d.caveats[m]) + '<br>';
     h += '</div></div>';
-    addStyle();
+    rvAddStyle();
     return h;
   },
   l11: async function(){
@@ -832,18 +846,17 @@ var PAGES = {
 };
 
 async function show(p){
-  var rivalTitles = {l7:"比价罗盘 · 我方 vs 附近",l10:"附近实时 · 美团H5",l11:"竞品历史库 · Excel导出2026-06-17 · ⛔已89天未更新,不代表当前在售",l12:"竞品今日行情 · 对手打法",l9:"竞争商品档案 · PK"};
-  if(rivalTitles[p]){
-    window.__rivalTab = p;
-    try { localStorage.setItem("dataops_rival_tab", p); } catch(e){}
-    p = "rival";
-  }
+  var rivalTitles = {ov:"竞品总览 · 对手打法",opp:"机会商品 · 什么好卖",l7:"定价决策 · 我方 vs 附近"};
+  var rivalOk = {ov:1,opp:1,l7:1};
+  if(p==="l12"){ window.__rivalTab = "ov"; try { localStorage.setItem("dataops_rival_tab", "ov"); } catch(e){} p = "rival"; }
+  if(p==="l7"){ window.__rivalTab = "l7"; try { localStorage.setItem("dataops_rival_tab", "l7"); } catch(e){} p = "rival"; }
   if(p==="rival" && !window.__rivalTab){
-    try { window.__rivalTab = localStorage.getItem("dataops_rival_tab") || "l12"; }
-    catch(e){ window.__rivalTab = "l12"; }
+    try { window.__rivalTab = localStorage.getItem("dataops_rival_tab") || "ov"; }
+    catch(e){ window.__rivalTab = "ov"; }
   }
+  if(p==="rival" && !rivalOk[window.__rivalTab]) window.__rivalTab = "ov";
   document.querySelectorAll(".snav").forEach(function(a){a.classList.toggle("on", a.dataset.p===p)});
-  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",rival:rivalTitles[window.__rivalTab||"l12"],l10:"附近实时 · 美团H5",l11:"竞品历史库 · Excel导出2026-06-17 · ⛔已89天未更新,不代表当前在售",l12:"竞品今日行情 · 对手打法",l8:"竞店商品档(逐行明细,已并入历史库)",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
+  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",rival:rivalTitles[window.__rivalTab||"ov"],l10:"附近实时 · 美团H5",l11:"竞品历史库 · Excel导出2026-06-17 · ⛔已89天未更新,不代表当前在售",l12:"竞品今日行情 · 对手打法",l8:"竞店商品档(逐行明细,已并入历史库)",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
   $("body").innerHTML = '<div class="verdict">读取中…</div>';
   try { $("body").innerHTML = await PAGES[p](); }
   catch(e){ verdict("🔴 "+e.message,"red"); $("body").innerHTML=""; }
