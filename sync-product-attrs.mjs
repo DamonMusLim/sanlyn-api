@@ -82,9 +82,11 @@ WITH ranked_products AS (
     OR (NULLIF(oli.sku, '') IS NOT NULL AND p.sku = oli.sku)
 ),
 matched AS (
-  SELECT *
-  FROM ranked_products
-  WHERE rn = 1
+  SELECT r.*
+  FROM ranked_products r
+  JOIN orders o ON o.id = r.order_id
+  WHERE r.rn = 1
+    AND NULLIF(btrim(COALESCE(o.bl_no, '')), '') IS NULL
 )
 `;
 
@@ -106,9 +108,22 @@ async function getOrphanRows(client) {
     JOIN orders o ON o.id = oli.order_id
     LEFT JOIN matched m ON m.oli_id = oli.id
     WHERE m.id IS NULL
+      AND NULLIF(btrim(COALESCE(o.bl_no, '')), '') IS NULL
     ORDER BY o.order_no NULLS LAST, oli.id
   `);
   return rows;
+}
+
+async function getShippingExemptionSummary(client) {
+  const { rows } = await client.query(`
+    SELECT
+      COUNT(DISTINCT o.id)::int AS skipped_shipped_orders,
+      COUNT(oli.id)::int AS skipped_rows
+    FROM orders o
+    JOIN order_line_items oli ON oli.order_id = o.id
+    WHERE NULLIF(btrim(COALESCE(o.bl_no, '')), '') IS NOT NULL
+  `);
+  return rows[0] || { skipped_shipped_orders: 0, skipped_rows: 0 };
 }
 
 async function getAttrDiffSummary(client) {
@@ -149,6 +164,17 @@ async function getAffectedOrders(client, fixStructural) {
   return rows;
 }
 
+async function getPendingUpdateRowCount(client) {
+  const { rows } = await client.query(`
+    ${matchedCte}
+    SELECT COUNT(DISTINCT oli.id)::int AS rows
+    FROM order_line_items oli
+    JOIN matched m ON m.oli_id = oli.id AND m.id IS NOT NULL
+    WHERE ${driftWhere}
+  `);
+  return rows[0]?.rows || 0;
+}
+
 async function getStructuralOrphans(client) {
   const { rows } = await client.query(`
     SELECT
@@ -162,6 +188,7 @@ async function getStructuralOrphans(client) {
     FROM orders o
     CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o.products, '[]'::jsonb)) WITH ORDINALITY AS op(elem, ord)
     WHERE o.order_no = ANY($1::text[])
+      AND NULLIF(btrim(COALESCE(o.bl_no, '')), '') IS NULL
       AND NOT EXISTS (
         SELECT 1
         FROM order_line_items oli
@@ -283,9 +310,13 @@ async function main() {
 
   try {
     const orphanRows = await getOrphanRows(client);
+    const shippingExemption = await getShippingExemptionSummary(client);
     const diffSummary = await getAttrDiffSummary(client);
+    const pendingUpdateRows = await getPendingUpdateRowCount(client);
     const structuralOrphans = opt.fixStructural ? await getStructuralOrphans(client) : [];
 
+    console.log(`skipped_shipped_orders=${shippingExemption.skipped_shipped_orders} skipped_rows=${shippingExemption.skipped_rows}`);
+    console.log(`remaining_update_rows=${pendingUpdateRows}`);
     printRows('OLI orphan rows: no product_id/barcode/sku match in products; not guessed, not updated', orphanRows);
     printRows('Attribute changes old -> new grouped by field/value', diffSummary);
     if (opt.fixStructural) {
