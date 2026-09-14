@@ -312,7 +312,7 @@ var PAGES = {
         +".cm-l12 .cm-na{color:#bbb}.cm-l12 .cm-med{color:#c0392b}.cm-l12 .cm-hook{color:#c0392b;font-weight:600}.cm-l12 .cm-warn{color:#888;font-size:12px;margin-left:6px}"
         +".cm-l12 h3{margin:16px 0 6px;font-size:14px}"
         +".cm-l12 .cm-cap{color:#888;font-size:12px;line-height:1.7;margin-top:14px}"
-        +".cm-l12 .cm-name{white-space:normal;max-width:420px;word-break:break-word}.cm-l12 .cm-shop{white-space:normal;max-width:130px;word-break:break-all}";
+        +".cm-l12 .cm-name{white-space:normal;min-width:220px;max-width:420px;word-break:break-word}.cm-l12{overflow-x:auto}.cm-l12 .cm-shop{white-space:normal;max-width:130px;word-break:break-all}";
       document.head.appendChild(s2);
     }
     var h = '<div class="cm-l12">';

@@ -80,13 +80,15 @@ function num(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+function iso(v) { return v instanceof Date ? v.toISOString() : String(v); }
+
 function minTime(values) {
-  const xs = values.filter(Boolean).sort();
+  const xs = values.filter(Boolean).map(iso).sort();
   return xs[0] || null;
 }
 
 function maxTime(values) {
-  const xs = values.filter(Boolean).sort();
+  const xs = values.filter(Boolean).map(iso).sort();
   return xs[xs.length - 1] || null;
 }
 
