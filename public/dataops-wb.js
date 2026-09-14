@@ -41,11 +41,12 @@ var PAGES = {
   rival: async function(){
     var tabs = [
       ["l12","今日行情"],
+      ["l7","我方比价"],
       ["l10","附近实时"],
       ["l9","竞争商品档案"],
       ["l11","历史库(89天前)"]
     ];
-    var ok = {l12:1,l10:1,l9:1,l11:1};
+    var ok = {l12:1,l7:1,l10:1,l9:1,l11:1};
     if(!window.__rivalTab){
       try { window.__rivalTab = localStorage.getItem("dataops_rival_tab") || "l12"; }
       catch(e){ window.__rivalTab = "l12"; }
@@ -164,8 +165,8 @@ var PAGES = {
     }
     h += '<p class="why">'+esc(extra)+'</p>';
 
-    if (d.shops && d.shops.length) h += '<p class="why">在采的附近门店:'+
-      d.shops.map(function(s){ return esc(s.competitor_name)+'('+esc(s["品"]==null?"—":s["品"])+'品)'; }).join(" · ")+'</p>';
+    if (d.shops && d.shops.length) h += '<details class="why"><summary>在采的附近门店 '+d.shops.length+' 家(点开看)</summary>'+
+      d.shops.map(function(s){ return esc(s.competitor_name)+'('+esc(s["品"]==null?"—":s["品"])+'品)'; }).join(" · ")+'</details>';
 
     h += '<div class="chan">'+(d.channels||[]).map(function(x){
       var bad = String(x.status||"").indexOf("未开")>=0;
@@ -831,7 +832,7 @@ var PAGES = {
 };
 
 async function show(p){
-  var rivalTitles = {l10:"附近实时 · 美团H5",l11:"竞品历史库 · Excel导出2026-06-17 · ⛔已89天未更新,不代表当前在售",l12:"竞品今日行情 · 对手打法",l9:"竞争商品档案 · PK"};
+  var rivalTitles = {l7:"比价罗盘 · 我方 vs 附近",l10:"附近实时 · 美团H5",l11:"竞品历史库 · Excel导出2026-06-17 · ⛔已89天未更新,不代表当前在售",l12:"竞品今日行情 · 对手打法",l9:"竞争商品档案 · PK"};
   if(rivalTitles[p]){
     window.__rivalTab = p;
     try { localStorage.setItem("dataops_rival_tab", p); } catch(e){}
