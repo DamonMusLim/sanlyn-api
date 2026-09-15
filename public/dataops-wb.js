@@ -410,6 +410,14 @@ var PAGES = {
     };
     window.rvOppTab = window.rvOppTab || "restock";
     window.rvOppDone = window.rvOppDone || {};
+    // 0915 修:商品名含引号时 onclick 内联会被截断 → 改 data-* + 全局委托(只绑一次)
+    if (!window.__rvOppBound){
+      window.__rvOppBound = true;
+      document.addEventListener("click", function(e){
+        var b = e.target.closest && e.target.closest(".opp-act");
+        if (b && !b.disabled) window.rvOppAct(b, decodeURIComponent(b.getAttribute("data-s")), decodeURIComponent(b.getAttribute("data-n")), b.getAttribute("data-a"));
+      });
+    }
     window.rvOppSwitch = function(t){
       window.rvOppTab = t;
       var tabs = document.querySelectorAll(".opp-tab");
@@ -462,7 +470,7 @@ var PAGES = {
         var op = '<span class="cm-na">—</span>';
         if (r.is_med) op = '<span class="cm-warn">兽药·只记录</span>';
         else if (can && window.rvOppDone[key]) op = '<button disabled>已建单 '+rvEsc(window.rvOppDone[key])+'</button>';
-        else if (can) op = '<button onclick="rvOppAct(this,'+JSON.stringify(r.shop)+','+JSON.stringify(r.product_name)+','+JSON.stringify(t)+')">'+(t==="restock"?"补货":t==="new_item"?"转新品":"转复核")+'</button>';
+        else if (can) op = '<button class="opp-act" data-s="'+encodeURIComponent(r.shop)+'" data-n="'+encodeURIComponent(r.product_name)+'" data-a="'+rvEsc(t)+'">'+(t==="restock"?"补货":t==="new_item"?"转新品":"转复核")+'</button>';
         h += '<tr' + (r.is_med ? ' class="cm-med"' : '') + '><td>' + rvN(r.rank_in_type)
           + '</td><td class="cm-shop">' + rvEsc(r.shop)
           + '</td><td class="cm-name">' + rvEsc(r.product_name)
