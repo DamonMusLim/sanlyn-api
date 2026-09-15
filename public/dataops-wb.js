@@ -6,18 +6,22 @@ var esc = function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){
 var num = function(n){return n==null?"—":Number(n).toLocaleString("zh-CN")};  // ⛔ null 显示"—"不是 0
 var DOT = {red:"d-red",yellow:"d-yel",warn:"d-yel",green:"d-grn",gray:"d-gry"};
 var cache = {};
+var NAV_SEQ = 0;
 
 async function get(path){
-  if (cache[path]) return cache[path];
+  var seq0 = NAV_SEQ;
+  if (cache[path]) return seq0===NAV_SEQ ? cache[path] : new Promise(function(){});
   // 鉴权:照 jdc 前端的做法从同域 localStorage 取(⛔不自己发明第二套)
   var tk = "";
   try { tk = localStorage.getItem("jdc_token") || localStorage.getItem("token") || ""; } catch(e){}
   var hd = {"accept":"application/json"};
   if (tk) hd["Authorization"] = tk.indexOf("Bearer")===0 ? tk : ("Bearer " + tk);
   var r = await fetch(API + path, {headers:hd, credentials:"include"});
-  if (r.status===401){ verdict("🔴 没登录 —— 先在 /jdc/ 登录一次,再回来刷新本页","red"); return {error:"Unauthorized"}; }
+  if (r.status===401){ if (seq0!==NAV_SEQ) return new Promise(function(){}); verdict("🔴 没登录 —— 先在 /jdc/ 登录一次,再回来刷新本页","red"); return {error:"Unauthorized"}; }
   var j = await r.json().catch(function(){return {error:"HTTP "+r.status}});
-  cache[path] = j; return j;
+  cache[path] = j;
+  if (seq0!==NAV_SEQ) return new Promise(function(){});
+  return j;
 }
 function verdict(txt, lv){
   var el = $("vd"); el.textContent = txt;
@@ -47,9 +51,13 @@ function rvMech(v){
 }
 function rvLive(){
   var c = window.__rivalLive, now = Date.now();
-  if(c && now-c.t<60000) return c.p || Promise.resolve(c.d);
+  if(c && now-c.t<60000){
+    if("d" in c) return Promise.resolve(c.d);
+    if(c.p && c.seq===NAV_SEQ) return c.p;
+  }
+  var seq0 = NAV_SEQ;
   var p = get("db/petstore-rival-live").then(function(d){ window.__rivalLive={t:Date.now(),d:d}; return d; }, function(e){ window.__rivalLive=null; throw e; });
-  window.__rivalLive = {t:now,p:p};
+  window.__rivalLive = {t:now,p:p,seq:seq0};
   return p;
 }
 function rvAddStyle(){
@@ -67,6 +75,7 @@ function rvAddStyle(){
 
 var PAGES = {
   board: async function(){
+    var seq0 = NAV_SEQ;
     if (!$("board-style")) document.head.insertAdjacentHTML("beforeend", '<style id="board-style">.board-tabs{display:flex;gap:8px;margin:0 0 12px}.board-tab,.board-btn{border:1px solid #d8e0ea;background:#fff;border-radius:8px;padding:7px 10px;cursor:pointer}.board-tab.on{background:#18212f;color:#fff;border-color:#18212f}.board-cards{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;margin:8px 0 8px}.board-card{border:1px solid #e2e8f0;background:#fff;border-radius:8px;padding:10px;cursor:pointer}.board-card b{display:block;font-size:22px;margin-top:5px}.board-card.red b{color:#c81e1e}.board-meta{color:#667085;font-size:12px;margin:0 0 12px}.board-head{display:flex;justify-content:space-between;align-items:center;gap:8px}.board-table{width:100%;border-collapse:collapse;background:#fff}.board-table th,.board-table td{border-bottom:1px solid #edf2f7;padding:9px 8px;text-align:left;vertical-align:top}.board-sub{color:#667085;font-size:12px}.board-detail{background:#fbfcfe}.board-pill{display:inline-block;border-radius:6px;padding:2px 6px;font-size:12px;background:#eef2f7}.board-pill.green{background:#dcfce7;color:#166534}.board-pill.yellow{background:#fef9c3;color:#854d0e}.board-pill.red,.board-pill.dead{background:#fee2e2;color:#991b1b}.board-pill.slow,.board-pill.stale{background:#ffedd5;color:#9a3412}.board-pill.fast{background:#dcfce7;color:#166534}.board-pill.steady{background:#dbeafe;color:#1d4ed8}.board-more{text-align:center;padding:12px}.board-grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:900px){.board-cards{grid-template-columns:repeat(2,1fr)}.board-grid2{grid-template-columns:1fr}.board-table{font-size:12px}}</style>');
     var E = window.rvEsc || esc, N = window.rvN || num, M = function(v){ if(v==null||v==="") return "—"; var x=Number(v); if(!isFinite(x)) return "—"; return "¥"+(Math.abs(x)>=100 ? Math.round(x).toLocaleString("zh-CN") : x.toFixed(2)); };
     var RV = {restock:"该补", watch:"观察", no_restock:"不补", need_price_fix:"先修价"}, TV = {fast:"快", steady:"稳定", slow:"慢", stale:"久未动", dead:"死货", never:"没卖过"};
@@ -79,10 +88,11 @@ var PAGES = {
     var cards = d.cards || {}, cats = d.categories || [], health = d.health || {};
     function unk(v){ return v==null || v==="" ? "—" : E(v); }
     function redraw(){
+      if (seq0!==NAV_SEQ) return;
       var host = $("board-main-host");
       if (host) host.innerHTML = st.tab==="list" ? listHtml() : (st.tab==="health" ? healthHtml() : overviewHtml());
       // 0916 修:切到商品明细也要加载(原来只在首次渲染时加载,切 tab 后一直「读取中」)
-      if (st.tab==="list") setTimeout(async function(){ var h=$("board-list-host"); if(h) h.innerHTML = await renderList("shop"); }, 0);
+      if (st.tab==="list") setTimeout(async function(){ if (seq0!==NAV_SEQ) return; var h=$("board-list-host"); if(h){ var html = await renderList("shop"); if (seq0!==NAV_SEQ) return; h.innerHTML = html; } }, 0);
       Array.prototype.forEach.call(document.querySelectorAll("[data-board-tab]"), function(x){ x.classList.toggle("on", x.dataset.boardTab===st.tab); });
     }
     function risk(filter){
@@ -101,12 +111,14 @@ var PAGES = {
       a.download = "petstore-store-board.csv"; a.click(); setTimeout(function(){URL.revokeObjectURL(a.href)}, 1000);
     }
     async function postGap(key){
+      var seq0 = NAV_SEQ;
       var tk = ""; try { tk = localStorage.getItem("jdc_token") || localStorage.getItem("token") || ""; } catch(e){}
       var hd = {"content-type":"application/json","accept":"application/json","x-gateway-auth":"gw-dataops-0903"};
       if (tk) hd.Authorization = tk.indexOf("Bearer")===0 ? tk : "Bearer " + tk;
       var r = await fetch(API+"db/petstore-store-board-act", {method:"POST",headers:hd,credentials:"include",body:JSON.stringify({gap_key:key})});
       var j = await r.json();
       if (!r.ok) { alert(j.error || "创建失败"); return; }
+      if (seq0!==NAV_SEQ) { alert(j.message || (j.task_id ? "已创建 #"+j.task_id : "创建成功")); return; }
       st.data = null; delete cache["db/petstore-store-board"]; show("board");
     }
     window.__boardOnClick = function(e){
@@ -162,7 +174,7 @@ var PAGES = {
         +'</tbody></table>';
     }
     var html = '<div class="board-tabs"><button class="board-tab '+(st.tab==="overview"?"on":"")+'" data-board-tab="overview">库存总览</button><button class="board-tab '+(st.tab==="list"?"on":"")+'" data-board-tab="list">商品明细</button><button class="board-tab '+(st.tab==="health"?"on":"")+'" data-board-tab="health">数据健康</button></div>'+cardHtml+meta+'<div id="board-main-host">'+(st.tab==="list"?listHtml():(st.tab==="health"?healthHtml():overviewHtml()))+'</div>';
-    setTimeout(async function(){ if(st.tab==="list" && $("board-list-host")) $("board-list-host").innerHTML = await renderList("shop"); }, 0);
+    setTimeout(async function(){ if (seq0!==NAV_SEQ) return; if(st.tab==="list" && $("board-list-host")) { var h = await renderList("shop"); if (seq0!==NAV_SEQ) return; $("board-list-host").innerHTML = h; } }, 0);
     return html;
   },
   risk: async function(){
@@ -201,6 +213,7 @@ var PAGES = {
       a.download = "petstore-risk-center.csv"; a.click(); setTimeout(function(){URL.revokeObjectURL(a.href)}, 1000);
     }
     async function postAct(key,codes){
+      var seq0 = NAV_SEQ;
       var tk = ""; try { tk = localStorage.getItem("jdc_token") || localStorage.getItem("token") || ""; } catch(e){}
       var hd = {"content-type":"application/json","accept":"application/json","x-gateway-auth":"gw-dataops-0903"};
       if (tk) hd.Authorization = tk.indexOf("Bearer")===0 ? tk : "Bearer " + tk;
@@ -208,6 +221,7 @@ var PAGES = {
       var j = await r.json();
       var s = {}; (j.skipped||[]).forEach(function(x){s[x.reason]=(s[x.reason]||0)+1});
       alert("建"+(j.created||[]).length+"张,跳过"+(j.skipped||[]).length+"(重复"+(s.DUPLICATE||0)+"/上限"+(s.DAILY_CAP_20||0)+"/已不存在"+(s.NOT_CURRENT||0)+")");
+      if (seq0!==NAV_SEQ) return;
       st.data = null; st.limit = 100; delete cache["db/petstore-risk-center"]; show("risk");
     }
     // 0916 修:事件只绑一次但处理函数每次渲染替换,否则重绘一直用第一次的闭包数据(工单队列空)
@@ -443,6 +457,7 @@ var PAGES = {
   },
 
   l8: async function(){
+    var seq0 = NAV_SEQ;
     var d = await get("db/petstore-rival-catalog");
     if (d.error || d.ok===false) return verdict("🔴 "+(d.error||d.message||"取数失败"),"red"), "";
     verdict(d.verdict, /^🔴/.test(d.verdict) ? "red" : "ok");
@@ -491,6 +506,7 @@ var PAGES = {
         }).join("")+'</table></div>'+(dd.truncated?'<p class="gwhy">'+esc("只列了前 "+raw(dd.shown)+" 条(共 "+raw(dd.total)+" 条)。")+'</p>':'');
     };
     setTimeout(function(){
+      if (seq0!==NAV_SEQ) return;
       var dd = detail, f = 0;
       $("rvdetail").innerHTML = draw(dd,f);
       document.querySelectorAll(".rvfilters button").forEach(function(b){ b.onclick=function(){
@@ -501,6 +517,7 @@ var PAGES = {
       document.querySelectorAll(".rvcard[data-shop]").forEach(function(c){ c.onclick=async function(){
         document.querySelectorAll(".rvcard").forEach(function(x){x.classList.toggle("on", x===c)});
         dd = await get("db/petstore-rival-catalog?shop="+encodeURIComponent(c.dataset.shop));
+        if (seq0!==NAV_SEQ) return;
         $("rvdetail").innerHTML = (dd.error || dd.ok===false) ? '<div class="blind">'+esc("🔴 "+(dd.error||dd.message||"取数失败"))+'</div>' : draw(dd,f);
       };});
     },0);
@@ -615,6 +632,7 @@ var PAGES = {
         if(d && window.__selDownload[d.dataset.dl]){ window.__selDownload[d.dataset.dl](); return; }
         var btn = e.target.closest(".sel-order[data-code]");
         if(btn){
+          var seq0 = NAV_SEQ;
           var def = btn.dataset.qty || "";
           var q = prompt("下单数量", def);
           if(q===null) return;
@@ -632,16 +650,19 @@ var PAGES = {
             });
             var j = await res.json().catch(function(){ return {}; });
             if(res.ok && j.ok){
+              if(seq0!==NAV_SEQ){ alert("已下单 #"+j.intent_id+" 待审批"); return; }
               var span=document.createElement("span");
               span.className="sel-done";
               span.textContent="已下单 #"+j.intent_id+" 待审批";
               btn.replaceWith(span);
               verdict("✅ 已下单 #"+j.intent_id+" 待审批");
             }else{
+              if(seq0!==NAV_SEQ){ alert(failMsg(j.code || String(res.status), j)); return; }
               btn.disabled = false;
               verdict(failMsg(j.code || String(res.status), j));
             }
           }catch(err){
+            if(seq0!==NAV_SEQ){ alert("下单失败"); return; }
             btn.disabled = false;
             verdict("下单失败");
           }
@@ -804,6 +825,7 @@ var PAGES = {
       for (var j=0;j<panes.length;j++) panes[j].style.display = panes[j].getAttribute("data-t")===t ? "" : "none";
     };
     window.rvOppAct = async function(btn, shop, name, action){
+      var seq0 = NAV_SEQ;
       var qty;
       if (action === "restock"){
         var q = prompt("输入补货数量");
@@ -825,13 +847,16 @@ var PAGES = {
         var j = await r.json().catch(function(){return {ok:false, code:"HTTP_"+r.status};});
         if (j.ok){
           window.rvOppDone[action+"|"+shop+"|"+name] = j.task_id;
+          if (seq0!==NAV_SEQ) { alert("已建单 " + j.task_id); return; }
           btn.textContent = "已建单 " + j.task_id;
           verdict("✅ 已建单 " + j.task_id, "ok");
         } else {
+          if (seq0!==NAV_SEQ) { alert(rejectName[j.code] || j.code || j.error || "转单失败"); return; }
           btn.disabled = false;
           verdict("🔴 " + (rejectName[j.code] || j.code || j.error || "转单失败"), "red");
         }
       } catch(e) {
+        if (seq0!==NAV_SEQ) { alert("转单失败"); return; }
         btn.disabled = false;
         verdict("🔴 转单失败", "red");
       }
@@ -909,6 +934,7 @@ var PAGES = {
     return h;
   },
   l11: async function(){
+    var seq0 = NAV_SEQ;
     var d = await get("db/petstore-rival-merged?filter=hot&limit=300");
     if (d.error || d.ok===false) return verdict("🔴 "+(d.error||d.message||"取数失败"),"red"), "";
     verdict(d.verdict, /^🔴/.test(d.verdict) ? "red" : "ok");
@@ -1030,12 +1056,14 @@ var PAGES = {
       return h;
     }
     function bind(){
+      if (seq0!==NAV_SEQ) return;
       var root = $("#cm-l11");
       if (!root) return;
       var tabs = root.querySelectorAll(".cm-tab");
       for (var i=0;i<tabs.length;i++) tabs[i].onclick = function(){
         var f = this.getAttribute("data-filter");
         get("db/petstore-rival-merged?filter=" + encodeURIComponent(f) + "&limit=300").then(function(nd){
+          if (seq0!==NAV_SEQ) return;
           if (nd.error || nd.ok===false) return verdict("🔴 "+(nd.error||nd.message||"取数失败"),"red");
           verdict(nd.verdict, /^🔴/.test(nd.verdict) ? "red" : "ok");
           root.innerHTML = render(nd, f);
@@ -1051,7 +1079,7 @@ var PAGES = {
       };
     }
     addStyle();
-    setTimeout(function(){ bind(); },0);
+    setTimeout(function(){ if (seq0!==NAV_SEQ) return; bind(); },0);
     return '<div id="cm-l11">' + render(d, "hot") + '</div>';
   },
   l10: async function(){
@@ -1277,6 +1305,7 @@ var PAGES = {
     return h;
   },
   l4: async function(){
+    const seq0 = NAV_SEQ;
     const API = "./api/";
     const $ = (id) => document.getElementById(id);
     const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
@@ -1339,11 +1368,14 @@ var PAGES = {
     }
     async function loadData(){
       if (st.data && Date.now() - st.at < 60000) return st.data;
+      const seq1 = NAV_SEQ;
       const r = await fetch(API + "db/petstore-product-analysis", { headers: hdrs(), credentials: "include" });
+      if (seq1 !== NAV_SEQ) return new Promise(function(){});
       if (r.status === 401) throw new Error("没登录 —— 先在 /jdc/ 登录一次再刷新");
       const j = await r.json();
       if (!j.ok) throw new Error(j.error || "load_failed");
       st.data = j; st.at = Date.now();
+      if (seq1 !== NAV_SEQ) return new Promise(function(){});
       return j;
     }
 
@@ -1503,12 +1535,16 @@ var PAGES = {
     }
 
     async function redraw(){
+      if (seq0 !== NAV_SEQ) return;
       const host = $("pa-main-host");
+      if (!host) return;
       document.querySelectorAll("[data-pa-tab]").forEach((b)=>b.classList.toggle("is-on", b.dataset.paTab === st.tab));
       try {
         const data = await loadData(); if (window.verdict) verdict(data.verdict || "—", data.verdict_level || "ok");
+        if (seq0 !== NAV_SEQ) return;
         host.innerHTML = st.tab === "med" ? renderMed(data) : renderOwn(data);
       } catch (e) {
+        if (seq0 !== NAV_SEQ) return;
         host.innerHTML = `<div class="pa-warn">加载失败: ${esc(e.message || e)}</div>`;
       }
       window.__paOnClick = async function(e){
@@ -1534,7 +1570,7 @@ var PAGES = {
       document.addEventListener("click", (e) => window.__paOnClick && window.__paOnClick(e));
       window.__paBound = true;
     }
-    setTimeout(redraw, 0);
+    setTimeout(() => { if (seq0 !== NAV_SEQ) return; redraw(); }, 0);
     return shell;
   },
   l3: async function(){
@@ -1546,6 +1582,7 @@ var PAGES = {
 };
 
 async function show(p){
+  var my = ++NAV_SEQ;
   var rivalTitles = {sel:"选品表 · 进不进、进多少",ov:"竞品总览 · 对手打法",opp:"机会商品 · 什么好卖",l7:"定价决策 · 我方 vs 附近"};
   var rivalOk = {sel:1,ov:1,opp:1,l7:1};
   if(p==="l12"){ window.__rivalTab = "ov"; try { localStorage.setItem("dataops_rival_tab", "ov"); } catch(e){} p = "rival"; }
@@ -1558,8 +1595,8 @@ async function show(p){
   document.querySelectorAll(".snav").forEach(function(a){a.classList.toggle("on", a.dataset.p===p)});
   $("ttl").textContent = ({board:"金枋店经营台",list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",risk:"风险处理台",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",rival:rivalTitles[window.__rivalTab||"sel"],l10:"附近实时 · 美团H5",l11:"竞品历史库 · Excel导出2026-06-17 · ⛔已89天未更新,不代表当前在售",l12:"竞品今日行情 · 对手打法",l8:"竞店商品档(逐行明细,已并入历史库)",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
   $("body").innerHTML = '<div class="verdict">读取中…</div>';
-  try { $("body").innerHTML = await PAGES[p](); }
-  catch(e){ verdict("🔴 "+e.message,"red"); $("body").innerHTML=""; }
+  try { var html = await PAGES[p](); if (my!==NAV_SEQ) return; $("body").innerHTML = html; }
+  catch(e){ if (my!==NAV_SEQ) return; verdict("🔴 "+e.message,"red"); $("body").innerHTML=""; }
 }
 document.addEventListener("click", function(e){
   var t = e.target.closest(".rvtab[data-t]");
@@ -1580,6 +1617,7 @@ show("board");   // 默认打开金枋店经营台 —— Damon 0916「合并 �
 // mode="shop" → stock=instock,带「显示0库存」开关;mode="all" → 不加库存筛选。
 // ⛔ 两个入口各自独立的筛选状态,互不串味。
 async function renderList(mode){
+  var seq0 = NAV_SEQ;
   var SHOP = mode === "shop";
   var KEY = SHOP ? "__LQ" : "__LQA";
   if (!window[KEY]) window[KEY] = {page:1, pageSize:50, keyword:"", category:"", product_status:"",
@@ -1740,6 +1778,7 @@ async function renderList(mode){
       '只当待核信号,别拿它下架 —— 有真日期时以日期为准。<b>成本/毛利不出库</b>,本页不设该列。</p>';
 
     setTimeout(function(){
+      if (seq0!==NAV_SEQ) return;
       fillMarket(rows);
       var go=function(){ q.keyword=$("fq").value.trim(); q.category=$("fc").value.trim();
         q.product_status=$("fs").value; q.page=1; re(); };
@@ -1770,9 +1809,10 @@ async function renderList(mode){
 }
 // 重画:show() 会把 innerHTML 换掉,这里复用它
 async function renderInto(mode){
+  var my = NAV_SEQ;
   $("body").innerHTML = '<div class="verdict">读取中…</div>';
-  try { $("body").innerHTML = await renderList(mode); }
-  catch(e){ verdict("🔴 "+e.message,"red"); $("body").innerHTML=""; }
+  try { var html = await renderList(mode); if (my!==NAV_SEQ) return; $("body").innerHTML = html; }
+  catch(e){ if (my!==NAV_SEQ) return; verdict("🔴 "+e.message,"red"); $("body").innerHTML=""; }
 }
 
 // ── 商品行下面那一排「附近怎么卖」(0908) ──
@@ -1781,11 +1821,13 @@ async function renderInto(mode){
 //   「验证低价」= 月销≥50 的店里的最低价(⛔不用「最高月销那家的价」,月销200疑似封顶)
 //   没数据显示「未采集」—— ⛔不隐藏(会让人以为没竞品而瞎定价),⛔不拿同品类中位价顶替
 async function fillMarket(rows){
+  var seq0 = NAV_SEQ;
   var cells = document.querySelectorAll("td.mkt[data-code]");
   if (!cells.length) return;
   var codes = Array.prototype.map.call(cells, function(c){ return c.dataset.code; });
   var uniq = codes.filter(function(v,i){ return codes.indexOf(v)===i; });
   var d = await get("db/petstore-market-row?codes=" + encodeURIComponent(uniq.join(",")));
+  if (seq0!==NAV_SEQ) return;
   if (!d || d.ok === false || d.error) {
     Array.prototype.forEach.call(cells, function(c){ c.innerHTML = '<span class="na">—</span>'; });
     return;
