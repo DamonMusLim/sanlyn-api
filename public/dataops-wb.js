@@ -111,9 +111,8 @@ var PAGES = {
       alert("建"+(j.created||[]).length+"张,跳过"+(j.skipped||[]).length+"(重复"+(s.DUPLICATE||0)+"/上限"+(s.DAILY_CAP_20||0)+"/已不存在"+(s.NOT_CURRENT||0)+")");
       st.data = null; st.limit = 100; delete cache["db/petstore-risk-center"]; show("risk");
     }
-    if (!window.__riskBound) {
-      window.__riskBound = 1;
-      document.addEventListener("click", function(e){
+    // 0916 修:事件只绑一次但处理函数每次渲染替换,否则重绘一直用第一次的闭包数据(工单队列空)
+    window.__riskOnClick = function(e){
         var t = e.target.closest("[data-risk-tab]"); if(t){ st.tab=t.dataset.riskTab; redraw(); return; }
         var f = e.target.closest("[data-risk-filter]"); if(f){ st.filter=f.dataset.riskFilter; st.tab="main"; st.limit=100; redraw(); return; }
         var mo = e.target.closest("[data-risk-more]"); if(mo){ st.limit += 100; redraw(); return; }
@@ -132,7 +131,10 @@ var PAGES = {
         }
         var one = e.target.closest("[data-risk-one]"); if(one){ postAct(one.dataset.problem,[one.dataset.code]); return; }
         var bulk = e.target.closest("[data-risk-bulk]"); if(bulk){ var key=bulk.dataset.riskBulk; var codes=shownRows().filter(function(r){return !hasOpen(r,key)}).slice(0,20).map(function(r){return r.product_code}); postAct(key,codes); return; }
-      });
+    };
+    if (!window.__riskBound) {
+      window.__riskBound = 1;
+      document.addEventListener("click", function(e){ if (window.__riskOnClick) window.__riskOnClick(e); });
     }
     var meta = '<div class="risk-meta"><span>数据采集 '+E(d.captured||"—")+(d.stale_days==null?"":"(已"+d.stale_days+"天)")+(d.cached?" · 缓存":"")+(d.generated_at?" · 生成 "+E(d.generated_at):"")+'</span><button class="risk-dl" data-risk-download>下载</button></div>';
     var cardHtml = '<div class="risk-cards">'
