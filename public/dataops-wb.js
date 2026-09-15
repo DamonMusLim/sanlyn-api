@@ -1277,58 +1277,265 @@ var PAGES = {
     return h;
   },
   l4: async function(){
-    var d = await get("db/petstore-product-insight?storeCode=63350001");
-    if (d.error) return verdict("🔴 "+d.error,"red"), "";
-    verdict(d.headline, d.verdict==="red"?"red":"ok");
-    var v = {}; d.velocity.forEach(function(x){v[x.tier]=x});
-    var pick=function(k){return v[k]||{n:0,stock_value:0,pct:0}};
-    var money=function(n){return n==null?"—":"¥"+Number(n).toLocaleString("zh-CN")};
-    // 大数:钱压在哪
-    var h = '<div class="big">'+
-      '<div><div class="k">库存总值</div><div class="v">'+money(d.total_stock_value)+'</div>'+
-        '<div class="s">有货商品的进货价合计</div></div>'+
-      '<div><div class="k">卖得动(fast+steady)</div><div class="v ok">'+(pick("fast").n+pick("steady").n)+'</div>'+
-        '<div class="s">'+money(pick("fast").stock_value+pick("steady").stock_value)+'</div></div>'+
-      '<div><div class="k">死货 dead</div><div class="v red">'+pick("dead").n+'</div>'+
-        '<div class="s">'+money(pick("dead").stock_value)+' · '+pick("dead").pct+'%</div></div>'+
-      '<div><div class="k">慢销 slow+stale</div><div class="v warn">'+(pick("slow").n+pick("stale").n)+'</div>'+
-        '<div class="s">'+money(pick("slow").stock_value+pick("stale").stock_value)+'</div></div></div>';
-    // 动销分层条
-    var tot = d.velocity.reduce(function(a,x){return a+x.n},0);
-    var COL={fast:"#17915a",steady:"#5aa87a",stale:"#e0a63c",slow:"#e08a3c","dead":"#ce2f36"};
-    h += '<div class="grp"><h3>动销分层<span class="c">'+tot+' 个有货</span></h3><div style="padding:11px 13px">'+
-      '<div class="bar">'+d.velocity.map(function(x){
-        return '<i style="width:'+(x.pct||0)+'%;background:'+(COL[x.tier]||"#c3cbd8")+'"></i>'}).join("")+'</div>'+
-      '<table class="t"><tr><th>分层</th><th class="r">个数</th><th class="r">占比</th><th class="r">占款</th></tr>'+
-      d.velocity.map(function(x){return '<tr><td class="nm">'+esc(x.tier)+'</td><td class="r">'+x.n+
-        '</td><td class="r">'+x.pct+'%</td><td class="r">'+money(x.stock_value)+'</td></tr>'}).join("")+
-      '</table></div></div>';
-    // 品牌
-    h += '<div class="grp"><h3>自有品牌 vs 他人品牌<span class="c">'+d.brand.length+'</span></h3>'+
-      '<div style="padding:0 13px 11px"><table class="t">'+
-      '<tr><th>品牌</th><th class="r">SKU</th><th class="r">有货</th><th class="r">动销</th><th class="r">动销率</th><th class="r">占款</th></tr>'+
-      d.brand.map(function(b){return '<tr><td class="nm">'+esc(b.name)+'</td><td class="r">'+b.skus+
-        '</td><td class="r">'+b.in_stock+'</td><td class="r">'+b.moving+'</td><td class="r">'+
-        (b.moving_pct==null?"—":b.moving_pct+"%")+'</td><td class="r">'+money(b.stock_value)+'</td></tr>'}).join("")+
-      '</table></div></div>';
-    // 品类
-    h += '<div class="grp"><h3>品类结构<span class="c">'+d.category.length+'</span></h3>'+
-      '<div style="padding:0 13px 11px"><table class="t">'+
-      '<tr><th>品类</th><th class="r">SKU</th><th class="r">有货</th><th class="r">动销</th><th class="r">动销率</th><th class="r">占款</th></tr>'+
-      d.category.map(function(c){
-        var w = c.moving_pct!=null && c.moving_pct<10 ? ' style="color:#ce2f36;font-weight:700"' : '';
-        return '<tr><td class="nm">'+esc(c.name)+'</td><td class="r">'+c.skus+'</td><td class="r">'+c.in_stock+
-        '</td><td class="r">'+c.moving+'</td><td class="r"'+w+'>'+(c.moving_pct==null?"—":c.moving_pct+"%")+
-        '</td><td class="r">'+money(c.stock_value)+'</td></tr>'}).join("")+
-      '</table></div></div>';
-    var cm = d.completeness;
-    h += '<div class="grp"><h3>商品完整度<span class="c">'+cm.total+'</span></h3>'+
-      item("yellow","上架", cm.listed+" / "+cm.total+" ("+cm.listed_pct+"%)", "没上架的顾客搜不到")+
-      item(cm.no_barcode>0?"red":"green","无条码", cm.no_barcode, "门店侧扫不了码,店员只能手输")+
-      item(cm.listed_but_oos>0?"yellow":"green","上架但缺货", cm.listed_but_oos, "顾客点进来是空的")+
-      '</div>';
-    if (d.note) h += '<div class="blind">'+esc(d.note)+'</div>';
-    return h;
+    const API = "./api/";
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+    const N = (v) => { const x = Number(v); return Number.isFinite(x) ? x : null; };
+    const I = (v) => { const x = N(v); return x == null ? "—" : Math.round(x).toLocaleString("zh-CN"); };
+    const P = (v) => { const x = N(v); return x == null ? "—" : `${x > 0 ? "+" : ""}${Math.round(x * 10) / 10}pt`; };
+    const M = (v) => {
+      const x = N(v);
+      if (x == null) return "—";
+      return "¥" + (Math.abs(x) >= 100 ? Math.round(x).toLocaleString("zh-CN") : x.toFixed(2));
+    };
+    const D = (v) => v ? String(v).slice(0, 10) : "—";
+    const velocity = { fast:"快", steady:"稳定", slow:"慢", stale:"久未动", dead:"死货", never:"没卖过" };
+
+    window.__paState = window.__paState || { tab: "own", pageOwn: 1, pageMed: 1, expanded: {}, data: null, at: 0 };
+    const st = window.__paState;
+    const shell = `
+      <style>
+        .pa-wrap{padding:16px;color:#17202a}
+        .pa-tabs{display:flex;gap:8px;margin:0 0 12px}
+        .pa-tab{border:1px solid #d7dde5;background:#fff;border-radius:8px;padding:8px 12px;cursor:pointer}
+        .pa-tab.is-on{background:#132238;color:#fff;border-color:#132238}
+        .pa-cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:10px 0 12px}
+        .pa-card{border:1px solid #e2e6ec;border-radius:8px;background:#fff;padding:10px;min-height:64px}
+        .pa-card b{display:block;font-size:20px;line-height:1.2}
+        .pa-card span{display:block;color:#637083;font-size:12px;margin-top:4px}
+        .pa-meta{display:flex;justify-content:space-between;gap:10px;align-items:center;color:#637083;font-size:12px;margin:8px 0}
+        .pa-btn{border:1px solid #ccd5df;background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer}
+        .pa-btn:disabled{opacity:.5;cursor:not-allowed}
+        .pa-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e6ec}
+        .pa-table th,.pa-table td{border-bottom:1px solid #edf0f4;padding:8px;text-align:left;vertical-align:top;font-size:13px}
+        .pa-table th{background:#f6f8fb;color:#4b596b;font-weight:600}
+        .pa-exp{background:#fbfcfe}
+        .pa-grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:10px}
+        .pa-mini{border:1px solid #e1e6ed;border-radius:8px;background:#fff;overflow:hidden}
+        .pa-mini h4{margin:0;padding:8px 10px;background:#f6f8fb;font-size:13px}
+        .pa-mini table{width:100%;border-collapse:collapse}
+        .pa-mini td,.pa-mini th{font-size:12px;padding:6px;border-bottom:1px solid #edf0f4}
+        .pa-neg{color:#c93535;font-weight:600}.pa-pos{color:#16794c;font-weight:600}
+        .pa-pill{display:inline-block;border-radius:999px;padding:2px 8px;font-size:12px;background:#eef2f6;color:#344054}
+        .pa-pill.red{background:#ffe8e8;color:#af1f1f}.pa-pill.green{background:#e7f6ee;color:#16794c}.pa-pill.yellow{background:#fff5d6;color:#8a6100}
+        .pa-warn{border:1px solid #e25b5b;background:#fff1f1;color:#9c1c1c;border-radius:8px;padding:10px;margin:8px 0 12px;font-weight:600}
+        .pa-pager{display:flex;justify-content:flex-end;gap:8px;align-items:center;margin:10px 0}
+        .pa-name{font-weight:600}.pa-sub{color:#667085;font-size:12px;margin-top:2px}
+        @media(max-width:980px){.pa-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.pa-grid3{grid-template-columns:1fr}.pa-table{font-size:12px}}
+      </style>
+      <div class="pa-wrap">
+        <div class="pa-tabs">
+          <button class="pa-tab" data-pa-tab="own">我方商品</button>
+          <button class="pa-tab" data-pa-tab="med">兽药合规</button>
+        </div>
+        <div id="pa-main-host">加载中...</div>
+      </div>`;
+
+    function hdrs(extra){
+      let tk = ""; try { tk = localStorage.getItem("jdc_token") || localStorage.getItem("token") || ""; } catch(e){}
+      const h = Object.assign({ "accept":"application/json", "x-gateway-auth":"gw-dataops-0903" }, extra || {});
+      if (tk) h.Authorization = tk.indexOf("Bearer") === 0 ? tk : "Bearer " + tk;
+      return h;
+    }
+    async function loadData(){
+      if (st.data && Date.now() - st.at < 60000) return st.data;
+      const r = await fetch(API + "db/petstore-product-analysis", { headers: hdrs(), credentials: "include" });
+      if (r.status === 401) throw new Error("没登录 —— 先在 /jdc/ 登录一次再刷新");
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || "load_failed");
+      st.data = j; st.at = Date.now();
+      return j;
+    }
+
+    function card(label, value, sub=""){
+      return `<div class="pa-card"><b>${esc(value)}</b><span>${esc(label)}${sub ? " · " + esc(sub) : ""}</span></div>`;
+    }
+
+    function renderOwn(data){
+      const c = data.own.cards || {};
+      const cats = data.own.categories || [];
+      const gap = c.cat_gap_top ? `${c.cat_gap_top.category} ${P(c.cat_gap_top.gap_pt)}` : "—";
+      const pageSize = 12;
+      const pages = Math.max(1, Math.ceil(cats.length / pageSize));
+      st.pageOwn = Math.min(Math.max(1, st.pageOwn || 1), pages);
+      const rows = cats.slice((st.pageOwn - 1) * pageSize, st.pageOwn * pageSize);
+      return `
+        <div class="pa-cards">
+          ${card("压货", M(c.stuck_value))}
+          ${card("死库存", M(c.dead_value))}
+          ${card("卖得动", `${I(c.moving_n)} (${c.moving_pct == null ? "—" : c.moving_pct + "%"})`)}
+          ${card("差距最大品类", gap)}
+          ${card("成本缺失", `${I(c.cost_missing_n)}个不计入`)}
+        </div>
+        <div class="pa-meta"><span>生成时间 ${D(data.generated_at)} ${data.cached ? "缓存" : "实时"}</span><button class="pa-btn" data-pa-download="own">下载 CSV</button></div>
+        <table class="pa-table">
+          <thead><tr><th></th><th>品类</th><th>品名数/有货</th><th>90天有销</th><th>我方180天占比</th><th>爪壮壮占比</th><th>邻小虎占比</th><th>附近占比</th><th>差距pt</th><th>占款</th><th>死库存</th><th>一句话打法</th></tr></thead>
+          <tbody>
+            ${rows.map((r) => `
+              <tr>
+                <td><button class="pa-btn" data-pa-expand="own:${esc(r.category)}">▸</button></td>
+                <td>${esc(r.category)}</td>
+                <td>${I(r.names)}/${I(r.in_stock)}</td>
+                <td>${I(r.moving)}</td>
+                <td>${I(r.qty_share)}%</td>
+                <td>${I(r.zzz_sales_share)}%</td>
+                <td>${I(r.lxh_sales_share)}%</td>
+                <td>${I(r.nearby_sales_share)}%</td>
+                <td class="${N(r.gap_pt) < 0 ? "pa-neg" : "pa-pos"}">${P(r.gap_pt)}</td>
+                <td>${M(r.stock_value)}</td>
+                <td>${M(r.dead_value)}</td>
+                <td>${esc(r.play)}</td>
+              </tr>
+              ${st.expanded["own:" + r.category] ? ownExpand(r) : ""}
+            `).join("")}
+          </tbody>
+        </table>
+        ${pager("own", st.pageOwn, pages)}`;
+    }
+
+    function miniTable(title, heads, rows){
+      return `<div class="pa-mini"><h4>${esc(title)}</h4><table><thead><tr>${heads.map((h)=>`<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows || ""}</tbody></table></div>`;
+    }
+
+    function ownExpand(r){
+      const a = (r.top_own || []).map((x)=>`<tr><td>${esc(x.product_name)}<div class="pa-sub">${esc(x.spec || "")}</div></td><td>${I(x.qty_90)}</td><td>${I(x.qty_180)}</td><td>${esc(velocity[x.velocity_tier] || x.velocity_tier || "—")}</td><td>${M(x.stock_value)}</td></tr>`).join("");
+      const b = (r.top_dead || []).map((x)=>`<tr><td>${esc(x.product_name)}<div class="pa-sub">${esc(x.spec || "")}</div></td><td>${I(x.cur_stock)}</td><td>${I(x.qty_180)}</td><td>${M(x.stock_value)}</td></tr>`).join("");
+      const c = (r.top_rival || []).map((x)=>`<tr><td>${esc(x.shop)}</td><td>${esc(x.product_name)}</td><td>${I(x.month_sale)}</td><td>${M(x.hand_price)}</td></tr>`).join("");
+      return `<tr class="pa-exp"><td colspan="12"><div class="pa-grid3">
+        ${miniTable("我方卖得最好10", ["商品","90天","180天","层级","占款"], a)}
+        ${miniTable("死库存占款10", ["商品","库存","180天","占款"], b)}
+        ${miniTable("对手月销前5", ["店","商品","月销","到手"], c)}
+      </div></td></tr>`;
+    }
+
+    function renderMed(data){
+      const c = data.med.cards || {};
+      const rowsAll = data.med.rows || [];
+      const pageSize = 15;
+      const pages = Math.max(1, Math.ceil(rowsAll.length / pageSize));
+      st.pageMed = Math.min(Math.max(1, st.pageMed || 1), pages);
+      const rows = rowsAll.slice((st.pageMed - 1) * pageSize, st.pageMed * pageSize);
+      return `
+        <div class="pa-warn">兽药只记录不营销:不出现降价/引流/促销建议;处方药需资质</div>
+        <div class="pa-cards">
+          ${card("我方兽药", `${I(c.own_n)}个`, `有货${I(c.in_stock_n)}`)}
+          ${card("180天销量", I(c.qty_180))}
+          ${card("处方药", I(c.rx_n))}
+          ${card("待复核", I(c.unsure_n))}
+          ${card("过期在货", I(c.expired_n), `对手兽药月销 爪壮壮${I(c.rival_zzz_sales)}/邻小虎${I(c.rival_lxh_sales)}`)}
+        </div>
+        <div class="pa-meta"><span>生成时间 ${D(data.generated_at)} ${data.cached ? "缓存" : "实时"}</span><button class="pa-btn" data-pa-download="med">下载 CSV</button></div>
+        <table class="pa-table">
+          <thead><tr><th></th><th>商品</th><th>类目</th><th>AI分类</th><th>库存</th><th>180天</th><th>到期</th><th>合规状态</th><th>操作</th></tr></thead>
+          <tbody>
+            ${rows.map((r)=>`
+              <tr>
+                <td><button class="pa-btn" data-pa-expand="med:${esc(r.product_code)}">▸</button></td>
+                <td><div class="pa-name">${esc(r.product_name)}</div><div class="pa-sub">${esc(r.spec || "")}</div></td>
+                <td>${esc(r.category_name || "—")}</td>
+                <td>${rxPill(r.rx_type, r.confidence)}</td>
+                <td>${I(r.cur_stock)}</td>
+                <td>${I(r.qty_180)}</td>
+                <td>${D(r.expiration_date)}<div class="pa-sub">剩余${r.days_to_expire == null ? "—" : I(r.days_to_expire)}天</div></td>
+                <td>${esc(r.compliance || "—")}</td>
+                <td>${actionCell(r)}</td>
+              </tr>
+              ${st.expanded["med:" + r.product_code] ? medExpand(r, data.med.rival_top || []) : ""}
+            `).join("")}
+          </tbody>
+        </table>
+        ${pager("med", st.pageMed, pages)}`;
+    }
+
+    function rxPill(t, conf){
+      const cls = t === "处方药" ? "red" : (!t || t === "不确定" || N(conf) < .8 ? "yellow" : "green");
+      return `<span class="pa-pill ${cls}">${esc(t || "未分类")} ${conf == null ? "—" : Math.round(N(conf)*100)+"%"}</span>`;
+    }
+
+    function actionCell(r){
+      if (r.open_task) return `<span class="pa-pill yellow">${esc(r.open_task.id)}</span>`;
+      if (!["人工复核","补资质","下架核查"].includes(r.action)) return `<span class="pa-pill">记录</span>`;
+      return `<button class="pa-btn" data-pa-act="${esc(r.product_code)}" data-pa-action="${esc(r.action)}">${esc(r.action)}</button>`;
+    }
+
+    function medExpand(r, rivals){
+      const same = rivals.slice(0, 5).map((x)=>`<tr><td>${esc(x.shop)}</td><td>${esc(x.product_name)}</td><td>${I(x.month_sale)}</td><td>${M(x.hand_price)}</td></tr>`).join("");
+      return `<tr class="pa-exp"><td colspan="9"><div class="pa-grid3">
+        ${miniTable("AI理由+证据", ["项","内容"], `<tr><td>理由</td><td>${esc(r.reason || "—")}</td></tr><tr><td>证据</td><td>${esc(JSON.stringify(r.evidence || {})).slice(0,180)}</td></tr>`)}
+        ${miniTable("效期", ["项","内容"], `<tr><td>到期日</td><td>${D(r.expiration_date)}</td></tr><tr><td>剩余天</td><td>${r.days_to_expire == null ? "—" : I(r.days_to_expire)}</td></tr>`)}
+        ${miniTable("对手同类月销前5(仅记录)", ["店","商品","月销","到手"], same)}
+      </div></td></tr>`;
+    }
+
+    function pager(kind, page, pages){
+      return `<div class="pa-pager"><button class="pa-btn" data-pa-page="${kind}:-1" ${page<=1?"disabled":""}>上一页</button><span>${page}/${pages}</span><button class="pa-btn" data-pa-page="${kind}:1" ${page>=pages?"disabled":""}>下一页</button></div>`;
+    }
+
+    function csvCell(v){ return `"${String(v == null ? "" : v).replace(/"/g, '""')}"`; }
+    function downloadCsv(kind){
+      const data = st.data;
+      let rows;
+      if (kind === "own") {
+        rows = [["品类","品名数","有货","90天有销","我方180天占比","爪壮壮占比","邻小虎占比","附近占比","差距pt","占款","死库存","一句话打法"]]
+          .concat((data.own.categories || []).map((r)=>[r.category,r.names,r.in_stock,r.moving,r.qty_share,r.zzz_sales_share,r.lxh_sales_share,r.nearby_sales_share,r.gap_pt,r.stock_value,r.dead_value,r.play]));
+      } else {
+        rows = [["编码","品名","规格","类目","AI分类","置信度","库存","180天","到期","剩余天","合规状态","操作","工单"]]
+          .concat((data.med.rows || []).map((r)=>[r.product_code,r.product_name,r.spec,r.category_name,r.rx_type,r.confidence,r.cur_stock,r.qty_180,r.expiration_date,r.days_to_expire,r.compliance,r.action,r.open_task?.id || ""]));
+      }
+      const blob = new Blob(["\ufeff" + rows.map((r)=>r.map(csvCell).join(",")).join("\n")], { type:"text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `petstore-product-analysis-${kind}.csv`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+
+    async function act(code, action){
+      const r = await fetch(API + "db/petstore-product-analysis-act", {
+        method: "POST",
+        headers: hdrs({ "content-type":"application/json" }), credentials: "include",
+        body: JSON.stringify({ product_code: code, action })
+      });
+      const j = await r.json();
+      if (!j.ok && j.error !== "open_task_exists") { alert("转工单失败: " + (j.error || r.status)); }
+      st.data = null; st.at = 0;
+      await redraw();
+    }
+
+    async function redraw(){
+      const host = $("pa-main-host");
+      document.querySelectorAll("[data-pa-tab]").forEach((b)=>b.classList.toggle("is-on", b.dataset.paTab === st.tab));
+      try {
+        const data = await loadData();
+        host.innerHTML = st.tab === "med" ? renderMed(data) : renderOwn(data);
+      } catch (e) {
+        host.innerHTML = `<div class="pa-warn">加载失败: ${esc(e.message || e)}</div>`;
+      }
+      window.__paOnClick = async function(e){
+        const tab = e.target.closest("[data-pa-tab]");
+        if (tab) { st.tab = tab.dataset.paTab; await redraw(); return; }
+        const ex = e.target.closest("[data-pa-expand]");
+        if (ex) { const k = ex.dataset.paExpand; st.expanded[k] = !st.expanded[k]; await redraw(); return; }
+        const pg = e.target.closest("[data-pa-page]");
+        if (pg) {
+          const [kind, delta] = pg.dataset.paPage.split(":");
+          if (kind === "own") st.pageOwn += Number(delta);
+          if (kind === "med") st.pageMed += Number(delta);
+          await redraw(); return;
+        }
+        const dl = e.target.closest("[data-pa-download]");
+        if (dl) { downloadCsv(dl.dataset.paDownload); return; }
+        const ac = e.target.closest("[data-pa-act]");
+        if (ac) { ac.disabled = true; await act(ac.dataset.paAct, ac.dataset.paAction); }
+      };
+    }
+
+    if (!window.__paBound) {
+      document.addEventListener("click", (e) => window.__paOnClick && window.__paOnClick(e));
+      window.__paBound = true;
+    }
+    setTimeout(redraw, 0);
+    return shell;
   },
   l3: async function(){
     var d = await get("db/petstore-health-issues?storeCode=63350001&pageSize=1");
