@@ -350,7 +350,7 @@ var PAGES = {
     rvAddStyle();
     if(!$("sel-style")){
       var st=document.createElement("style"); st.id="sel-style";
-      st.textContent=".sel-wrap{overflow-x:auto;max-width:100%}.sel-table{width:max-content !important;min-width:100%}.sel-table>tbody>tr>td:nth-child(2),.sel-table>thead>tr>th:nth-child(2){white-space:normal !important;min-width:260px;max-width:360px;word-break:break-word}.sel-detail table{width:max-content !important;min-width:100%}.sel-cards{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px}.sel-card{border:1px solid #d7dce3;background:#fff;border-radius:6px;padding:9px 12px;cursor:pointer;min-width:92px}.sel-card.on{border-color:#263241;background:#263241;color:#fff}.sel-card b{display:block;font-size:20px}.sel-table{width:100%;border-collapse:collapse;font-size:13px}.sel-table th,.sel-table td{border-bottom:1px solid #eceff3;padding:7px 8px;text-align:left;vertical-align:top;white-space:nowrap}.sel-table th{background:#fafafa;font-weight:600}.sel-table th.sel-sort{cursor:pointer}.sel-name{white-space:normal;min-width:240px;max-width:420px;word-break:break-word}.sel-spec{color:#777;font-size:12px;margin-top:3px}.sel-exp{border:1px solid #d7dce3;background:#fff;border-radius:5px;width:26px;height:24px;cursor:pointer}.sel-badge{display:inline-block;border-radius:5px;padding:2px 6px;font-size:12px}.sel-g1{background:#e7f6ec;color:#137333}.sel-g2{background:#eef1f5;color:#526070}.sel-g3{background:#fdeaea;color:#b42318}.sel-gp{background:#fff6d7;color:#8a5a00}.sel-kind{background:#f1f3f5;color:#3b4552}.sel-profit{background:#e7f6ec;color:#137333}.sel-traffic{background:#fff1e5;color:#a34700}.sel-detail{background:#fcfcfd}.sel-detail table{width:100%;border-collapse:collapse;margin:4px 0 6px}.sel-detail th,.sel-detail td{border-bottom:1px solid #eee;padding:6px 8px;text-align:left;white-space:nowrap}.sel-gap{color:#888;font-size:12px;margin:7px 0}.sel-na{color:#bbb}";
+      st.textContent=".sel-wrap{overflow-x:auto;max-width:100%}.sel-table{width:max-content !important;min-width:100%}.sel-table>tbody>tr>td:nth-child(2),.sel-table>thead>tr>th:nth-child(2){white-space:normal !important;min-width:260px;max-width:360px;word-break:break-word}.sel-detail table{width:max-content !important;min-width:100%}.sel-cards{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px}.sel-card{border:1px solid #d7dce3;background:#fff;border-radius:6px;padding:9px 12px;cursor:pointer;min-width:92px}.sel-card.on{border-color:#263241;background:#263241;color:#fff}.sel-card b{display:block;font-size:20px}.sel-table{width:100%;border-collapse:collapse;font-size:13px}.sel-table th,.sel-table td{border-bottom:1px solid #eceff3;padding:7px 8px;text-align:left;vertical-align:top;white-space:nowrap}.sel-table th{background:#fafafa;font-weight:600}.sel-table th.sel-sort{cursor:pointer}.sel-name{white-space:normal;min-width:240px;max-width:420px;word-break:break-word}.sel-spec{color:#777;font-size:12px;margin-top:3px}.sel-exp{border:1px solid #d7dce3;background:#fff;border-radius:5px;width:26px;height:24px;cursor:pointer}.sel-badge{display:inline-block;border-radius:5px;padding:2px 6px;font-size:12px}.sel-g1{background:#e7f6ec;color:#137333}.sel-g2{background:#eef1f5;color:#526070}.sel-g3{background:#fdeaea;color:#b42318}.sel-gp{background:#fff6d7;color:#8a5a00}.sel-kind{background:#f1f3f5;color:#3b4552}.sel-profit{background:#e7f6ec;color:#137333}.sel-traffic{background:#fff1e5;color:#a34700}.sel-detail{background:#f7f8fa;padding:10px 12px 12px !important}.sel-dt{background:#fff;border:1px solid #e6e9ee;border-radius:8px;border-collapse:separate !important;border-spacing:0;overflow:hidden}.sel-dt th{background:#f3f5f8 !important;color:#5b6573;font-weight:600;font-size:12px;padding:8px 12px !important}.sel-dt td{padding:9px 12px !important;border-bottom:1px solid #f0f2f5 !important;vertical-align:middle !important}.sel-dt tbody tr:hover td{background:#fafbfc}.sel-h{font-weight:400;color:#98a2b3;font-size:11px;margin-left:4px}.sel-p{display:flex;align-items:center;gap:6px}.sel-pp{font-size:15px;font-weight:600;color:#1d2530;font-variant-numeric:tabular-nums}.sel-ps{color:#7a8594;font-size:12px;margin-top:2px;white-space:nowrap}.sel-num{text-align:right;font-variant-numeric:tabular-nums}.sel-shop{min-width:150px}.sel-t{font-style:normal;font-size:11px;padding:1px 6px;border-radius:10px}.sel-tr{background:#fdeaea;color:#b42318}.sel-ty{background:#fff4d6;color:#8a5a00}.sel-ours td{background:#f1f8f3 !important}.sel-detail table{width:100%;border-collapse:collapse;margin:4px 0 6px}.sel-detail th,.sel-detail td{border-bottom:1px solid #eee;padding:6px 8px;text-align:left;white-space:nowrap}.sel-gap{color:#888;font-size:12px;margin:7px 0}.sel-na{color:#bbb}";
       document.head.appendChild(st);
     }
     if(!window.__selBound){
@@ -394,25 +394,32 @@ var PAGES = {
       return '<button class="sel-card '+(filter===g?'on':'')+'" data-grade="'+g+'"><b>'+rvEsc(n)+'</b>'+rvEsc(label)+'</button>';
     }
     function detail(r,i){
-      // Damon 0915:一家店一条,分美团/饿了么两组(到手价·起送·月销),没有就写「0 未采集」
-      var NA = '<span class="sel-na">0 未采集</span>';
-      function m(v){ return v==null ? NA : rvMoney(v); }
-      function n(v){ return v==null ? NA : rvN(v); }
+      // Damon 0915:美团一格压缩=到手价 + 起送·时间 + 月销;没有写「未采集」
+      var NA = '<span class="sel-na">未采集</span>';
+      function plat(price, dmin, eta, sales, tags){
+        if (price==null && dmin==null && sales==null) return NA;
+        var sub = [];
+        sub.push(dmin==null ? '起送<span class="sel-na">未采</span>' : '起送'+rvEsc(Number(dmin).toFixed(1).replace(/\.0$/,'')));
+        if (eta!=null) sub.push(rvEsc(eta)+'分钟');
+        sub.push('月销 '+(sales==null?'<span class="sel-na">未采</span>':'<b>'+rvEsc(sales)+'</b>'));
+        return '<div class="sel-p"><span class="sel-pp">'+(price==null?'<span class="sel-na">—</span>':rvEsc(Number(price).toFixed(2)))+'</span>'+(tags||'')+'</div><div class="sel-ps">'+sub.join(' · ')+'</div>';
+      }
       var shops = (r.shops || []).map(function(s){
+        var tags = (s.small_unit?'<i class="sel-t sel-tr">单条?</i>':'')+(s.is_first_price?'<i class="sel-t sel-ty">首件</i>':'');
         // 现有对手数据全部来自美团(手机美团OCR + 美团H5),饿了么尚未采集
-        return '<tr><td>'+rvEsc(s.shop)+'</td>'
-          +'<td>'+m(s.price)+(s.small_unit?' <span class="sel-badge sel-g3">疑似单条/小规格</span>':'')+(s.is_first_price?' <span class="sel-badge sel-gp">首件价</span>':'')+'</td><td>'+m(s.delivery_min)+'</td><td>'+n(s.monthly_sales)+'</td>'
-          +'<td>'+NA+'</td><td>'+NA+'</td><td>'+NA+'</td>'
-          +'<td>'+rvMoney(s.orig_price)+'</td><td>'+rvN(s.distance)+'</td><td>'+pct01(s.est_margin)+'</td><td><span class="sel-badge '+kindCls(s.shop_kind)+'">'+rvEsc(s.shop_kind)+'</span></td></tr>';
+        return '<tr><td class="sel-shop">'+rvEsc(s.shop)+(s.distance?'<div class="sel-ps">'+rvEsc(s.distance)+'</div>':'')+'</td>'
+          +'<td>'+plat(s.price, s.delivery_min, s.eta_min, s.monthly_sales, tags)+'</td>'
+          +'<td>'+NA+'</td>'
+          +'<td class="sel-num">'+(s.orig_price==null?'<span class="sel-na">—</span>':rvEsc(Number(s.orig_price).toFixed(2)))+'</td>'
+          +'<td class="sel-num">'+pct01(s.est_margin)+'</td><td><span class="sel-badge '+kindCls(s.shop_kind)+'">'+rvEsc(s.shop_kind)+'</span></td></tr>';
       }).join("");
       var o = r.ours || {};
-      shops += '<tr style="background:#f3f8f4"><td><b>我方</b><div class="sel-spec">线下 '+rvMoney(o.our_store_price)+' · 利润率 '+pct01(o.store_margin)+'<br>成本 '+rvMoney(o.cost)+' · 库存 '+rvN(o.cur_stock)+' · 180天 '+rvN(o.qty_180)+'</div></td>'
-        +'<td>'+m(o.our_mt_price)+'</td><td>'+NA+'</td><td>'+NA+'</td>'
-        +'<td>'+m(o.our_ele_price)+'</td><td>'+NA+'</td><td>'+NA+'</td>'
-        +'<td></td><td></td><td>美团 '+(o.our_mt_price==null?'—':pct01(o.mt_margin))+' / 饿了么 '+(o.our_ele_price==null?'—':pct01(o.ele_margin))+'(扣5%)</td><td></td></tr>';
-      return '<tr class="sel-detail-row" data-i="'+i+'" style="display:none"><td></td><td colspan="13" class="sel-detail"><table><thead>'
-        +'<tr><th rowspan="2">店名</th><th colspan="3" style="text-align:center">美团</th><th colspan="3" style="text-align:center">饿了么</th><th rowspan="2">划线价</th><th rowspan="2">距离</th><th rowspan="2">按我方成本估利润率</th><th rowspan="2">款型</th></tr>'
-        +'<tr><th>到手价</th><th>起送</th><th>月销</th><th>到手价</th><th>起送</th><th>月销</th></tr>'
+      shops += '<tr class="sel-ours"><td class="sel-shop"><b>我方</b><div class="sel-ps">线下 '+rvMoney(o.our_store_price)+' · 利润率 '+pct01(o.store_margin)+'</div><div class="sel-ps">成本 '+rvMoney(o.cost)+' · 库存 '+rvN(o.cur_stock)+' · 180天 '+rvN(o.qty_180)+'</div></td>'
+        +'<td>'+(o.our_mt_price==null?NA:'<div class="sel-p"><span class="sel-pp">'+rvEsc(Number(o.our_mt_price).toFixed(2))+'</span></div><div class="sel-ps">利润率 '+pct01(o.mt_margin)+'(扣5%)</div>')+'</td>'
+        +'<td>'+(o.our_ele_price==null?NA:'<div class="sel-p"><span class="sel-pp">'+rvEsc(Number(o.our_ele_price).toFixed(2))+'</span></div><div class="sel-ps">利润率 '+pct01(o.ele_margin)+'(扣5%)</div>')+'</td>'
+        +'<td></td><td></td><td></td></tr>';
+      return '<tr class="sel-detail-row" data-i="'+i+'" style="display:none"><td></td><td colspan="13" class="sel-detail"><table class="sel-dt"><thead>'
+        +'<tr><th>店</th><th>美团 <span class="sel-h">到手 / 起送·时间 / 月销</span></th><th>饿了么 <span class="sel-h">到手 / 起送·时间 / 月销</span></th><th class="sel-num">划线价</th><th class="sel-num">按我方成本估利润</th><th>款型</th></tr>'
         +'</thead><tbody>'+shops+'</tbody></table><div class="sel-gap">数据缺口:'+(r.gaps&&r.gaps.length?rvEsc(r.gaps.join("、")):"无")+'</div></td></tr>';
     }
     var body = rows.map(function(r,i){

@@ -60,7 +60,8 @@ ocr_raw AS (
 ocr_delivery AS (
   -- 起送价是店级字段,只在少数店铺页行里有,⛔不能只从已匹配行取
   SELECT CASE WHEN shop_name LIKE '%爪壮壮%' THEN '爪壮壮' WHEN shop_name LIKE '%邻小虎%' THEN '邻小虎' END AS shop,
-         max(shop_delivery_min)::numeric AS delivery_min
+         max(shop_delivery_min)::numeric AS delivery_min,
+         (mode() WITHIN GROUP (ORDER BY eta_min))::int AS eta_min
     FROM public.petstore_rival_quotes_app
    WHERE shop_name LIKE '%爪壮壮%' OR shop_name LIKE '%邻小虎%'
    GROUP BY 1
@@ -90,7 +91,8 @@ SELECT COALESCE(o.product_code, h.product_code) AS product_code,
        d.delivery_min,
        h.distance,
        h.shop_month_sales,
-       COALESCE(o.captured_at, h.captured_at) AS captured_at
+       COALESCE(o.captured_at, h.captured_at) AS captured_at,
+       d.eta_min
   FROM ocr_best o
   FULL JOIN h5_best h
     ON h.product_code = o.product_code

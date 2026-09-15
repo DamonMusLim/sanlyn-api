@@ -9,7 +9,7 @@ SELECT product_code, our_name, spec_text, total_sales, shop_count, max_sales, ma
 
 const SHOPS_SQL = `
 SELECT product_code, shop, source, monthly_sales, price, orig_price, is_first_price,
-       delivery_min, distance, shop_month_sales, captured_at
+       delivery_min, distance, shop_month_sales, captured_at, eta_min
   FROM public.v_selection_shop
  WHERE product_code = ANY($1::text[])
  ORDER BY product_code, monthly_sales DESC NULLS LAST, captured_at DESC NULLS LAST`;
@@ -134,6 +134,7 @@ function build(rows, shops, costs) {
         orig_price: num(s.orig_price),
         is_first_price: !!s.is_first_price,
         delivery_min: num(s.delivery_min),
+        eta_min: num(s.eta_min),
         distance: s.distance || null,
         shop_month_sales: s.shop_month_sales || null,
         captured_at: s.captured_at,
