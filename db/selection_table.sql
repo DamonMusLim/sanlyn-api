@@ -192,4 +192,4 @@ SELECT ss.product_code,
   LEFT JOIN max_shop ms ON ms.product_code = ss.product_code
   LEFT JOIN eff_min em ON em.product_code = ss.product_code
   LEFT JOIN raw_min rm ON rm.product_code = ss.product_code
- WHERE ss.total_sales >= 20;
+ WHERE ss.total_sales > 10;  -- Damon 0915:超过10+销量的品

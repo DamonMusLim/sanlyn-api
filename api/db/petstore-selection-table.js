@@ -60,7 +60,7 @@ function ceilNeed(monthlyDemand, curStock) {
 
 function gradeOf(r, cost, unitProfit, unitProfitMt, margin) {
   const eff = num(r.eff_min_price);
-  if (cost === null || cost <= 0.05 || eff === null || cost > eff * 3) return "待核";
+  if (cost === null || cost <= 0.2 || eff === null || cost > eff * 3) return "待核";
   if (unitProfitMt !== null && unitProfitMt < 0) return "3";
   if (margin !== null && margin < 0.05) return "3";
   if (num(r.total_sales) >= 50 && unitProfit !== null && unitProfit >= 2 && margin !== null && margin >= 0.15) return "1";
@@ -89,7 +89,7 @@ function adviceOf(r, grade) {
 function gapsOf(r, cost, shops) {
   const gaps = [];
   const eff = num(r.eff_min_price);
-  if (cost === null || cost <= 0.05 || (eff !== null && cost > eff * 3)) gaps.push("成本缺失或异常");
+  if (cost === null || cost <= 0.2 || (eff !== null && cost > eff * 3)) gaps.push("成本缺失或异常");
   if (eff === null) gaps.push("无有效最低价");
   if (num(r.cur_stock) === null) gaps.push("库存为负/未知");
   if (!shops.some((s) => num(s.delivery_min) !== null)) gaps.push("起送价缺失");
