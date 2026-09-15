@@ -68,16 +68,17 @@ function rvAddStyle(){
 var PAGES = {
   rival: async function(){
     var tabs = [
+      ["sel","选品表"],
       ["ov","竞品总览"],
       ["opp","机会商品"],
       ["l7","定价决策"]
     ];
-    var ok = {ov:1,opp:1,l7:1};
+    var ok = {sel:1,ov:1,opp:1,l7:1};
     if(!window.__rivalTab){
-      try { window.__rivalTab = localStorage.getItem("dataops_rival_tab") || "ov"; }
-      catch(e){ window.__rivalTab = "ov"; }
+      try { window.__rivalTab = localStorage.getItem("dataops_rival_tab") || "sel"; }
+      catch(e){ window.__rivalTab = "sel"; }
     }
-    if(!ok[window.__rivalTab]) window.__rivalTab = "ov";
+    if(!ok[window.__rivalTab]) window.__rivalTab = "sel";
     try { localStorage.setItem("dataops_rival_tab", window.__rivalTab); } catch(e){}
     if(!$("rvtabs-style")){
       var st = document.createElement("style");
@@ -86,7 +87,7 @@ var PAGES = {
       document.head.appendChild(st);
     }
     var t = window.__rivalTab;
-    var html = await PAGES[t==="ov"?"rivalOv":t==="opp"?"rivalOpp":"l7"]();
+    var html = await PAGES[t==="sel"?"rivalSel":t==="ov"?"rivalOv":t==="opp"?"rivalOpp":"l7"]();
     if($("nrival")) $("nrival").textContent = "";
     return '<div class="rvtabs">'+tabs.map(function(x){
       return '<button class="rvtab '+(x[0]===t?'on':'')+'" data-t="'+x[0]+'">'+x[1]+'</button>';
@@ -345,6 +346,67 @@ var PAGES = {
     return h;
   },
 
+  rivalSel: async function(){
+    rvAddStyle();
+    if(!$("sel-style")){
+      var st=document.createElement("style"); st.id="sel-style";
+      st.textContent=".sel-wrap{overflow-x:auto}.sel-cards{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px}.sel-card{border:1px solid #d7dce3;background:#fff;border-radius:6px;padding:9px 12px;cursor:pointer;min-width:92px}.sel-card.on{border-color:#263241;background:#263241;color:#fff}.sel-card b{display:block;font-size:20px}.sel-table{width:100%;border-collapse:collapse;font-size:13px}.sel-table th,.sel-table td{border-bottom:1px solid #eceff3;padding:7px 8px;text-align:left;vertical-align:top;white-space:nowrap}.sel-table th{background:#fafafa;font-weight:600}.sel-table th.sel-sort{cursor:pointer}.sel-name{white-space:normal;min-width:240px;max-width:420px;word-break:break-word}.sel-spec{color:#777;font-size:12px;margin-top:3px}.sel-exp{border:1px solid #d7dce3;background:#fff;border-radius:5px;width:26px;height:24px;cursor:pointer}.sel-badge{display:inline-block;border-radius:5px;padding:2px 6px;font-size:12px}.sel-g1{background:#e7f6ec;color:#137333}.sel-g2{background:#eef1f5;color:#526070}.sel-g3{background:#fdeaea;color:#b42318}.sel-gp{background:#fff6d7;color:#8a5a00}.sel-kind{background:#f1f3f5;color:#3b4552}.sel-profit{background:#e7f6ec;color:#137333}.sel-traffic{background:#fff1e5;color:#a34700}.sel-detail{background:#fcfcfd}.sel-detail table{width:100%;border-collapse:collapse;margin:4px 0 6px}.sel-detail th,.sel-detail td{border-bottom:1px solid #eee;padding:6px 8px;text-align:left;white-space:nowrap}.sel-gap{color:#888;font-size:12px;margin:7px 0}.sel-na{color:#bbb}";
+      document.head.appendChild(st);
+    }
+    if(!window.__selBound){
+      window.__selBound = 1;
+      document.addEventListener("click", function(e){
+        var ex = e.target.closest(".sel-exp[data-i]");
+        if(ex){
+          var tr = document.querySelector('.sel-detail-row[data-i="'+ex.dataset.i+'"]');
+          if(tr){ var hide = tr.style.display === "none"; tr.style.display = hide ? "" : "none"; ex.textContent = hide ? "▾" : "▸"; }
+          return;
+        }
+        var card = e.target.closest(".sel-card[data-grade]");
+        if(card){
+          window.__selFilter = window.__selFilter === card.dataset.grade ? "" : card.dataset.grade;
+          show("rival"); return;
+        }
+        var sort = e.target.closest(".sel-sort[data-sort]");
+        if(sort){
+          var k = sort.dataset.sort;
+          window.__selSort = window.__selSort === k ? "-"+k : k;
+          show("rival"); return;
+        }
+      });
+    }
+    var data = await get("db/petstore-selection-table");
+    var rows = (data.rows || []).slice();
+    var filter = window.__selFilter || "";
+    var sortKey = window.__selSort || "-total_sales";
+    if(filter) rows = rows.filter(function(r){ return String(r.grade) === filter; });
+    rows.sort(function(a,b){
+      var desc = sortKey.charAt(0) === "-", k = desc ? sortKey.slice(1) : sortKey;
+      var av = Number(a[k]), bv = Number(b[k]);
+      if(!isFinite(av)) av = desc ? -Infinity : Infinity;
+      if(!isFinite(bv)) bv = desc ? -Infinity : Infinity;
+      return desc ? bv-av : av-bv;
+    });
+    function pct01(v){ return v===null||v===undefined ? '<span class="sel-na">—</span>' : rvPct(Number(v)*100); }
+    function kindCls(v){ return v==="流量款" ? "sel-traffic" : v==="利润款" ? "sel-profit" : "sel-kind"; }
+    function gradeCls(v){ return v==="1" ? "sel-g1" : v==="2" ? "sel-g2" : v==="3" ? "sel-g3" : "sel-gp"; }
+    function card(g, label, n){
+      return '<button class="sel-card '+(filter===g?'on':'')+'" data-grade="'+g+'"><b>'+rvEsc(n)+'</b>'+rvEsc(label)+'</button>';
+    }
+    function detail(r,i){
+      var shops = (r.shops || []).map(function(s){
+        return '<tr><td>'+rvEsc(s.shop)+'</td><td>'+rvEsc(s.source)+'</td><td>'+rvN(s.monthly_sales)+'</td><td>'+rvMoney(s.price)+'</td><td>'+rvMoney(s.orig_price)+'</td><td>'+(s.is_first_price?'是':'否')+'</td><td>'+rvMoney(s.delivery_min)+'</td><td>'+rvN(s.distance)+'</td><td>'+rvN(s.shop_month_sales)+'</td><td>'+pct01(s.est_margin)+'</td><td><span class="sel-badge '+kindCls(s.shop_kind)+'">'+rvEsc(s.shop_kind)+'</span></td></tr>';
+      }).join("");
+      var o = r.ours || {};
+      shops += '<tr><td>我方</td><td>own</td><td></td><td>'+rvMoney(o.our_store_price)+'</td><td>'+rvMoney(o.our_mt_price)+'</td><td></td><td></td><td></td><td></td><td>线下 '+pct01(o.store_margin)+' / 美团 '+pct01(o.mt_margin)+'</td><td>成本 '+rvMoney(o.cost)+' · 库存 '+rvN(o.cur_stock)+' · 180天 '+rvN(o.qty_180)+'</td></tr>';
+      return '<tr class="sel-detail-row" data-i="'+i+'" style="display:none"><td></td><td colspan="13" class="sel-detail"><table><thead><tr><th>店名</th><th>来源</th><th>月销</th><th>到手价</th><th>划线价</th><th>首件价?</th><th>起送</th><th>距离</th><th>店月销</th><th>按我方成本估利润率</th><th>款型</th></tr></thead><tbody>'+shops+'</tbody></table><div class="sel-gap">数据缺口:'+(r.gaps&&r.gaps.length?rvEsc(r.gaps.join("、")):"无")+'</div></td></tr>';
+    }
+    var body = rows.map(function(r,i){
+      return '<tr><td><button class="sel-exp" data-i="'+i+'">▸</button></td><td class="sel-name">'+rvEsc(r.our_name||r.product_code)+'<div class="sel-spec">'+rvEsc(r.spec_text||"")+'</div></td><td>'+rvN(r.total_sales)+'</td><td>'+rvMoney(r.eff_min_price)+'<div class="sel-spec">'+rvEsc(r.eff_min_shop||"")+'</div></td><td>'+rvN(r.max_sales)+'<div class="sel-spec">'+rvEsc(r.max_shop||"")+'</div></td><td>'+rvMoney(r.cost)+'</td><td>'+rvMoney(r.unit_profit)+' / '+rvMoney(r.unit_profit_mt)+'</td><td>'+pct01(r.margin)+'</td><td><span class="sel-badge '+gradeCls(r.grade)+'">'+rvEsc(r.grade)+'</span></td><td><span class="sel-badge '+kindCls(r.kind)+'">'+rvEsc(r.kind)+'</span></td><td>'+rvMoney(r.our_store_price)+' / '+rvMoney(r.our_mt_price)+'</td><td>'+rvN(r.cur_stock)+'</td><td>'+rvN(r.qty_180)+'</td><td>'+rvEsc(r.advice||"")+'</td></tr>'+detail(r,i);
+    }).join("");
+    var c = data.counts || {};
+    return '<div class="sel-wrap"><div class="sel-cards">'+card("1","评估1",c.grade1||0)+card("2","评估2",c.grade2||0)+card("3","评估3",c.grade3||0)+card("待核","待核",c.pending||0)+'</div><table class="sel-table"><thead><tr><th></th><th>产品</th><th class="sel-sort" data-sort="total_sales">总月销</th><th>有效最低价(店)</th><th>最高月销(店)</th><th>成本</th><th>每件赚(线下/美团)</th><th class="sel-sort" data-sort="margin">利润率</th><th>评估</th><th>款型</th><th>我方价(线下/美团)</th><th>库存</th><th>180天</th><th>建议</th></tr></thead><tbody>'+body+'</tbody></table></div>';
+  },
   rivalOv: async function(){
     var d = await rvLive();
     if (d.error || d.ok===false) return verdict("🔴 "+(d.error||d.message||"取数失败"),"red"), "";
@@ -961,17 +1023,17 @@ var PAGES = {
 };
 
 async function show(p){
-  var rivalTitles = {ov:"竞品总览 · 对手打法",opp:"机会商品 · 什么好卖",l7:"定价决策 · 我方 vs 附近"};
-  var rivalOk = {ov:1,opp:1,l7:1};
+  var rivalTitles = {sel:"选品表 · 进不进、进多少",ov:"竞品总览 · 对手打法",opp:"机会商品 · 什么好卖",l7:"定价决策 · 我方 vs 附近"};
+  var rivalOk = {sel:1,ov:1,opp:1,l7:1};
   if(p==="l12"){ window.__rivalTab = "ov"; try { localStorage.setItem("dataops_rival_tab", "ov"); } catch(e){} p = "rival"; }
   if(p==="l7"){ window.__rivalTab = "l7"; try { localStorage.setItem("dataops_rival_tab", "l7"); } catch(e){} p = "rival"; }
   if(p==="rival" && !window.__rivalTab){
-    try { window.__rivalTab = localStorage.getItem("dataops_rival_tab") || "ov"; }
-    catch(e){ window.__rivalTab = "ov"; }
+    try { window.__rivalTab = localStorage.getItem("dataops_rival_tab") || "sel"; }
+    catch(e){ window.__rivalTab = "sel"; }
   }
-  if(p==="rival" && !rivalOk[window.__rivalTab]) window.__rivalTab = "ov";
+  if(p==="rival" && !rivalOk[window.__rivalTab]) window.__rivalTab = "sel";
   document.querySelectorAll(".snav").forEach(function(a){a.classList.toggle("on", a.dataset.p===p)});
-  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",rival:rivalTitles[window.__rivalTab||"ov"],l10:"附近实时 · 美团H5",l11:"竞品历史库 · Excel导出2026-06-17 · ⛔已89天未更新,不代表当前在售",l12:"竞品今日行情 · 对手打法",l8:"竞店商品档(逐行明细,已并入历史库)",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
+  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",rival:rivalTitles[window.__rivalTab||"sel"],l10:"附近实时 · 美团H5",l11:"竞品历史库 · Excel导出2026-06-17 · ⛔已89天未更新,不代表当前在售",l12:"竞品今日行情 · 对手打法",l8:"竞店商品档(逐行明细,已并入历史库)",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
   $("body").innerHTML = '<div class="verdict">读取中…</div>';
   try { $("body").innerHTML = await PAGES[p](); }
   catch(e){ verdict("🔴 "+e.message,"red"); $("body").innerHTML=""; }
