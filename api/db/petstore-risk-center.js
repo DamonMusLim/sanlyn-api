@@ -19,9 +19,20 @@ const PROBLEMS = [
   { key: "d90", label: "61-90天", tier: "yellow", action: "观察", assignee: "" },
 ];
 
+const CACHE_TTL_MS = 60000;
+let riskCenterCache = { at: 0, data: null };
+
 function json(res, code, body) { return res.status(code).json(body); }
 function n(v) { const x = Number(v); return Number.isFinite(x) ? x : null; }
 function groupOf(data, key) { return (data.groups || []).find((g) => g.key === key) || { rows: [], count: 0, amount_by_price: null }; }
+
+export function invalidateRiskCenterCache() {
+  riskCenterCache = { at: 0, data: null };
+}
+
+function withCacheMeta(data, cached, at) {
+  return { ...data, cached, generated_at: new Date(at).toISOString() };
+}
 
 function addRow(map, row, problem, why) {
   const code = row.product_code;
@@ -86,7 +97,7 @@ export async function buildRiskCenter(pool) {
   }
 
   const taskRes = await pool.query(
-    `SELECT id, status, next_holder, created_at, dedupe_key
+    `SELECT id, title, status, next_holder, created_at, due_at, dedupe_key
        FROM public.tasks
       WHERE domain = 'petstore'
         AND dedupe_key LIKE 'risk:%'
@@ -94,7 +105,7 @@ export async function buildRiskCenter(pool) {
       ORDER BY created_at DESC NULLS LAST, id`);
   const allOpenTasks = taskRes.rows.map((t) => {
     const m = String(t.dedupe_key || "").match(/^risk:([^:]+):(.+)$/);
-    return { id: t.id, status: t.status, next_holder: t.next_holder, created_at: t.created_at,
+    return { id: t.id, title: t.title, status: t.status, next_holder: t.next_holder, created_at: t.created_at, due_at: t.due_at,
       problem_key: m ? m[1] : null, product_code: m ? m[2] : null, dedupe_key: t.dedupe_key };
   });
   const taskByCode = new Map();
@@ -142,7 +153,15 @@ export default async function handler(req, res) {
   try {
     if (req.headers["x-gateway-auth"] !== "gw-dataops-0903") { if (!requireAuth(req, res)) return; }
     if (req.method !== "GET") return json(res, 405, { ok: false, error: "method_not_allowed" });
-    return json(res, 200, await buildRiskCenter(getPool()));
+
+    const now = Date.now();
+    if (riskCenterCache.data && now - riskCenterCache.at < CACHE_TTL_MS) {
+      return json(res, 200, withCacheMeta(riskCenterCache.data, true, riskCenterCache.at));
+    }
+
+    const data = await buildRiskCenter(getPool());
+    riskCenterCache = { at: Date.now(), data };
+    return json(res, 200, withCacheMeta(data, false, riskCenterCache.at));
   } catch (err) {
     console.error("[petstore-risk-center]", err);
     return json(res, 500, { ok: false, error: "server_error" });

@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { getPool, setCors } from "../db.js";
-import { buildRiskCenter } from "./petstore-risk-center.js";
+import { buildRiskCenter, invalidateRiskCenterCache } from "./petstore-risk-center.js";
 
 const PROBLEMS = [
   { key: "expired_onsale", label: "已过期仍在售", action: "下架+核日期", assignee: "PET-12", due: 1 },
@@ -140,6 +140,7 @@ export default async function handler(req, res) {
     const back = ids.length ? await client.query("SELECT id FROM public.tasks WHERE id = ANY($1::text[])", [ids]) : { rowCount: 0 };
     if (back.rowCount !== ids.length) throw new Error("created_readback_failed");
     await client.query("COMMIT");
+    invalidateRiskCenterCache();
     return json(res, 200, { ok: true, created, skipped });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
