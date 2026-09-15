@@ -137,8 +137,8 @@ export async function buildProductAnalysis(pool) {
   const taskByCode = new Map();
   for (const t of openTasks) {
     const parts = String(t.dedupe_key || "").split(":");
-    const code = parts[parts.length - 1];
-    if (code && !taskByCode.has(code)) taskByCode.set(code, t);
+    const key = parts.length >= 3 ? parts[1] + ":" + parts[parts.length - 1] : "";
+    if (key && !taskByCode.has(key)) taskByCode.set(key, t);
   }
 
   let stuckValue = 0, deadValue = 0, movingN = 0, inStockN = 0, costMissingN = 0;
@@ -198,7 +198,7 @@ export async function buildProductAnalysis(pool) {
   const gapTop = categories.slice().sort((a, b) => Math.abs(n(b.gap_pt) || 0) - Math.abs(n(a.gap_pt) || 0))[0] || null;
   const medRows = medRaw.map((r) => {
     const cx = complianceOf(r);
-    const t = taskByCode.get(r.product_code);
+    const t = taskByCode.get(cx.action + ":" + r.product_code);
     return {
       product_code: r.product_code,
       product_name: r.product_name,
