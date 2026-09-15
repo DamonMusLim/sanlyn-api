@@ -32,6 +32,40 @@ function ymdShanghai(d = new Date()) {
   }).format(d).replaceAll("-", "");
 }
 
+function isoShanghai(v) {
+  if (v === null || v === undefined) return "未知";
+  const d = v instanceof Date ? v : new Date(v);
+  if (Number.isNaN(d.getTime())) return "未知";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(d).reduce((acc, p) => {
+    acc[p.type] = p.value;
+    return acc;
+  }, {});
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}+08:00`;
+}
+
+function actorOf(req) {
+  if (req.user && req.user.username) return req.user.username;
+  const gwUser = s(req.headers["x-gateway-user"]);
+  if (req.headers["x-gateway-auth"] === GATEWAY && /^[A-Za-z0-9_.@-]{1,64}$/.test(gwUser)) return "gw:" + gwUser;
+  return "gateway";
+}
+
+function actorSourceOf(req) {
+  if (req.user && req.user.username) return "user";
+  const gwUser = s(req.headers["x-gateway-user"]);
+  if (req.headers["x-gateway-auth"] === GATEWAY && /^[A-Za-z0-9_.@-]{1,64}$/.test(gwUser)) return "gateway_header";
+  return "gateway_fallback";
+}
+
 function rid() {
   return crypto.randomBytes(3).toString("hex");
 }
@@ -64,7 +98,7 @@ function evidence(row) {
     confidence: row.confidence,
     our_status: row.our_status,
     is_hook: row.is_hook,
-    captured_at: row.captured_at,
+    captured_at: isoShanghai(row.captured_at),
     view: "v_rival_opportunity"
   };
 }
@@ -78,7 +112,7 @@ function reasonText(row) {
     "匹配状态:" + s(row.match_status),
     "置信度:" + s(row.confidence),
     "引流:" + (row.is_hook ? "是" : "否"),
-    "采集时间:" + s(row.captured_at),
+    "采集时间:" + isoShanghai(row.captured_at),
     "视图:v_rival_opportunity"
   ].join(" / ");
 }
@@ -245,9 +279,9 @@ export default async function handler(req, res) {
         VALUES ($1,'created','human',$2,$3,$4::jsonb)`,
         [
           taskId,
-          (req.user && req.user.username) || "gateway",
+          actorOf(req),
           "竞品机会池建单",
-          JSON.stringify({ action, intent_id: intentId, evidence: ev })
+          JSON.stringify({ action, intent_id: intentId, actor_source: actorSourceOf(req), evidence: ev })
         ]);
 
       const rb = await client.query(`
