@@ -57,7 +57,7 @@ export default async function handler(req, res) {
       return json(res, 400, { ok: false, error: "gap_empty" });
     }
 
-    const dedupeKey = "health:" + key;
+    const dedupeKey = "storehealth:" + key;  // 0916: health: 被个人健康模块占用
     const dup = await client.query(
       `SELECT id FROM public.tasks WHERE dedupe_key=$1 AND status NOT IN ('done','cancelled') LIMIT 1`,
       [dedupeKey]);

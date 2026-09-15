@@ -145,7 +145,7 @@ var PAGES = {
     }
     function listHtml(){ return '<div id="board-list-host">读取中…</div>'; }
     function taskOf(key){
-      var t = (d.open_tasks||[]).find(function(x){return x.dedupe_key==="health:"+key});
+      var t = (d.open_tasks||[]).find(function(x){return x.dedupe_key==="storehealth:"+key});
       return t ? E(t.id) : null;
     }
     function healthHtml(){

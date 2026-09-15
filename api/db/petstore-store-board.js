@@ -47,7 +47,7 @@ async function loadOpenTasks(pool) {
   const r = await pool.query(
     `SELECT id, title, status, next_holder, created_at, due_at, dedupe_key
        FROM public.tasks
-      WHERE dedupe_key LIKE 'health:%'
+      WHERE dedupe_key LIKE 'storehealth:%'  -- 0916: health: 前缀被个人健康模块占用,⛔别用
         AND status NOT IN ('done','cancelled')
       ORDER BY created_at DESC NULLS LAST, id`);
   return r.rows;
