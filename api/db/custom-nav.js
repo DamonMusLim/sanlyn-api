@@ -6,7 +6,8 @@ const PREFIX = "workbench.custom_nav.";
 const MAX_ITEMS = 30;
 const KNOWN_ITEMS = [
   ["工作台", "/wb"], ["运价管理", "/rates"], ["海运出口", "/ship-grid"], ["订单录入", "/order-entry"],
-  ["服务项目", "/order-services"], ["订单人员槽", "/order-staff-slots"], ["上海-舱单发送", "/manifest-send"],
+  ["服务项目", "/order-services"], ["订单人员槽", "/order-staff-slots"], ["舱单字段补齐", "/manifest-fields"],
+  ["报文数据通道", "/manifest-message-channel"], ["上海-舱单发送", "/manifest-send"],
   ["青岛-舱单发送", "/qingdao-manifest-send"], ["天津/大连-舱单", "/tianjin-dalian-manifest-send"],
   ["厦门-舱单发送", "/xiamen-manifest-send"], ["AFR发送", "/afr-send"], ["AMS发送", "/ams-send"],
   ["ISF发送", "/isf-send"], ["ICS2", "/ics2-send"], ["在线报关", "/online-customs"], ["VGM发送", "/vgm-send"],

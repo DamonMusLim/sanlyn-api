@@ -7,6 +7,7 @@
   --hgj-bg: #F2F3F5;
   --hgj-card: #FFFFFF;
   --hgj-primary: #006AFF;
+  --hgj-on-primary: #FFFFFF;
   --hgj-primary-bg: #E6F4FF;
   --hgj-title: #282828;
   --hgj-side-bg: #00132E;
@@ -24,6 +25,7 @@
     --hgj-bg: #101418;
     --hgj-card: #1A2028;
     --hgj-primary: #006AFF;
+    --hgj-on-primary: #FFFFFF;
     --hgj-primary-bg: #102C52;
     --hgj-title: #F2F4F7;
     --hgj-side-bg: #00132E;
@@ -71,7 +73,7 @@
 /* HGJ small tab button such as "未开票" and "未核销". */
 .hgj-tabbtn {
   border: 1px solid var(--hgj-primary);
-  border-radius: 3px;
+  border-radius: 0;
   background: var(--hgj-primary-bg);
   color: var(--hgj-primary);
   font: 12px/1 var(--hgj-font);

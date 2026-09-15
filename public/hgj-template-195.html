@@ -22,10 +22,11 @@
     input{height:32px;padding:0 9px}
     textarea{width:100%;min-height:170px;padding:10px;resize:vertical}
     button{height:32px;padding:0 12px;cursor:pointer}
-    button.primary{border-color:var(--accent);background:var(--chip);color:var(--accent)}
+    button.primary{border-color:var(--accent);background:var(--accent);color:var(--hgj-card)}
     .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:10px}
     .metric{padding:13px 14px;background:var(--panel)}
     .num{font-size:24px;font-weight:700;margin-top:3px}
+    .metric-note{min-height:18px;margin-top:4px;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
     .bad{color:var(--bad)}.warn{color:var(--warn)}.ok{color:var(--accent)}
     .tabs{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
     .tab{border:1px solid var(--accent);background:var(--panel);color:var(--accent)}
@@ -47,6 +48,8 @@
     .kv div{display:grid;grid-template-columns:170px minmax(0,1fr);gap:10px;border-bottom:1px solid var(--line);padding-bottom:7px}
     .kv b{color:var(--accent);font-weight:700}.kv span{overflow-wrap:anywhere}.kv .missing span{color:var(--warn)}
     .empty{padding:24px;text-align:center;color:var(--muted)}
+    .contract{display:grid;gap:8px;margin-top:10px;color:var(--muted);font-size:12px}
+    .contract div{border-top:1px solid var(--line);padding-top:8px}
     @media(max-width:900px){.shell{display:block}.side{display:none}.wrap{padding:14px}.top,.editor{display:block}.actions{margin-top:10px}.metrics,.groups{grid-template-columns:1fr}table{display:block;overflow-x:auto;white-space:nowrap}}
   </style>
 </head>
@@ -62,19 +65,20 @@
       <header class="top">
         <div>
           <h1 class="title hgj-panel-title">海管家195模板</h1>
-          <div id="summary" class="sub">加载中</div>
+          <div id="summary" class="sub">v2026.09.15-1 · 生成时间 2026-09-15T00:00:00Z</div>
         </div>
         <div class="actions">
           <input id="recordKey" placeholder="订单号 / 业务编号 / 提单号">
+          <button id="openWb" type="button">工作台打开</button>
           <button id="reload" type="button">刷新</button>
           <button id="renderBtn" class="primary" type="button">渲染预览</button>
         </div>
       </header>
       <section class="metrics">
-        <div class="metric hgj-card"><div class="muted">占位符</div><div id="mTotal" class="num">未接入</div></div>
-        <div class="metric hgj-card"><div class="muted">已接入</div><div id="mReady" class="num">未接入</div></div>
-        <div class="metric hgj-card"><div class="muted">未接入</div><div id="mMissing" class="num bad">未接入</div></div>
-        <div class="metric hgj-card"><div class="muted">映射填充率</div><div id="mRate" class="num warn">未接入</div></div>
+        <div class="metric hgj-card"><div class="muted">占位符</div><div id="mTotal" class="num">未接入</div><div id="mTotalNote" class="metric-note">缺 summary.total；当前填充率 未接入</div></div>
+        <div class="metric hgj-card"><div class="muted">已接入</div><div id="mReady" class="num">未接入</div><div id="mReadyNote" class="metric-note">缺 ready 映射；当前填充率 未接入</div></div>
+        <div class="metric hgj-card"><div class="muted">未接入</div><div id="mMissing" class="num bad">未接入</div><div id="mMissingNote" class="metric-note">缺 not_connected 映射；当前填充率 未接入</div></div>
+        <div class="metric hgj-card"><div class="muted">真实填充率</div><div id="mRate" class="num warn">未接入</div><div id="mRateNote" class="metric-note">缺 summary.data_fill_rate；当前填充率 未接入</div></div>
       </section>
       <nav class="tabs">
         <button class="tab active" data-tab="mapping" type="button">映射表</button>
@@ -87,12 +91,17 @@
         <div class="panel-head"><div class="panel-title">通用渲染器</div><span id="previewMeta" class="muted">未接入字段会标注</span></div>
         <div class="body editor">
           <textarea id="templateText" spellcheck="false"></textarea>
-          <div id="preview" class="preview"></div>
+          <div>
+            <div id="preview" class="preview"></div>
+            <div id="contract" class="contract"></div>
+            <div id="mappingContract" class="contract"></div>
+          </div>
         </div>
       </section>
     </section>
   </main>
-  <script src="/hgj-template-renderer.js"></script>
-  <script src="/hgj-template-195.js"></script>
+  <script src="/public/wb-open-tab.js" data-protocol="sanlyn:open-tab"></script>
+  <script src="/public/hgj-template-renderer.js"></script>
+  <script src="/public/hgj-template-195.js"></script>
 </body>
 </html>

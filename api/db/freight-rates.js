@@ -1,6 +1,7 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { normalizeCarrier } from "./lib/portcharge-close-loop.js";
+import { matchBlacklist } from "./_blacklist.js";
 
 // 同 船司×货代×航线 且同柜型列有价,有效期不得重叠(运费中心蓝图 v1.4 决议⑤,2026-08-03)。
 // 排除已撤销(withdrawn)的旧价 —— 它们不该永远挡住新价录入。
@@ -82,6 +83,12 @@ export default async function handler(req, res) {
       if (Object.prototype.hasOwnProperty.call(body, "forwarder") && !String(body.forwarder || "").trim()) {
         return res.status(400).json({ success:false, error:"forwarder required" });
       }
+      if (Object.prototype.hasOwnProperty.call(body, "forwarder")) {
+        const hit = await matchBlacklist(pool, body.forwarder);
+        if (hit) {
+          return res.status(409).json({ success:false, error:"该货代在黑名单,不能录价:" + hit.name_cn, blacklisted:true });
+        }
+      }
       const old = await pool.query("SELECT * FROM freight_rates WHERE id = $1", [id]);
       if (!old.rows.length) return res.status(404).json({ success:false, error:"not found" });
       const overlap = await rejectRateOverlap(pool, { ...old.rows[0], ...body }, id);
@@ -117,6 +124,10 @@ export default async function handler(req, res) {
       body.submitted_by_account = submitter.account;
       if (!String(body.forwarder || "").trim()) {
         return res.status(400).json({ success:false, error:"forwarder required" });
+      }
+      const hit = await matchBlacklist(pool, body.forwarder);
+      if (hit) {
+        return res.status(409).json({ success:false, error:"该货代在黑名单,不能录价:" + hit.name_cn, blacklisted:true });
       }
       const overlap = await rejectRateOverlap(pool, body);
       if (overlap) return res.status(409).json({ success:false, error: overlap });

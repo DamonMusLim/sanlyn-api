@@ -2,6 +2,7 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { normalizeCargoType } from "./lib/cargo-type-enum.js";
+import { businessCoverage, businessLens, businessMissing, notConnectedBusinessCoverage } from "./manifest-business-lens.js";
 
 const READ_ROLES = new Set(["admin", "logistics", "sales", "ops", "finance"]);
 const HEADER_FIELDS = [
@@ -100,7 +101,7 @@ function orderSql(cols) {
   if (cols.has("id")) parts.push("s.id DESC");
   return parts.length ? parts.join(", ") : "1";
 }
-function rowOut(row, headerCols) {
+function rowOut(row, headerCols, businessFields = []) {
   const missing = missingFor(row, HEADER_FIELDS, headerCols);
   const cargoType = normalizeCargoType(headerCols.has("cargo_type") ? row.cargo_type : null);
   if (cargoType.state === "unmapped") {
@@ -115,10 +116,16 @@ function rowOut(row, headerCols) {
     cargo_type_raw: cargoType.raw, cargo_type_state: headerCols.has("cargo_type") ? cargoType.state : "not_connected",
     line_count: row.line_count == null ? null : Number(row.line_count),
     container_count: row.container_count == null ? null : Number(row.container_count),
+    linked_order_id: row.linked_order_id, order_no: row.order_no, order_contract_no: row.order_contract_no,
+    order_status: row.order_status, plan_status: row.plan_status, order_type: row.order_type,
+    business_type: row.business_type, business_exception: row.business_exception,
+    business_missing_count: businessMissing(row, businessFields).length,
+    business_missing: businessMissing(row, businessFields),
     missing_count: missing.length, missing,
   };
 }
-async function listShipments(pool, cols, hasContainers, hasLines, q) {
+async function listShipments(pool, ctx, hasContainers, hasLines, q) {
+  const cols = ctx.shipmentCols;
   const limit = Math.min(parseInt(q.limit, 10) || 80, 200);
   const params = [], conds = [];
   const search = clean(q.q || q.search, 100);
@@ -141,14 +148,18 @@ async function listShipments(pool, cols, hasContainers, hasLines, q) {
   const lineAgg = hasLines && cols.has("id")
     ? ", (SELECT COUNT(*)::int FROM customs_shipment_lines ln WHERE ln.shipment_id = s.id) AS line_count"
     : ", NULL::int AS line_count";
+  const biz = businessLens(ctx);
   params.push(limit);
   const sql = `
     SELECT ${idExpr} AS id, ${HEADER_FIELDS.map(([name]) => expr("s", cols, name)).join(", ")},
       ${expr("s", cols, "etd")}, ${expr("s", cols, "status")},
-      ${cols.has("company_code") ? "COALESCE(c.name_cn, c.name_en, s.company_code)" : "NULL::text"} AS company_name
+      ${cols.has("company_code") ? "COALESCE(c.name_cn, c.name_en, s.company_code)" : "NULL::text"} AS company_name,
+      ${biz.select}
       ${containerAgg}${lineAgg}
     FROM customs_shipments s
     ${cols.has("company_code") ? "LEFT JOIN companies c ON c.code = s.company_code" : ""}
+    ${biz.joins.order}
+    ${biz.joins.plan}
     ${conds.length ? "WHERE " + conds.join(" AND ") : ""}
     ORDER BY ${orderSql(cols)} LIMIT $${params.length}`;
   const r = await pool.query(sql, params);
@@ -187,26 +198,37 @@ export default async function handler(req, res) {
   try {
     const pool = getPool();
     if (!(await tableExists(pool, "customs_shipments"))) {
-      return res.status(200).json({ success: true, generated_at: new Date().toISOString(), data: [], selected: null, line_summary: null, coverage: { total_rows: 0, fields: [], port_fields: [], line_fields: [], send_fields: [] }, send_channel: notConnected([]) });
+      return res.status(200).json({ success: true, generated_at: new Date().toISOString(), data: [], selected: null, line_summary: null, coverage: { total_rows: 0, fields: [], port_fields: [], line_fields: [], business_fields: notConnectedBusinessCoverage(), send_fields: [] }, send_channel: notConnected([]) });
     }
     const headerCols = await columns(pool, "customs_shipments");
+    const hasOrders = await tableExists(pool, "orders");
+    const hasPlans = await tableExists(pool, "shipping_plans");
+    const ctx = {
+      shipmentCols: headerCols,
+      hasOrders,
+      orderCols: hasOrders ? await columns(pool, "orders") : new Set(),
+      hasPlans,
+      planCols: hasPlans ? await columns(pool, "shipping_plans") : new Set(),
+    };
     const hasContainers = await tableExists(pool, "customs_shipment_containers");
     const hasLines = await tableExists(pool, "customs_shipment_lines");
     const lineCols = hasLines ? await columns(pool, "customs_shipment_lines") : new Set();
-    const rows = await listShipments(pool, headerCols, hasContainers, hasLines, req.query || {});
+    const rows = await listShipments(pool, ctx, hasContainers, hasLines, req.query || {});
     const wantId = clean(req.query?.id, 80);
     const selectedRow = rows.find((r) => String(r.id) === wantId) || rows[0];
     const sendCoverage = coverage(rows, SEND_FIELDS, headerCols);
-    const selected = selectedRow ? rowOut(selectedRow, headerCols) : null;
+    const businessFields = businessCoverage(rows, businessLens(ctx).availability);
+    const selected = selectedRow ? rowOut(selectedRow, headerCols, businessFields) : null;
     const lines = await lineSummary(pool, hasLines, lineCols, selectedRow?.id);
     return res.status(200).json({
       success: true, generated_at: new Date().toISOString(),
-      data: rows.map((r) => rowOut(r, headerCols)), selected, line_summary: lines,
+      data: rows.map((r) => rowOut(r, headerCols, businessFields)), selected, line_summary: lines,
       coverage: {
         total_rows: rows.length,
         fields: coverage(rows, HEADER_FIELDS, headerCols).concat(cargoEnumCoverage(rows, headerCols)),
         port_fields: coverage(rows, PORT_FIELDS, headerCols),
         line_fields: lines.fields,
+        business_fields: businessFields,
         send_fields: sendCoverage,
       },
       send_channel: notConnected(sendCoverage),

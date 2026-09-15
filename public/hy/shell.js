@@ -5,16 +5,18 @@ var PORTS=["上海","青岛","厦门","天津大连","深圳南沙"],CHANNELS=["
 PORTS.forEach(function(port){CHANNELS.forEach(function(channel){dataLeaves.push(port+"-"+channel)})});
 var NAV=[
   item("工作台"),
+  item("票看板"),
+  item("客户总览"),
   item("运价管理"),
   item("发件台",["待发","待回复","已发送","谁未回复","异常卡点","选模板发信"]),
   item("报价管理",["单票报价","费用模板","往来单位"]),
   item("集运订单",["待接单","海运出口","海运进口","空运出口","空运进口","物流园报关","陆运","铁路运输","内贸水运","自拼"]),
   item("数据通道",["船期市场"].concat(dataLeaves)),
-  item("费用管理",["外币核销与汇损","对账单-账单","对账单-明细行","对账单-事件流","对账单-异常","集运费用明细","账单管理","开票记录","收付管理","核销管理","提成管理","应收账龄表","应收账龄-数据警告","欠供应商多少","未付款账单","资金缺口(应收+应付)","银行对账-汇总","银行对账-明细","水单↔流水对账","水单↔流水-全部候选","水单认领体检"]),
+  item("费用管理",["外币核销与汇损","对账单-账单","对账单-明细行","对账单-事件流","对账单-异常","集运费用明细","海管家2025账单导入","账单管理","开票记录","开票备料","港杂开票闭环","海运费未收(按账龄)","收付管理","核销管理","提成管理","应收账龄表","应收账龄-数据警告","欠供应商多少","未付款账单","资金缺口(应收+应付)","银行对账-汇总","银行对账-明细","水单↔流水对账","水单↔流水-全部候选","水单认领体检"]),
   item("工资社保",["工资表(柠檬云式)","工资-三家合并","工资-集团审核汇总","工资-银行代发文件","银行代发模板","五险一金费率","个税税率表","个税申报表-字段映射"]),
   item("柠檬云同步",["同步状态","同步运行记录","资金线健康"]),
   item("提单管理"),
-  item("报关/箱货/仓储",["订舱平台","在线报关","箱货信息","报关信息","仓储信息","舱单字段规则","盯箱宝","全程货物跟踪","SPOT电商"]),
+  item("报关/箱货/仓储",["单据档案","订舱平台","在线报关","箱货信息","报关信息","仓储信息","舱单字段规则","盯箱宝","全程货物跟踪","SPOT电商"]),
   // 2026-08-31 待办中心:舱单/VGM 这类"我们自己去外部平台提交"的活,统一变待办
   // 2026-08-31 Damon:「AI员工开始步入我们的hy系统」—— 工位 + 上岗判定
   item("AI员工",["员工工位(我干的/我审的)","上岗判定","能力授权","动作台账","舱单字段规格","委派映射"]),
@@ -26,7 +28,7 @@ var NAV=[
 ];
 var WORKBENCH_LINKS=[
   {title:"海运总表",url:"/ocean",desc:"订单、箱货、费用汇总"},
-  {title:"价表总台",url:"/rates",desc:"海运周价与官方港杂"},
+  {title:"价表总台",url:"/rates-hub",desc:"海运周价与官方港杂"},
   {title:"录入表单",url:"/ship-entry",desc:"发运资料录入"},
   {title:"主表",url:"/ship-grid",desc:"海运主数据表"}
 ];
@@ -78,6 +80,8 @@ var DEDICATED={
   "费用管理/对账单-异常":"finance_recon_exceptions",
   "费用管理/集运费用明细":"/hy/consolidated-fee-details.html",
   "费用管理/开票记录":"/hy/invoice-records.html",
+  "运价管理":"/rates-hub",
+  "费用管理/海管家2025账单导入":"/hgj-2025-bill-import",
   "费用管理/收付管理":"/hy/receipt-payment-management.html",
   "费用管理/核销管理":"/hy/settlement-management.html",
   "费用管理/提成管理":"/hy/commission-management.html",
@@ -85,10 +89,17 @@ var DEDICATED={
   "报表中心/财务报表":"/hy/financial-report.html"
 };
 var MODULE_MAP={
+  "票看板":"v_hy_shipment_board",
+  "客户总览":"v_hy_customer_overview",
+  "报价管理/往来单位":"v_hy_counterparty",
   "运价管理":"freight_rates",
   "费用管理/集运费用明细":"freight_supplier_bills",
   "费用管理/账单管理":"freight_bills",
   "费用管理/开票记录":"finance_invoices_in",
+  "费用管理/开票备料":"v_hy_invoice_prep",
+  "费用管理/港杂开票闭环":"v_hy_portcharge_closeloop",
+  "费用管理/海运费未收(按账龄)":"v_hy_freight_ar_aging",
+  "报关/箱货/仓储/单据档案":"document_files",
   "费用管理/收付管理":"finance_payments",
   "费用管理/核销管理":"finance_settlement_links",
   "货运保险":"insurance_policies",

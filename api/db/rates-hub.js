@@ -2,6 +2,7 @@ import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { buildOceanSql } from "./rates-hub-ocean.js";
 import { attachFreightRateBoxes, loadContainerTypeOptions } from "./rates-hub-boxes.js";
+import { SOURCE_META } from "./rates-hub-meta.js";
 
 const CARRIER_NORM = `COALESCE(NULLIF(COALESCE(
   (SELECT code FROM carriers c WHERE upper(c.code)=upper(btrim(%SRC%))),
@@ -336,20 +337,6 @@ ORDER BY i.etd DESC NULLS LAST, i.bl_no`,
   };
 }
 
-const SOURCE_META = {
-  ocean: { table: "freight_rates", required: ["pol", "pod", "carrier", "forwarder", "gp20", "hq40", "valid_to"], needed: ["id", "pol", "pod", "carrier", "forwarder", "currency", "gp20", "hq40", "customer_gp20", "customer_hq40", "official_gp20", "official_hq40", "profit_20gp", "profit_40hq", "valid_from", "valid_to", "status", "source", "remarks", "sail_date", "vessel_name", "voyage_no", "eta_date", "doc_cutoff", "cargo_cutoff", "transit_days", "freetime", "pol_port_id", "pod_port_id"], joined: { ports: ["id", "name_en"] } },
-  ocean_plans: { table: "shipping_plans", required: ["bl_no", "pol", "pod", "carrier_code", "freight_cost", "freight_cost_currency", "freight_sale_usd"], needed: ["id", "deleted_at", "bl_no", "pol", "pod", "carrier_code", "forwarder_cn", "container_type", "container_qty", "etd", "freight_cost", "freight_cost_currency", "freight_sale_usd", "shipment_no", "pol_port_id", "pod_port_id"], joined: { ports: ["id", "name_en"] } },
-  ocean_bills: { table: "freight_supplier_bills", required: ["bl_no", "cost_category", "currency", "amount", "supplier", "bill_month"], needed: ["id", "bl_no", "cost_category", "currency", "amount", "sale_amount", "supplier", "bill_month", "fee_status", "remarks", "reconcile_note", "link_plan_id"], joined: { shipping_plans: ["id", "deleted_at", "bl_no", "pol", "pod", "shipping_line", "carrier_code", "pol_port_id", "pod_port_id"], ports: ["id", "name_en"] } },
-  tariff: { table: "carrier_tariff_standards", required: ["carrier", "port", "container_type", "charge_item_name", "amount_cny", "unit_basis"], needed: ["id", "carrier", "port", "container_type", "charge_item_code", "charge_item_name", "amount_cny", "unit_basis", "required_flag", "conditional_flag", "station_name", "valid_from", "valid_to", "review_status"], joined: { ports: ["name_en"] } },
-  matrices: { table: "port_charge_matrices", required: ["code", "carrier_code", "pol", "pod", "total_cost_20gp", "total_cost_40hq", "cost_currency"], needed: ["code", "forwarder_company_id", "carrier_code", "pol", "pod", "bl_type", "free_days_origin", "free_days_dest", "total_cost_20gp", "total_cost_40hq", "cost_currency", "is_active", "valid_from", "valid_to"], joined: { ports: ["name_en"] } },
-  matrix_items: { table: "port_charge_matrix_items", required: ["matrix_code", "charge_name", "unit_price", "amount", "currency"], needed: ["id", "matrix_code", "charge_name", "currency", "unit", "container_type", "unit_price", "qty", "amount", "is_required", "sort_order"] },
-  local: { table: "local_charges", required: ["carrier", "pol", "pod", "company_name", "charge_name", "amount", "currency"], needed: ["id", "carrier", "pol", "pod", "company_name", "container_type", "charge_name", "amount", "currency", "cost_total", "sell_total", "base_total_cny", "markup_cny", "valid_from", "valid_until", "is_active", "free_time"], joined: { ports: ["name_en"] } },
-  truck: { table: "service_rates", required: ["factory_name", "pol", "container_type", "tier", "rate", "currency", "unit"], needed: ["service", "factory_name", "pol", "pod", "container_type", "tier", "rate", "currency", "unit", "valid_from", "valid_to", "is_active"], joined: { ports: ["name_en"] } },
-  truck_legacy: { table: "trucking_rates", required: ["id"], needed: ["id"] },
-  customs: { table: "customs_rates", required: ["vendor_cn", "pol", "base_fee", "max_free_descs", "extra_per_desc", "currency"], needed: ["vendor_cn", "pol", "base_fee", "extra_per_desc", "max_free_descs", "currency", "notes", "valid_from", "valid_to"], joined: { ports: ["name_en"] } },
-  insurance: { table: "insurance_policies", required: ["bl_no", "insured_name", "policyholder_name", "invoice_amount", "insured_amount", "markup_pct", "insurance_rate"], needed: ["bl_no", "insured_name", "policyholder_name", "markup_pct", "insured_amount", "invoice_amount", "currency", "status", "pol", "pod", "etd", "vessel_voyage", "cargo_description"], joined: { shipping_plans: ["bl_no", "insurance_required", "insurance_rate", "insurance_cost", "insurance_policy_no", "insurance_cn"], ports: ["name_en"] } },
-};
-
 function hasValue(v) {
   return v !== null && v !== undefined && String(v).trim() !== "";
 }
@@ -412,6 +399,14 @@ async function runSource(pool, key, built) {
   return { rows: r.rows, coverage: sourceCoverage(key, r.rows, new Set([...cols, ...joinedCols]), false) };
 }
 
+async function safeRows(promise) {
+  try {
+    return await promise;
+  } catch (_err) {
+    return [];
+  }
+}
+
 export async function loadRatesHub(pool, q = {}) {
   const activeOnly = truthy(q.active_only, false);
   const built = {
@@ -432,12 +427,12 @@ export async function loadRatesHub(pool, q = {}) {
   const portOptionsQuery = buildPortOptions(), carrierOptionsQuery = buildCarrierOptions(), sailingLanesQuery = buildSailingLanes();
   const [packs, localChargeOptions, containerTypeOptions, portOptions, carrierOptions, forwarderOptions, sailingLanes] = await Promise.all([
     Promise.all(keys.map((key) => runSource(pool, key, built[key]))),
-    pool.query(localChargeOptionsQuery.sql, localChargeOptionsQuery.params).then((r) => r.rows),
-    loadContainerTypeOptions(pool),
-    pool.query(portOptionsQuery.sql, portOptionsQuery.params).then((r) => r.rows),
-    pool.query(carrierOptionsQuery.sql, carrierOptionsQuery.params).then((r) => r.rows),
-    loadForwarderOptions(pool),
-    pool.query(sailingLanesQuery.sql, sailingLanesQuery.params).then((r) => r.rows)
+    safeRows(pool.query(localChargeOptionsQuery.sql, localChargeOptionsQuery.params).then((r) => r.rows)),
+    safeRows(loadContainerTypeOptions(pool)),
+    safeRows(pool.query(portOptionsQuery.sql, portOptionsQuery.params).then((r) => r.rows)),
+    safeRows(pool.query(carrierOptionsQuery.sql, carrierOptionsQuery.params).then((r) => r.rows)),
+    safeRows(loadForwarderOptions(pool)),
+    safeRows(pool.query(sailingLanesQuery.sql, sailingLanesQuery.params).then((r) => r.rows))
   ]);
   const byKey = Object.fromEntries(keys.map((key, i) => [key, packs[i]]));
   const oceanRows = await attachFreightRateBoxes(pool, byKey.ocean.rows);

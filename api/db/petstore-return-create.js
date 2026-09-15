@@ -3,6 +3,7 @@ import { requireAuth } from "../auth.js";
 import { requireWritable } from "../moduleGate.js";
 
 const MODULE = "inventory";
+const RETURN_TYPES = ["supplier", "warehouse", "store"];
 
 function cleanText(value, max = 120) {
   const s = String(value ?? "").trim();
@@ -24,6 +25,14 @@ function badRequest(message) {
   throw err;
 }
 
+function validateReturnType(value) {
+  const returnType = cleanText(value, 80) || "supplier";
+  if (!RETURN_TYPES.includes(returnType)) {
+    badRequest(`returnType 只能是: ${RETURN_TYPES.join(", ")}`);
+  }
+  return returnType;
+}
+
 function validateLines(lines) {
   if (!Array.isArray(lines) || lines.length === 0) badRequest("明细不能为空");
   return lines.map((line, idx) => {
@@ -43,7 +52,7 @@ function validateLines(lines) {
 async function loadSkus(client, lines) {
   const codes = [...new Set(lines.map((line) => line.productCode))];
   const { rows } = await client.query(
-    `SELECT product_code, product_name, spec_text
+    `SELECT product_code, product_name, spec
        FROM petstore_skus
       WHERE product_code = ANY($1::text[])`,
     [codes],
@@ -77,6 +86,7 @@ async function createReturn(req, gate) {
   }
   const body = req.body || {};
   const lines = validateLines(body.lines);
+  const returnType = validateReturnType(body.returnType);
   const qtyTotal = lines.reduce((sum, line) => sum + line.qtyReturn, 0);
   const client = await getPool().connect();
   try {
@@ -92,7 +102,7 @@ async function createReturn(req, gate) {
         returnNo,
         storeCode,
         cleanText(body.warehouse, 80),
-        cleanText(body.returnType, 80),
+        returnType,
         lines.length,
         qtyTotal,
         cleanText(body.reason, 200),
@@ -111,7 +121,7 @@ async function createReturn(req, gate) {
           returnNo,
           line.productCode,
           sku.product_name,
-          sku.spec_text,
+          sku.spec,
           line.qtyReturn,
           line.reason,
           line.batchNo,

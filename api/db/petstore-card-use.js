@@ -100,12 +100,11 @@ async function useCard(req, gate) {
     );
     const updated = await client.query(
       `UPDATE member_cards
-          SET used_times = used_times + $1,
-              remaining_times = remaining_times - $1
+          SET used_times = used_times + $1
         WHERE id = $2
           AND store_code = $3
-          AND remaining_times >= $1
-      RETURNING card_no, remaining_times`,
+          AND (COALESCE(total_times, 0) - used_times) >= $1
+      RETURNING card_no, used_times, (COALESCE(total_times, 0) - used_times) AS remaining_after`,
       [input.usedTimes, input.cardId, storeCode],
     );
     if (updated.rowCount === 0) badRequest("次数不足,请刷新重试");
@@ -114,7 +113,7 @@ async function useCard(req, gate) {
       ok: true,
       cardNo: updated.rows[0].card_no,
       usedTimes: input.usedTimes,
-      remainingAfter: updated.rows[0].remaining_times,
+      remainingAfter: updated.rows[0].remaining_after,
     };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});

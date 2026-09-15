@@ -1,7 +1,7 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
-// Sensitive fields available in source view but not returned here: cost_price, supplier.
+// Sensitive fields available in source view but not returned here: cost_price, in_price, supplier.
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
@@ -32,16 +32,17 @@ async function listRows(req) {
   const params = [maxDays, pageSize, offset];
   const sql = `
     WITH filtered AS (
-      SELECT product_code, product_name, spec_text, cur_stock, days_left,
-             expiry_flag, shelf_code
-        FROM public.petstore_ops_row
-       WHERE days_left IS NOT NULL
-         AND ($1::int IS NULL OR days_left <= $1::int)
+      SELECT r.product_code, r.product_name, r.spec_text, r.cur_stock, r.days_left,
+             r.expiry_flag, r.shelf_code, e.out_price
+        FROM public.petstore_ops_row r
+        LEFT JOIN public.petstore_offline_expiry_snapshot e ON e.product_code = r.product_code
+       WHERE r.days_left IS NOT NULL
+         AND ($1::int IS NULL OR r.days_left <= $1::int)
     ), total_count AS (
       SELECT COUNT(*)::int AS total FROM filtered
     ), page_rows AS (
       SELECT product_code, product_name, spec_text, cur_stock, days_left,
-             expiry_flag, shelf_code
+             expiry_flag, shelf_code, out_price
         FROM filtered
        ORDER BY days_left ASC, product_code
        LIMIT $2 OFFSET $3

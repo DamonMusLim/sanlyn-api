@@ -3,17 +3,17 @@
 var MAX_TABS=20,FIXED_ID="workbench",STORAGE_KEY="sanlyn.wbTabs.v2";
 // 新增页面要同时加 nginx location、KNOWN_REAL_PATHS 白名单和 BUILT 映射；否则会被转成待建占位，避免落进 SPA 兜底页。
 var KNOWN_REAL_PATHS=[
-  "/wb","/wb-tabs","/ocean","/rates","/rates-hub","/ship-grid","/ship-entry","/order-entry","/order-services","/order-staff-slots","/manifest","/manifest-send","/qingdao-manifest-send","/xiamen-manifest-send","/tianjin-dalian-manifest-send","/shenzhen-nansha-manifest-send","/online-customs","/afr-send","/ams-send","/isf-send","/em-aci-send","/ics2-send","/vgm-send","/container-watch","/cargo-insurance","/shipment-tracking","/warehouse-info","/spot-ecommerce","/manifest-cfg","/kb",
-  "/ops-alerts","/fee-alerts","/fee-templates","/biz-alerts","/ops-todos","/audit-review","/global-search","/settlement-management","/commission-management","/business-report","/financial-report","/booking-platform","/bl-management","/cargo-info","/consolidated-fee-details","/invoice-records","/receipt-payment-management","/single-ticket-quote","/smart-email","/transport-directions","/hy","/hy/index.html","/hy/grid.html",
+  "/wb","/wb-tabs","/ocean","/rates","/rates-hub","/freight-rate-management","/ship-grid","/ship-entry","/order-entry","/order-services","/order-staff-slots","/manifest","/manifest-fields","/manifest-message-channel","/manifest-send","/qingdao-manifest-send","/xiamen-manifest-send","/tianjin-dalian-manifest-send","/shenzhen-nansha-manifest-send","/online-customs","/afr-send","/ams-send","/isf-send","/em-aci-send","/ics2-send","/vgm-send","/container-watch","/cargo-insurance","/shipment-tracking","/warehouse-info","/spot-ecommerce","/manifest-cfg","/kb",
+  "/ops-alerts","/fee-alerts","/fee-templates","/biz-alerts","/ops-todos","/audit-review","/global-search","/settlement-management","/commission-management","/business-report","/financial-report","/booking-platform","/bl-management","/cargo-info","/consolidated-fee-details","/hgj-2025-bill-import","/invoice-records","/receipt-payment-management","/single-ticket-quote","/smart-email","/transport-directions","/hgj-template-195","/hy","/hy/index.html","/hy/grid.html",
   "/custom-nav","/agent","/center","/check","/client","/dv","/email","/empty-shelf","/health","/html","/login","/me","/my","/one","/petwatch","/restock","/si","/sources","/staff-tasks","/trip"
 ];
 // 导航叶子到已上线真实页的映射。没有真实页的模块不要硬映射，让待建机制兜底。
 var BUILT={
-  "工作台":"/wb","海运工作台":"/hy/index.html","运价管理":"/rates-hub","智能邮箱":"/smart-email","单票报价":"/single-ticket-quote","费用模板":"/fee-templates",
+  "工作台":"/wb","海运工作台":"/hy/index.html","运价管理":"/freight-rate-management","智能邮箱":"/smart-email","单票报价":"/single-ticket-quote","费用模板":"/fee-templates",
   "海运出口":"/ship-grid","海运进口":"/transport-directions","空运出口":"/transport-directions","空运进口":"/transport-directions","陆运":"/transport-directions","铁路运输":"/transport-directions","内贸水运":"/transport-directions","自拼":"/transport-directions","订单录入":"/order-entry","服务项目":"/order-services","订单人员槽":"/order-staff-slots",
-  "上海-舱单发送":"/manifest-send","青岛-舱单发送":"/qingdao-manifest-send","厦门-舱单发送":"/xiamen-manifest-send","天津/大连-舱单":"/tianjin-dalian-manifest-send","深圳/南沙-舱单":"/shenzhen-nansha-manifest-send","AFR发送":"/afr-send","AMS发送":"/ams-send","ISF发送":"/isf-send","EM&ACI发送":"/em-aci-send","ICS2":"/ics2-send","在线报关":"/online-customs","VGM发送":"/vgm-send","订舱平台":"/booking-platform","账单管理":"/ocean","审核提交记录":"/ops-todos",
+  "舱单字段补齐":"/manifest-fields","报文数据通道":"/manifest-message-channel","上海-舱单发送":"/manifest-send","青岛-舱单发送":"/qingdao-manifest-send","厦门-舱单发送":"/xiamen-manifest-send","天津/大连-舱单":"/tianjin-dalian-manifest-send","深圳/南沙-舱单":"/shenzhen-nansha-manifest-send","AFR发送":"/afr-send","AMS发送":"/ams-send","ISF发送":"/isf-send","EM&ACI发送":"/em-aci-send","ICS2":"/ics2-send","在线报关":"/online-customs","VGM发送":"/vgm-send","订舱平台":"/booking-platform","账单管理":"/ocean","审核提交记录":"/ops-todos",
   "盯箱宝":"/container-watch","全程货物跟踪":"/shipment-tracking","SPOT电商":"/spot-ecommerce","货运保险":"/cargo-insurance","核销管理":"/settlement-management","提成管理":"/commission-management",
-  "集运费用明细":"/consolidated-fee-details","开票记录":"/invoice-records","收付管理":"/receipt-payment-management","业务报表":"/business-report","财务报表":"/financial-report","提单管理":"/bl-management","箱货信息":"/cargo-info","报关信息":"/online-customs","仓储信息":"/warehouse-info",
+  "集运费用明细":"/consolidated-fee-details","海管家2025账单导入":"/hgj-2025-bill-import","开票记录":"/invoice-records","收付管理":"/receipt-payment-management","海管家195模板":"/hgj-template-195","业务报表":"/business-report","财务报表":"/financial-report","提单管理":"/bl-management","箱货信息":"/cargo-info","报关信息":"/online-customs","仓储信息":"/warehouse-info",
   "报价审核":"/audit-review?type=quote","费用模板审核":"/audit-review?type=fee_template","订单审核":"/audit-review?type=order","提单审核":"/audit-review?type=bl",
   "费用审核":"/audit-review?type=fee","账单审核":"/audit-review?type=bill","往来公司审核":"/audit-review?type=company","合同审核":"/audit-review?type=contract","自定义导航":"/custom-nav"
 };
@@ -21,8 +21,8 @@ var NAV=[
   n("工作台"),n("运价管理"),n("智能邮箱"),
   n("报价管理",["单票报价","费用模板"]),
   n("集运订单",["待接单","订单录入","服务项目","订单人员槽","海运出口","海运进口","空运出口","空运进口","物流园报关","陆运","铁路运输","内贸水运","自拼"]),
-  n("数据通道",["上海-舱单发送","青岛-舱单发送","厦门-舱单发送","天津/大连-舱单","深圳/南沙-舱单","AFR发送","AMS发送","ISF发送","EM&ACI发送","订舱平台","在线报关","VGM发送","盯箱宝","全程货物跟踪","SPOT电商","ICS2"]),
-  n("费用管理",["集运费用明细","账单管理","开票记录","收付管理","核销管理","提成管理"]),
+  n("数据通道",["舱单字段补齐","报文数据通道","上海-舱单发送","青岛-舱单发送","厦门-舱单发送","天津/大连-舱单","深圳/南沙-舱单","AFR发送","AMS发送","ISF发送","EM&ACI发送","订舱平台","在线报关","VGM发送","盯箱宝","全程货物跟踪","SPOT电商","ICS2"]),
+  n("费用管理",["集运费用明细","海管家2025账单导入","账单管理","开票记录","收付管理","核销管理","提成管理","海管家195模板"]),
   n("提单管理"),
   n("报关/箱货/仓储",["箱货信息","报关信息","仓储信息"]),
   n("审核管理",["审核提交记录","报价审核","费用模板审核","订单审核","提单审核","费用审核","账单审核","往来公司审核","合同审核"]),
@@ -32,7 +32,7 @@ var MENUS={settings:["参数设置","成员与权限"],help:["吐槽产品","新
 var DEFAULT_TABS=[{id:FIXED_ID,title:"工作台",url:"/wb",fixed:true}];
 var state=loadState(),tabsEl=$("tabs"),stageEl=$("stage"),navEl=$("sideNav"),toastEl=$("toast"),moduleTitle=$("moduleTitle"),toastTimer=0,dragId="",customNav=[];
 $("generatedAt").textContent="生成时间 "+new Date().toLocaleString("zh-CN");
-renderNav();renderMenus();mountSearch();bindShell();render();loadCustomNav();
+renderNav();renderMenus();mountSearch();bindShell();render();openInitialParam();loadCustomNav();
 function n(name,children){return {name:name,children:(children||[]).map(function(x){return {name:x}})}}
 function $(id){return document.getElementById(id)}
 function builtUrl(name){return BUILT[name]||""}
@@ -69,6 +69,13 @@ function mountSearch(){
   if(window.SanlynGlobalSearch)window.SanlynGlobalSearch.mount($("topSearch"),{open:openSearchItem});
 }
 function openSearchItem(item){openTab({title:item.label||"搜索结果",url:item.url})}
+function openInitialParam(){
+  var p=new URLSearchParams(location.search),url=p.get("open");
+  if(!url)return;
+  openTab({title:p.get("title")||url,url:url,sourceName:p.get("title")||url});
+  p.delete("open");p.delete("title");
+  if(history.replaceState)history.replaceState(null,"",location.pathname+(p.toString()?"?"+p.toString():"")+location.hash);
+}
 function bindShell(){
   window.addEventListener("message",function(event){if(event.origin!==location.origin||!trustedFrameSource(event.source))return;var d=event.data||{};if(d.type==="sanlyn:nav-updated"){loadCustomNav();return}if(d.type!=="sanlyn:open-tab"&&d.type!=="open-tab")return;openTab({id:d.id,title:d.title||d.url,url:d.url,sourceName:d.sourceName})});
   document.addEventListener("click",function(e){var m=e.target.closest("[data-menu]");if(m){toggleMenu(m.dataset.menu);return}if(!e.target.closest(".menu-wrap"))hideMenus()});

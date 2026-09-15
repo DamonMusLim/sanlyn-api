@@ -1,7 +1,7 @@
 (function(){
   "use strict";
-  var API="/api/db/settlement-management",VERSION="v2026.08.27-1";
-  var state={rows:[],payments:[],selected:null,coverage:null,metrics:{},generatedAt:null,reason:""};
+  var API="/api/db/settlement-management",VERSION="v2026.09.15-1";
+  var state={rows:[],payments:[],selected:null,coverage:null,metrics:{},settlementConnection:null,generatedAt:null,reason:""};
   var $=function(id){return document.getElementById(id);};
   var NF=new Intl.NumberFormat("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
   function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||"";}
@@ -11,15 +11,31 @@
   function text(x,v,fallback){x.textContent=has(v)?String(v):(fallback||"未接入");}
   function el(tag,cls,txt){var x=document.createElement(tag);if(cls)x.className=cls;if(txt!==undefined)text(x,txt);return x;}
   function fmt(v,fallback){if(!has(v))return fallback||"未设置";return String(v).slice(0,140).replace("T"," ");}
+  function idText(v,fallback){return !has(v)||String(v).trim()==="0"?(fallback||"未接入"):fmt(v,fallback);}
   function money(v,c){if(!has(v))return"未设置";var n=Number(v);return Number.isFinite(n)?((c?c+" ":"")+NF.format(n)):"未设置";}
   function pct(f){return !f||f.fill_rate===null||f.fill_rate===undefined?"未接入":Number(f.fill_rate).toFixed(1).replace(/\\.0$/,"")+"%";}
   function rowTitle(r){return [r.target_type,r.target_id].filter(has).join(" · ")||("ID "+(r.id||"未接入"));}
-  function paymentTitle(r){return [r.contract_no,r.order_no,r.customer].filter(has).join(" · ")||("收付ID "+(r.payment_id||"未接入"));}
+  function paymentTitle(r){
+    var real=[r.contract_no,r.order_no,r.customer].filter(has).join(" · ");
+    if(real)return real;
+    if(r.connection_source==="finance_settlement_links"&&(r.receipt_identity_collapsed||!has(r.payment_id))){
+      return "核销链接 "+compact(r.settlement_link_ids,1)+" · 对象 "+compact(r.settlement_target_ids,1);
+    }
+    return "收付ID "+(r.payment_id||r.payment_db_id||"未接入");
+  }
+  function basis(r){var a=r.settlement_match_basis||[];return a.length?a.join(" / "):"未接入 · 缺 finance_settlement_links.payment_id/target_id 可匹配字段";}
+  function compact(a,max){a=Array.isArray(a)?a.filter(has).map(String):[];return a.length?a.slice(0,max||4).join(" / ")+(a.length>(max||4)?" / +"+(a.length-(max||4)):""):"未接入";}
   function missingText(){return state.reason||"未接入 · 缺 finance_settlement_links 可核销真实链接；当前填充率 未接入。";}
+  function conn(){return state.settlementConnection||{};}
+  function connReady(){return conn().state==="ready";}
+  function connText(){return conn().reason||"未接入 · 缺 finance_settlement_links.payment_id 写入/回填；当前填充率 未接入。";}
+  function visibleSettlementCount(){return state.payments.reduce(function(s,r){return s+Number(r.settlement_link_count||0);},0);}
+  function effectiveLinkCount(){var m=state.metrics||{};return has(m.applied_settlement_links_effective)?m.applied_settlement_links_effective:(has(m.settlement_link_rows)?m.settlement_link_rows:(has(m.applied_links)?m.applied_links:(visibleSettlementCount()||null)));}
+  function joinBasis(a){return a&&a.length?a.join(" / "):"";}
   function parseLines(s){var o={};String(s||"").split(/\n/).forEach(function(line){var i=line.indexOf("=");if(i<1)return;o[line.slice(0,i).trim()]=line.slice(i+1).trim();});return o;}
   function editable(r){
     return [
-      "payment_id="+fmt(r&&r.payment_id,""),"target_type="+fmt(r&&r.target_type,"invoice_out"),
+      "payment_id="+idText(r&&r.payment_id,""),"target_type="+fmt(r&&r.target_type,"invoice_out"),
       "target_id="+fmt(r&&r.target_id,""),"amount_applied="+fmt(r&&r.amount_applied,""),
       "currency="+fmt(r&&r.currency,"CNY"),"status="+fmt(r&&r.status,"applied"),
       "source="+fmt(r&&r.source,"manual"),"created_by="+fmt(r&&r.created_by,"")
@@ -60,9 +76,11 @@
   function renderMetrics(){
     var m=state.metrics||{};
     setMetric("mTotal",m.total_links);setMetric("mApplied",m.applied_links);setMetric("mAlerts",m.alert_count);
-    setMetric("mReceipts",m.total_receipts);setMetric("mLinkedReceipts",m.linked_receipts);setMetric("mUnlinkedReceipts",m.unlinked_receipts);
-    text($("mState"),state.rows.length?"核销已接入":(state.payments.length?"收款已接入":"未接入"));$("mState").className=state.rows.length||state.payments.length?"num":"num warn";
+    setMetric("mReceipts",has(m.total_receipts_effective)?m.total_receipts_effective:m.total_receipts);setMetric("mLinkedReceipts",effectiveLinkCount());setMetric("mUnlinkedReceipts",has(m.unmatched_settlement_links)?m.unmatched_settlement_links:m.unlinked_receipts);
+    setMetric("mHgjSettled",has(m.hgj_settled_receipts_effective)?m.hgj_settled_receipts_effective:m.hgj_settled_receipts);
+    text($("mState"),connReady()?"核销已接入":(state.payments.length?"核销未接入":"未接入"));$("mState").className=connReady()?"num":"num warn";
     $("summary").textContent=VERSION+" · 生成时间 "+new Date(state.generatedAt||Date.now()).toLocaleString("zh-CN");
+    if(state.reason)$("summary").textContent+=" · "+state.reason;
   }
   function renderAmounts(){
     var box=$("amounts");clear(box);var rows=(state.metrics&&state.metrics.by_currency)||[];
@@ -75,19 +93,25 @@
     state.rows.forEach(function(r){
       var b=el("button","row"+(state.selected&&String(r.id)===String(state.selected.id)?" active":""));b.type="button";b.dataset.id=r.id||"";
       b.appendChild(el("strong","",rowTitle(r)));
-      b.appendChild(el("span","",fmt(r.status)+" · 收付ID "+fmt(r.payment_id)+" · 来源 "+fmt(r.source)));
+      b.appendChild(el("span","",fmt(r.status)+" · 收付ID "+idText(r.payment_id)+" · 来源 "+fmt(r.source)));
       b.appendChild(el("span","",money(r.amount_applied,r.currency)+" · 创建人 "+fmt(r.created_by)+" · "+fmt(r.created_at)));
       box.appendChild(b);
     });
   }
   function renderPayments(){
-    var box=$("payments");clear(box);text($("paymentCount"),state.payments.length||"未接入");
+    var box=$("payments");clear(box);var linkedCount=effectiveLinkCount();text($("paymentCount"),state.payments.length?(linkedCount?"已接 "+linkedCount+" 条 / 共 "+state.payments.length+" 行":state.payments.length):"未接入");
     if(!state.payments.length){box.appendChild(el("div","empty","未接入 · 缺 finance_payments 收款真源或当前权限范围无真实收款；当前填充率 未接入。"));return;}
     state.payments.forEach(function(r){
-      var d=el("div","pay");
+      var d=el("div","pay"),fromLinks=r.connection_source==="finance_settlement_links";
       d.appendChild(el("b","",paymentTitle(r)));
-      d.appendChild(el("span","",money(r.amount,r.currency)+" · "+fmt(r.currency)+" · "+fmt(r.payment_date)+" · 流水 "+fmt(r.bank_ref)));
-      d.appendChild(el("span","",Number(r.settlement_link_count||0)>0?("已接 "+r.settlement_link_count+" 条核销链接 · 已核销 "+money(r.settled_amount,r.currency)):"未接核销链接 · 缺 finance_settlement_links.payment_id 对应记录"));
+      d.appendChild(el("span","",fromLinks?"收款金额未接入 · 缺 finance_payments.amount/this_amount 与该 payment_id 回连；当前填充率 未接入":"收款金额 "+money(r.amount,r.currency)+" · "+fmt(r.currency)+" · "+fmt(r.payment_date)+" · DBID "+fmt(r.payment_db_id)+" · 流水 "+fmt(r.bank_ref)));
+      var paidBasis=joinBasis(r.hgj_paid_basis),pendingBasis=joinBasis(r.hgj_pending_basis);
+      var paidText=paidBasis?"收付已核销 "+money(r.hgj_paid_amount,r.currency)+" · 依据 "+paidBasis:"收付核销金额未接入 · 缺 finance_settlement_links.amount_applied / finance_payments.paid_amount；当前填充率 未接入";
+      var pendingText=pendingBasis?"收付未核销 "+money(r.hgj_pending_amount,r.currency)+" · 依据 "+pendingBasis:"收付未核销未接入 · 缺 finance_payments.pending_amount 或 finance_payments.amount/this_amount+finance_settlement_links.amount_applied；当前填充率 未接入";
+      d.appendChild(el("span","",paidText+"；"+pendingText));
+      var linked=Number(r.settlement_link_count||0)>0;
+      var linkInfo="链接ID "+compact(r.settlement_link_ids)+" · 对象 "+compact(r.settlement_target_types,3)+" "+compact(r.settlement_target_ids,3)+" · 来源 "+compact(r.settlement_sources,3);
+      d.appendChild(el("span","",linked?((fromLinks?"链接表真实收付ID ":"已接 ")+r.settlement_link_count+" 条 · 已核销 "+money(r.settled_amount,r.currency)+" · "+linkInfo+" · 依据 "+basis(r)):(connReady()?"真实已核销金额已接入；核销链接未回连 · 依据 "+basis(r):connText()+" · 依据 "+basis(r))));
       box.appendChild(d);
     });
   }
@@ -102,7 +126,7 @@
     var box=$("detail");clear(box);var r=state.selected;
     if(!r){box.appendChild(el("div","empty",missingText()));return;}
     var table=document.createElement("table"),body=document.createElement("tbody");
-    [["核销ID",r.id],["收付ID",r.payment_id],["核销对象",r.target_type],["对象编号",r.target_id],["核销金额",money(r.amount_applied,r.currency)],["币种",r.currency],["状态",r.status],["来源",r.source],["创建人",r.created_by],["创建时间",r.created_at],["更新时间",r.updated_at]].forEach(function(pair){var tr=document.createElement("tr");td(tr,pair[0]);td(tr,pair[1],"未设置");body.appendChild(tr);});
+    [["核销ID",r.id],["收付ID",idText(r.payment_id)],["核销对象",r.target_type],["对象编号",r.target_id],["核销金额",money(r.amount_applied,r.currency)],["币种",r.currency],["状态",r.status],["来源",r.source],["创建人",r.created_by],["创建时间",r.created_at],["更新时间",r.updated_at]].forEach(function(pair){var tr=document.createElement("tr");td(tr,pair[0]);td(tr,pair[1],"未设置");body.appendChild(tr);});
     table.appendChild(body);box.appendChild(table);text($("statePill"),r.status||"未接入状态");
   }
   function renderCoverage(){
@@ -113,7 +137,7 @@
   }
   function render(){renderMetrics();renderPayments();renderAmounts();renderList();renderAlerts();renderDetail();renderCoverage();}
   async function load(){
-    try{var d=await api();state.rows=d.data||[];state.payments=d.payments||[];state.selected=d.selected||state.rows[0]||null;state.coverage=d.coverage;state.metrics=d.metrics||{};state.generatedAt=d.generated_at;state.reason=d.reason||"";render();}
+    try{var d=await api();state.rows=d.data||[];state.payments=d.payments||[];state.selected=d.selected||state.rows[0]||null;state.coverage=d.coverage;state.metrics=d.metrics||{};state.settlementConnection=d.settlement_connection||null;state.generatedAt=d.generated_at;state.reason=d.reason||"";render();}
     catch(e){$("summary").textContent=VERSION+" · 读取失败";["payments","amounts","list","alerts","detail","coverage"].forEach(function(id){clear($(id));$(id).appendChild(el("div","error",e.message));});}
   }
   $("list").addEventListener("click",function(e){var b=e.target.closest(".row");if(!b)return;var id=b.dataset.id;state.selected=state.rows.find(function(r){return String(r.id||"")===id;})||state.selected;render();});

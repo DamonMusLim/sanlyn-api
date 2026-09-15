@@ -1506,7 +1506,7 @@ var PAGES = {
       const host = $("pa-main-host");
       document.querySelectorAll("[data-pa-tab]").forEach((b)=>b.classList.toggle("is-on", b.dataset.paTab === st.tab));
       try {
-        const data = await loadData();
+        const data = await loadData(); if (window.verdict) verdict(data.verdict || "—", data.verdict_level || "ok");
         host.innerHTML = st.tab === "med" ? renderMed(data) : renderOwn(data);
       } catch (e) {
         host.innerHTML = `<div class="pa-warn">加载失败: ${esc(e.message || e)}</div>`;
