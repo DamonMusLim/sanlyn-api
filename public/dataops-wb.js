@@ -377,7 +377,7 @@ var PAGES = {
     function apiUrl(p){
       if(typeof API_BASE!=="undefined") return String(API_BASE).replace(/\/$/,"")+"/"+p;
       if(window.DATAOPS_API_BASE) return String(window.DATAOPS_API_BASE).replace(/\/$/,"")+"/"+p;
-      return "/api/"+p;
+      return API+p;  // 0915 修:必须走相对 ./api/ → /dataops/api/ 网关,/api/ 直连无网关头会 401
     }
     function failMsg(code, j){
       if(code==="QTY_INVALID") return "数量不对";
