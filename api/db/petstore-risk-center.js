@@ -99,8 +99,8 @@ export async function buildRiskCenter(pool) {
   const taskRes = await pool.query(
     `SELECT id, title, status, next_holder, created_at, due_at, dedupe_key
        FROM public.tasks
-      WHERE domain = 'petstore'
-        AND dedupe_key LIKE 'risk:%'
+      -- 0916:tasks 触发器会把 domain petstore 归一成 petshop,⛔别按 domain 过滤,risk: 去重键已唯一
+      WHERE dedupe_key LIKE 'risk:%'
         AND status NOT IN ('done','cancelled')
       ORDER BY created_at DESC NULLS LAST, id`);
   const allOpenTasks = taskRes.rows.map((t) => {
