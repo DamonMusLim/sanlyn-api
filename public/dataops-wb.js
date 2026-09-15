@@ -81,6 +81,8 @@ var PAGES = {
     function redraw(){
       var host = $("board-main-host");
       if (host) host.innerHTML = st.tab==="list" ? listHtml() : (st.tab==="health" ? healthHtml() : overviewHtml());
+      // 0916 修:切到商品明细也要加载(原来只在首次渲染时加载,切 tab 后一直「读取中」)
+      if (st.tab==="list") setTimeout(async function(){ var h=$("board-list-host"); if(h) h.innerHTML = await renderList("shop"); }, 0);
       Array.prototype.forEach.call(document.querySelectorAll("[data-board-tab]"), function(x){ x.classList.toggle("on", x.dataset.boardTab===st.tab); });
     }
     function risk(filter){
