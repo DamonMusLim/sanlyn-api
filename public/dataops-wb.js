@@ -66,6 +66,76 @@ function rvAddStyle(){
 }
 
 var PAGES = {
+  risk: async function(){
+    if (!$("risk-style")) document.head.insertAdjacentHTML("beforeend", '<style id="risk-style">.risk-tabs{display:flex;gap:8px;margin:0 0 12px}.risk-tab,.risk-chip,.risk-act,.risk-dl{border:1px solid #d8e0ea;background:#fff;border-radius:8px;padding:7px 10px;cursor:pointer}.risk-tab.on,.risk-chip.on{background:#18212f;color:#fff;border-color:#18212f}.risk-cards{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;margin:8px 0 10px}.risk-card{border:1px solid #e2e8f0;background:#fff;border-radius:8px;padding:10px;cursor:pointer}.risk-card b{display:block;font-size:22px;margin-top:5px}.risk-card.red b{color:#c81e1e}.risk-meta{display:flex;justify-content:space-between;align-items:center;color:#667085;font-size:12px;margin:8px 0 12px}.risk-filters{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.risk-bulk{background:#c81e1e;color:#fff;border-color:#c81e1e}.risk-table{width:100%;border-collapse:collapse;background:#fff}.risk-table th,.risk-table td{border-bottom:1px solid #edf2f7;padding:9px 8px;text-align:left;vertical-align:top}.risk-name{font-weight:700}.risk-sub,.risk-small{color:#667085;font-size:12px}.risk-badge{display:inline-block;border-radius:6px;padding:2px 6px;margin:1px 3px 1px 0;font-size:12px;background:#eef2f7}.risk-badge.red{background:#fee2e2;color:#991b1b}.risk-badge.orange{background:#ffedd5;color:#9a3412}.risk-badge.yellow{background:#fef9c3;color:#854d0e}.risk-expired{color:#c81e1e;font-weight:700}.risk-detail{background:#fbfcfe}.risk-act{background:#f8fafc}.risk-act.red{background:#c81e1e;color:#fff;border-color:#c81e1e}@media(max-width:900px){.risk-cards{grid-template-columns:repeat(2,1fr)}.risk-table{font-size:12px}}</style>');
+    var E = window.rvEsc || esc, N = window.rvN || num, M = window.rvMoney || function(v){return v==null?"—":"¥"+Number(v).toLocaleString("zh-CN")};
+    var st = window.__riskState || (window.__riskState = {tab:"main",filter:""});
+    var d = await get("db/petstore-risk-center");
+    var ps = d.problems || [], rows = d.rows || [], cards = d.cards || {};
+    function hasOpen(r,k){ return (r.open_tasks||[]).some(function(t){return !k || t.problem_key===k}); }
+    function canProblem(r){ return (r.problems||[]).find(function(p){return p.assignee && !hasOpen(r,p.key)}); }
+    function shownRows(){
+      return rows.filter(function(r){return !st.filter || (r.problems||[]).some(function(p){return p.key===st.filter})});
+    }
+    function csv(){
+      var head = ["品名","规格","货位","状态","库存","问题","动作","接单","生产日期","到期","剩余天数","金额","已有工单"];
+      var out = [head.join(",")];
+      rows.forEach(function(r){
+        (r.problems||[]).forEach(function(p){
+          out.push([r.product_name,r.spec_text,r.shelf_code,r.product_status,r.stk,p.label,p.action,p.assignee,r.produce_date,r.expiration_date,r.days_to_expire,r.amount_by_price,(r.open_tasks||[]).map(function(t){return t.id+" "+t.status}).join(" ")].map(function(x){return '"'+String(x==null?"":x).replace(/"/g,'""')+'"'}).join(","));
+        });
+      });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob(["\ufeff"+out.join("\n")], {type:"text/csv;charset=utf-8"}));
+      a.download = "petstore-risk-center.csv"; a.click(); setTimeout(function(){URL.revokeObjectURL(a.href)}, 1000);
+    }
+    async function postAct(key,codes){
+      var tk = ""; try { tk = localStorage.getItem("jdc_token") || localStorage.getItem("token") || ""; } catch(e){}
+      var hd = {"content-type":"application/json","accept":"application/json","x-gateway-auth":"gw-dataops-0903"};
+      if (tk) hd.Authorization = tk.indexOf("Bearer")===0 ? tk : "Bearer " + tk;
+      var r = await fetch(API+"db/petstore-risk-act", {method:"POST",headers:hd,credentials:"include",body:JSON.stringify({problem_key:key,product_codes:codes})});
+      var j = await r.json();
+      var s = {}; (j.skipped||[]).forEach(function(x){s[x.reason]=(s[x.reason]||0)+1});
+      alert("建"+(j.created||[]).length+"张,跳过"+(j.skipped||[]).length+"(重复"+(s.DUPLICATE||0)+"/上限"+(s.DAILY_CAP_20||0)+"/已不存在"+(s.NOT_CURRENT||0)+")");
+      delete cache["db/petstore-risk-center"]; show("risk");
+    }
+    if (!window.__riskBound) {
+      window.__riskBound = 1;
+      document.addEventListener("click", function(e){
+        var t = e.target.closest("[data-risk-tab]"); if(t){ st.tab=t.dataset.riskTab; show("risk"); return; }
+        var f = e.target.closest("[data-risk-filter]"); if(f){ st.filter=f.dataset.riskFilter; st.tab="main"; show("risk"); return; }
+        var dl = e.target.closest("[data-risk-download]"); if(dl){ csv(); return; }
+        var ex = e.target.closest("[data-risk-expand]"); if(ex){ var tr=$("risk-detail-"+ex.dataset.riskExpand); if(tr) tr.hidden=!tr.hidden; return; }
+        var one = e.target.closest("[data-risk-one]"); if(one){ postAct(one.dataset.problem,[one.dataset.code]); return; }
+        var bulk = e.target.closest("[data-risk-bulk]"); if(bulk){ var key=bulk.dataset.riskBulk; var codes=shownRows().filter(function(r){return !hasOpen(r,key)}).slice(0,20).map(function(r){return r.product_code}); postAct(key,codes); return; }
+      });
+    }
+    var meta = '<div class="risk-meta"><span>数据采集 '+E(d.captured||"—")+(d.stale_days==null?"":"(已"+d.stale_days+"天)")+'</span><button class="risk-dl" data-risk-download>下载</button></div>';
+    var cardHtml = '<div class="risk-cards">'
+      +'<div class="risk-card red" data-risk-filter="expired_onsale">过期仍在售<b>'+N(cards.expired_onsale_n)+'</b></div>'
+      +'<div class="risk-card red" data-risk-filter="expired">已过期<b>'+M(cards.expired_amount)+'</b></div>'
+      +'<div class="risk-card" data-risk-filter="onsale_no_stock">在售没货<b>'+N(cards.onsale_no_stock_n)+'</b></div>'
+      +'<div class="risk-card" data-risk-filter="no_date">会坏没日期<b>'+N(cards.no_date_n)+'</b></div>'
+      +'<div class="risk-card" data-risk-tab="queue">未处理工单<b>'+N(cards.open_tasks_n)+'</b></div>'
+      +'<div class="risk-card" data-risk-tab="queue">待批报损<b>'+N(cards.pending_writeoff_n)+'</b></div></div>';
+    var filt = '<div class="risk-filters">'+ps.map(function(p){return '<button class="risk-chip '+(st.filter===p.key?'on':'')+'" data-risk-filter="'+E(p.key)+'">'+E(p.label)+' '+N((d.problem_counts||{})[p.key]||0)+'</button>'}).join("")+(st.filter?'<button class="risk-chip risk-bulk" data-risk-bulk="'+E(st.filter)+'">本类前20转工单</button>':'')+'</div>';
+    function tasks(ts){ return ts&&ts.length ? ts.map(function(t){return '<div>'+E(t.id)+'<div class="risk-small">'+E(t.status)+' '+E(t.next_holder||"")+'</div></div>'}).join("") : "—"; }
+    function main(){
+      return '<table class="risk-table"><thead><tr><th>▸</th><th>商品</th><th>问题</th><th>状态</th><th>库存</th><th>生产/到期</th><th>金额</th><th>已有工单</th><th>操作</th></tr></thead><tbody>'
+        + shownRows().map(function(r,i){
+          var p = canProblem(r), more = (r.problems||[]).length>3 ? '<span class="risk-badge">+'+((r.problems||[]).length-3)+'</span>' : "";
+          var badges = (r.problems||[]).slice(0,3).map(function(x){return '<span class="risk-badge '+E(x.tier)+'">'+E(x.label)+'</span>'}).join("")+more;
+          var date = E(r.produce_date||"—")+'<div class="'+(Number(r.days_to_expire)<=0?'risk-expired':'risk-small')+'">'+E(r.expiration_date||"—")+' / '+(r.days_to_expire==null?"—":r.days_to_expire+"天")+'</div>';
+          var det = '<tr id="risk-detail-'+i+'" hidden><td></td><td colspan="8" class="risk-detail">'+(r.problems||[]).map(function(x){var xt=(r.open_tasks||[]).filter(function(t){return t.problem_key===x.key});return '<div>'+E(x.label)+' | '+E(x.why||x.label)+' | '+E(x.action)+' | '+E(x.assignee||"—")+' | 货位'+E(r.shelf_code||"—")+' 库存'+E(r.stk==null?"—":r.stk)+' 状态'+E(r.product_status||"—")+' 日期'+E(r.produce_date||"—")+'/'+E(r.expiration_date||"—")+' 剩余'+E(r.days_to_expire==null?"—":r.days_to_expire)+' 采集'+E(d.captured||"—")+' | '+(xt.length?tasks(xt):(x.assignee?'<button class="risk-act" data-risk-one data-problem="'+E(x.key)+'" data-code="'+E(r.product_code)+'">转工单</button>':'—'))+'</div>'}).join("")+'</td></tr>';
+          return '<tr><td><button class="risk-act" data-risk-expand="'+i+'">▸</button></td><td><div class="risk-name">'+E(r.product_name)+'</div><div class="risk-sub">'+E(r.spec_text||"—")+' · '+E(r.shelf_code||"—")+'</div></td><td>'+badges+'</td><td>'+E(r.product_status==="UP"?"在售":(r.product_status==="LOWER"?"下架":"—"))+'</td><td>'+N(r.stk)+'</td><td>'+date+'</td><td>'+M(r.amount_by_price)+'</td><td>'+tasks(r.open_tasks)+'</td><td>'+(p?'<button class="risk-act red" data-risk-one data-problem="'+E(p.key)+'" data-code="'+E(r.product_code)+'">'+E(p.action)+'</button>':'—')+'</td></tr>'+det;
+        }).join("")+'</tbody></table>';
+    }
+    function queue(){
+      var seen={}, ts=[]; (d.open_tasks||[]).forEach(function(t){if(!seen[t.id]){seen[t.id]=1;ts.push(t)}});
+      return '<table class="risk-table"><thead><tr><th>工单号</th><th>标题</th><th>接单人</th><th>状态</th><th>创建时间</th><th>截止</th><th>问题</th></tr></thead><tbody>'+ts.map(function(t){return '<tr><td>'+E(t.id)+'</td><td>'+E(t.title||"—")+'</td><td>'+E(t.next_holder||"—")+'</td><td>'+E(t.status||"—")+'</td><td>'+E(t.created_at||"—")+'</td><td>'+E(t.due_at||"—")+'</td><td>'+E(t.problem_key||"—")+'</td></tr>'}).join("")+'</tbody></table>';
+    }
+    return '<div class="risk-tabs"><button class="risk-tab '+(st.tab==="main"?"on":"")+'" data-risk-tab="main">效期与问题</button><button class="risk-tab '+(st.tab==="queue"?"on":"")+'" data-risk-tab="queue">工单队列</button></div>'+cardHtml+meta+(st.tab==="queue"?queue():filt+main());
+  },
   rival: async function(){
     var tabs = [
       ["sel","选品表"],
@@ -1146,7 +1216,7 @@ async function show(p){
   }
   if(p==="rival" && !rivalOk[window.__rivalTab]) window.__rivalTab = "sel";
   document.querySelectorAll(".snav").forEach(function(a){a.classList.toggle("on", a.dataset.p===p)});
-  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",rival:rivalTitles[window.__rivalTab||"sel"],l10:"附近实时 · 美团H5",l11:"竞品历史库 · Excel导出2026-06-17 · ⛔已89天未更新,不代表当前在售",l12:"竞品今日行情 · 对手打法",l8:"竞店商品档(逐行明细,已并入历史库)",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
+  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",risk:"风险处理台",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",rival:rivalTitles[window.__rivalTab||"sel"],l10:"附近实时 · 美团H5",l11:"竞品历史库 · Excel导出2026-06-17 · ⛔已89天未更新,不代表当前在售",l12:"竞品今日行情 · 对手打法",l8:"竞店商品档(逐行明细,已并入历史库)",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
   $("body").innerHTML = '<div class="verdict">读取中…</div>';
   try { $("body").innerHTML = await PAGES[p](); }
   catch(e){ verdict("🔴 "+e.message,"red"); $("body").innerHTML=""; }

@@ -106,7 +106,7 @@ const CLEAN_CHECKS = [
   { key: "name_too_short", label: "品名过短(疑似占位)", where: "length(product_name) < 6" },
 ];
 
-async function build(pool) {
+export async function buildProblemGoods(pool) {
   const groups = [];
   for (const c of CHECKS) {
     const params = c.param ? [PERISHABLE] : [];
@@ -166,7 +166,7 @@ export default async function handler(req, res) {
   try {
     if (req.headers["x-gateway-auth"] !== "gw-dataops-0903") { if (!requireAuth(req, res)) return; }
     if (req.method !== "GET") return json(res, 405, { ok: false, error: "method_not_allowed" });
-    return json(res, 200, await build(getPool()));
+    return json(res, 200, await buildProblemGoods(getPool()));
   } catch (err) {
     console.error("[petstore-problem-goods]", err);
     return json(res, 500, { ok: false, error: "server_error" });

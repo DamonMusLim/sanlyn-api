@@ -67,7 +67,7 @@ const BUCKETS = [
     why: "用品不参与临期分档,也不因没有日期进入自动打折。" },
 ];
 
-async function build(pool) {
+export async function buildExpiryRisk(pool) {
   // 一次定死"今天",后面所有查询共用(见 BASE 里的 $1)
   const today = (await pool.query("SELECT current_date::text AS t")).rows[0].t;
   const groups = [];
@@ -151,7 +151,7 @@ export default async function handler(req, res) {
   try {
     if (req.headers["x-gateway-auth"] !== "gw-dataops-0903") { if (!requireAuth(req, res)) return; }
     if (req.method !== "GET") return json(res, 405, { ok: false, error: "method_not_allowed" });
-    return json(res, 200, await build(getPool()));
+    return json(res, 200, await buildExpiryRisk(getPool()));
   } catch (err) {
     // ⛔ 不把 err.message 吐给客户端 —— 会泄漏表名/列名/SQL 细节(codex 0908 指出)
     console.error("[petstore-expiry-risk]", err);
