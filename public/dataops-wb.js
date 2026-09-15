@@ -350,12 +350,47 @@ var PAGES = {
     rvAddStyle();
     if(!$("sel-style")){
       var st=document.createElement("style"); st.id="sel-style";
-      st.textContent=".sel-wrap{overflow-x:auto;max-width:100%}.sel-table{width:max-content !important;min-width:100%}.sel-table>tbody>tr>td:nth-child(2),.sel-table>thead>tr>th:nth-child(2){white-space:normal !important;min-width:260px;max-width:360px;word-break:break-word}.sel-detail table{width:max-content !important;min-width:100%}.sel-cards{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px}.sel-card{border:1px solid #d7dce3;background:#fff;border-radius:6px;padding:9px 12px;cursor:pointer;min-width:92px}.sel-card.on{border-color:#263241;background:#263241;color:#fff}.sel-card b{display:block;font-size:20px}.sel-table{width:100%;border-collapse:collapse;font-size:13px}.sel-table th,.sel-table td{border-bottom:1px solid #eceff3;padding:7px 8px;text-align:left;vertical-align:top;white-space:nowrap}.sel-table th{background:#fafafa;font-weight:600}.sel-table th.sel-sort{cursor:pointer}.sel-name{white-space:normal;min-width:240px;max-width:420px;word-break:break-word}.sel-spec{color:#777;font-size:12px;margin-top:3px}.sel-exp{border:1px solid #d7dce3;background:#fff;border-radius:5px;width:26px;height:24px;cursor:pointer}.sel-badge{display:inline-block;border-radius:5px;padding:2px 6px;font-size:12px}.sel-g1{background:#e7f6ec;color:#137333}.sel-g2{background:#eef1f5;color:#526070}.sel-g3{background:#fdeaea;color:#b42318}.sel-gp{background:#fff6d7;color:#8a5a00}.sel-kind{background:#f1f3f5;color:#3b4552}.sel-profit{background:#e7f6ec;color:#137333}.sel-traffic{background:#fff1e5;color:#a34700}.sel-detail{background:#f7f8fa;padding:10px 12px 12px !important}.sel-dt{background:#fff;border:1px solid #e6e9ee;border-radius:8px;border-collapse:separate !important;border-spacing:0;overflow:hidden}.sel-dt th{background:#f3f5f8 !important;color:#5b6573;font-weight:600;font-size:12px;padding:8px 12px !important}.sel-dt td{padding:9px 12px !important;border-bottom:1px solid #f0f2f5 !important;vertical-align:middle !important}.sel-dt tbody tr:hover td{background:#fafbfc}.sel-h{font-weight:400;color:#98a2b3;font-size:11px;margin-left:4px}.sel-p{display:flex;align-items:center;gap:6px}.sel-pp{font-size:15px;font-weight:600;color:#1d2530;font-variant-numeric:tabular-nums}.sel-ps{color:#7a8594;font-size:12px;margin-top:2px;white-space:nowrap}.sel-num{text-align:right;font-variant-numeric:tabular-nums}.sel-shop{min-width:150px}.sel-t{font-style:normal;font-size:11px;padding:1px 6px;border-radius:10px}.sel-tr{background:#fdeaea;color:#b42318}.sel-ty{background:#fff4d6;color:#8a5a00}.sel-ours td{background:#f1f8f3 !important}.sel-detail table{width:100%;border-collapse:collapse;margin:4px 0 6px}.sel-detail th,.sel-detail td{border-bottom:1px solid #eee;padding:6px 8px;text-align:left;white-space:nowrap}.sel-gap{color:#888;font-size:12px;margin:7px 0}.sel-na{color:#bbb}";
+      st.textContent=".sel-wrap{overflow-x:auto;max-width:100%}.sel-table{width:max-content !important;min-width:100%}.sel-table>tbody>tr>td:nth-child(2),.sel-table>thead>tr>th:nth-child(2){white-space:normal !important;min-width:260px;max-width:360px;word-break:break-word}.sel-detail table{width:max-content !important;min-width:100%}.sel-cards{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px;align-items:stretch}.sel-card{border:1px solid #d7dce3;background:#fff;border-radius:6px;padding:9px 12px;cursor:pointer;min-width:92px}.sel-card.on{border-color:#263241;background:#263241;color:#fff}.sel-card b{display:block;font-size:20px}.sel-actions{margin-left:auto;display:flex;gap:8px;align-items:center}.sel-dl,.sel-order{border:1px solid #263241;background:#263241;color:#fff;border-radius:5px;padding:7px 10px;cursor:pointer}.sel-order{padding:4px 8px;font-size:12px}.sel-done{color:#137333;font-size:12px;white-space:normal}.sel-no{color:#98a2b3;font-size:12px}.sel-table{width:100%;border-collapse:collapse;font-size:13px}.sel-table th,.sel-table td{border-bottom:1px solid #eceff3;padding:7px 8px;text-align:left;vertical-align:top;white-space:nowrap}.sel-table th{background:#fafafa;font-weight:600}.sel-table th.sel-sort{cursor:pointer}.sel-name{white-space:normal;min-width:240px;max-width:420px;word-break:break-word}.sel-spec{color:#777;font-size:12px;margin-top:3px}.sel-exp{border:1px solid #d7dce3;background:#fff;border-radius:5px;width:26px;height:24px;cursor:pointer}.sel-badge{display:inline-block;border-radius:5px;padding:2px 6px;font-size:12px}.sel-g1{background:#e7f6ec;color:#137333}.sel-g2{background:#eef1f5;color:#526070}.sel-g3{background:#fdeaea;color:#b42318}.sel-gp{background:#fff6d7;color:#8a5a00}.sel-kind{background:#f1f3f5;color:#3b4552}.sel-profit{background:#e7f6ec;color:#137333}.sel-traffic{background:#fff1e5;color:#a34700}.sel-detail{background:#f7f8fa;padding:10px 12px 12px !important}.sel-dt{background:#fff;border:1px solid #e6e9ee;border-radius:8px;border-collapse:separate !important;border-spacing:0;overflow:hidden}.sel-dt th{background:#f3f5f8 !important;color:#5b6573;font-weight:600;font-size:12px;padding:8px 12px !important}.sel-dt td{padding:9px 12px !important;border-bottom:1px solid #f0f2f5 !important;vertical-align:middle !important}.sel-dt tbody tr:hover td{background:#fafbfc}.sel-h{font-weight:400;color:#98a2b3;font-size:11px;margin-left:4px}.sel-p{display:flex;align-items:center;gap:6px}.sel-pp{font-size:15px;font-weight:600;color:#1d2530;font-variant-numeric:tabular-nums}.sel-ps{color:#7a8594;font-size:12px;margin-top:2px;white-space:nowrap}.sel-num{text-align:right;font-variant-numeric:tabular-nums}.sel-shop{min-width:150px}.sel-t{font-style:normal;font-size:11px;padding:1px 6px;border-radius:10px}.sel-tr{background:#fdeaea;color:#b42318}.sel-ty{background:#fff4d6;color:#8a5a00}.sel-ours td{background:#f1f8f3 !important}.sel-detail table{width:100%;border-collapse:collapse;margin:4px 0 6px}.sel-detail th,.sel-detail td{border-bottom:1px solid #eee;padding:6px 8px;text-align:left;white-space:nowrap}.sel-gap{color:#888;font-size:12px;margin:7px 0}.sel-na{color:#bbb}";
       document.head.appendChild(st);
     }
+    function csvCell(v){
+      if(v===null||v===undefined) v="";
+      v=String(v);
+      return /[",\r\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v;
+    }
+    function csvLine(a){ return a.map(csvCell).join(","); }
+    function today(){ return new Date().toISOString().slice(0,10); }
+    function dl(name, lines){
+      var csv="﻿"+lines.join("\r\n");
+      var a=document.createElement("a");
+      a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
+      a.download=name; a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+    }
+    function rawMoney(v){ return v===null||v===undefined||v==="" ? "" : Number(v).toFixed(2); }
+    function rawN(v){ return v===null||v===undefined||v==="" ? "" : v; }
+    function rawPct(v){ return v===null||v===undefined||v==="" ? "" : (Number(v)*100).toFixed(1)+"%"; }
+    function qtyFromAdvice(s){
+      var m=String(s||"").match(/(?:进|试销)(\d+)/);
+      return m ? m[1] : "";
+    }
+    function apiUrl(p){
+      if(typeof API_BASE!=="undefined") return String(API_BASE).replace(/\/$/,"")+"/"+p;
+      if(window.DATAOPS_API_BASE) return String(window.DATAOPS_API_BASE).replace(/\/$/,"")+"/"+p;
+      return "/api/"+p;
+    }
+    function failMsg(code, j){
+      if(code==="QTY_INVALID") return "数量不对";
+      if(code==="GRADE_BLOCKED") return "评估不允许";
+      if(code==="DUPLICATE") return "7天内已下过#"+(j&&j.id!=null?j.id:"");
+      if(code==="NOT_IN_TABLE") return "不在选品表";
+      if(code==="FORBIDDEN"||code==="403") return "无权限";
+      return code || "下单失败";
+    }
+    window.__selDownload = window.__selDownload || {};
     if(!window.__selBound){
       window.__selBound = 1;
-      document.addEventListener("click", function(e){
+      document.addEventListener("click", async function(e){
         var ex = e.target.closest(".sel-exp[data-i]");
         if(ex){
           var tr = document.querySelector('.sel-detail-row[data-i="'+ex.dataset.i+'"]');
@@ -373,6 +408,41 @@ var PAGES = {
           window.__selSort = window.__selSort === k ? "-"+k : k;
           show("rival"); return;
         }
+        var d = e.target.closest(".sel-dl[data-dl]");
+        if(d && window.__selDownload[d.dataset.dl]){ window.__selDownload[d.dataset.dl](); return; }
+        var btn = e.target.closest(".sel-order[data-code]");
+        if(btn){
+          var def = btn.dataset.qty || "";
+          var q = prompt("下单数量", def);
+          if(q===null) return;
+          q = String(q).trim();
+          if(!/^[1-9]\d*$/.test(q)){ verdict("数量不对"); return; }
+          var qty = Number(q);
+          if(qty>200){ verdict("数量不对"); return; }
+          btn.disabled = true;
+          try{
+            var res = await fetch(apiUrl("db/petstore-selection-order"), {
+              method:"POST",
+              credentials:"include",
+              headers:{"content-type":"application/json"},
+              body:JSON.stringify({product_code:btn.dataset.code, qty:qty})
+            });
+            var j = await res.json().catch(function(){ return {}; });
+            if(res.ok && j.ok){
+              var span=document.createElement("span");
+              span.className="sel-done";
+              span.textContent="已下单 #"+j.intent_id+" 待审批";
+              btn.replaceWith(span);
+              verdict("✅ 已下单 #"+j.intent_id+" 待审批");
+            }else{
+              btn.disabled = false;
+              verdict(failMsg(j.code || String(res.status), j));
+            }
+          }catch(err){
+            btn.disabled = false;
+            verdict("下单失败");
+          }
+        }
       });
     }
     var data = await get("db/petstore-selection-table");
@@ -387,6 +457,25 @@ var PAGES = {
       if(!isFinite(bv)) bv = desc ? -Infinity : Infinity;
       return desc ? bv-av : av-bv;
     });
+    window.__selDownload.main = function(){
+      var lines=[csvLine(["产品","规格","总月销","有效最低价","最低价店","最高月销","最高月销店","成本","每件赚线下","每件赚美团扣5%","利润率","评估","款型","我方线下价","我方美团价","我方饿了么价","库存","180天","建议"])];
+      rows.forEach(function(r){
+        var o=r.ours||{};
+        lines.push(csvLine([r.our_name||r.product_code,r.spec_text,rawN(r.total_sales),rawMoney(r.eff_min_price),r.eff_min_shop,rawN(r.max_sales),r.max_shop,rawMoney(r.cost),rawMoney(r.unit_profit),rawMoney(r.unit_profit_mt),rawPct(r.margin),r.grade,r.kind,rawMoney(r.our_store_price),rawMoney(r.our_mt_price),rawMoney(o.our_ele_price),rawN(r.cur_stock),rawN(r.qty_180),r.advice]));
+      });
+      dl("选品表_主表_"+today()+".csv", lines);
+    };
+    window.__selDownload.detail = function(){
+      var lines=[csvLine(["产品","店","美团到手价","美团起送","美团配送分钟","美团月销","饿了么到手价","饿了么起送","饿了么月销","划线价","首件价","疑似单条","距离","按我方成本估利润率","款型"])];
+      rows.forEach(function(r){
+        (r.shops||[]).forEach(function(s){
+          lines.push(csvLine([r.our_name||r.product_code,s.shop,rawMoney(s.price),rawMoney(s.delivery_min),rawN(s.eta_min),rawN(s.monthly_sales),"","",'',rawMoney(s.orig_price),s.is_first_price?"是":"",s.small_unit?"是":"",s.distance,rawPct(s.est_margin),s.shop_kind]));
+        });
+        var o=r.ours||{};
+        lines.push(csvLine([r.our_name||r.product_code,"我方",rawMoney(o.our_mt_price),"","", "",rawMoney(o.our_ele_price),"","", "", "", "", "",rawPct(o.mt_margin),r.kind]));
+      });
+      dl("选品表_详情_"+today()+".csv", lines);
+    };
     function pct01(v){ return v===null||v===undefined ? '<span class="sel-na">—</span>' : rvPct(Number(v)*100); }
     function kindCls(v){ return v==="流量款" ? "sel-traffic" : v==="利润款" ? "sel-profit" : "sel-kind"; }
     function gradeCls(v){ return v==="1" ? "sel-g1" : v==="2" ? "sel-g2" : v==="3" ? "sel-g3" : "sel-gp"; }
@@ -394,7 +483,6 @@ var PAGES = {
       return '<button class="sel-card '+(filter===g?'on':'')+'" data-grade="'+g+'"><b>'+rvEsc(n)+'</b>'+rvEsc(label)+'</button>';
     }
     function detail(r,i){
-      // Damon 0915:美团一格压缩=到手价 + 起送·时间 + 月销;没有写「未采集」
       var NA = '<span class="sel-na">未采集</span>';
       function plat(price, dmin, eta, sales, tags){
         if (price==null && dmin==null && sales==null) return NA;
@@ -406,7 +494,6 @@ var PAGES = {
       }
       var shops = (r.shops || []).map(function(s){
         var tags = (s.small_unit?'<i class="sel-t sel-tr">单条?</i>':'')+(s.is_first_price?'<i class="sel-t sel-ty">首件</i>':'');
-        // 现有对手数据全部来自美团(手机美团OCR + 美团H5),饿了么尚未采集
         return '<tr><td class="sel-shop">'+rvEsc(s.shop)+(s.distance?'<div class="sel-ps">'+rvEsc(s.distance)+'</div>':'')+'</td>'
           +'<td>'+plat(s.price, s.delivery_min, s.eta_min, s.monthly_sales, tags)+'</td>'
           +'<td>'+NA+'</td>'
@@ -418,15 +505,18 @@ var PAGES = {
         +'<td>'+(o.our_mt_price==null?NA:'<div class="sel-p"><span class="sel-pp">'+rvEsc(Number(o.our_mt_price).toFixed(2))+'</span></div><div class="sel-ps">利润率 '+pct01(o.mt_margin)+'(扣5%)</div>')+'</td>'
         +'<td>'+(o.our_ele_price==null?NA:'<div class="sel-p"><span class="sel-pp">'+rvEsc(Number(o.our_ele_price).toFixed(2))+'</span></div><div class="sel-ps">利润率 '+pct01(o.ele_margin)+'(扣5%)</div>')+'</td>'
         +'<td></td><td></td><td></td></tr>';
-      return '<tr class="sel-detail-row" data-i="'+i+'" style="display:none"><td></td><td colspan="13" class="sel-detail"><table class="sel-dt"><thead>'
+      return '<tr class="sel-detail-row" data-i="'+i+'" style="display:none"><td></td><td colspan="14" class="sel-detail"><table class="sel-dt"><thead>'
         +'<tr><th>店</th><th>美团 <span class="sel-h">到手 / 起送·时间 / 月销</span></th><th>饿了么 <span class="sel-h">到手 / 起送·时间 / 月销</span></th><th class="sel-num">划线价</th><th class="sel-num">按我方成本估利润</th><th>款型</th></tr>'
         +'</thead><tbody>'+shops+'</tbody></table><div class="sel-gap">数据缺口:'+(r.gaps&&r.gaps.length?rvEsc(r.gaps.join("、")):"无")+'</div></td></tr>';
     }
     var body = rows.map(function(r,i){
-      return '<tr><td><button class="sel-exp" data-i="'+i+'">▸</button></td><td class="sel-name">'+rvEsc(r.our_name||r.product_code)+'<div class="sel-spec">'+rvEsc(r.spec_text||"")+'</div></td><td>'+rvN(r.total_sales)+'</td><td>'+rvMoney(r.eff_min_price)+'<div class="sel-spec">'+rvEsc(r.eff_min_shop||"")+'</div></td><td>'+rvN(r.max_sales)+'<div class="sel-spec">'+rvEsc(r.max_shop||"")+'</div></td><td>'+rvMoney(r.cost)+'</td><td>'+rvMoney(r.unit_profit)+' / '+rvMoney(r.unit_profit_mt)+'</td><td>'+pct01(r.margin)+'</td><td><span class="sel-badge '+gradeCls(r.grade)+'">'+rvEsc(r.grade)+'</span></td><td><span class="sel-badge '+kindCls(r.kind)+'">'+rvEsc(r.kind)+'</span></td><td>'+rvMoney(r.our_store_price)+' / '+rvMoney(r.our_mt_price)+'</td><td>'+rvN(r.cur_stock)+'</td><td>'+rvN(r.qty_180)+'</td><td>'+rvEsc(r.advice||"")+'</td></tr>'+detail(r,i);
+      var can = String(r.grade)==="1" || String(r.grade)==="2";
+      var q = qtyFromAdvice(r.advice);
+      var op = can ? '<button class="sel-order" data-code="'+rvEsc(r.product_code)+'" data-qty="'+rvEsc(q)+'">下单</button>' : '<span class="sel-no">不可下单</span>';
+      return '<tr><td><button class="sel-exp" data-i="'+i+'">▸</button></td><td class="sel-name">'+rvEsc(r.our_name||r.product_code)+'<div class="sel-spec">'+rvEsc(r.spec_text||"")+'</div></td><td>'+rvN(r.total_sales)+'</td><td>'+rvMoney(r.eff_min_price)+'<div class="sel-spec">'+rvEsc(r.eff_min_shop||"")+'</div></td><td>'+rvN(r.max_sales)+'<div class="sel-spec">'+rvEsc(r.max_shop||"")+'</div></td><td>'+rvMoney(r.cost)+'</td><td>'+rvMoney(r.unit_profit)+' / '+rvMoney(r.unit_profit_mt)+'</td><td>'+pct01(r.margin)+'</td><td><span class="sel-badge '+gradeCls(r.grade)+'">'+rvEsc(r.grade)+'</span></td><td><span class="sel-badge '+kindCls(r.kind)+'">'+rvEsc(r.kind)+'</span></td><td>'+rvMoney(r.our_store_price)+' / '+rvMoney(r.our_mt_price)+'</td><td>'+rvN(r.cur_stock)+'</td><td>'+rvN(r.qty_180)+'</td><td>'+rvEsc(r.advice||"")+'</td><td>'+op+'</td></tr>'+detail(r,i);
     }).join("");
     var c = data.counts || {};
-    return '<div class="sel-wrap"><div class="sel-cards">'+card("1","评估1",c.grade1||0)+card("2","评估2",c.grade2||0)+card("3","评估3",c.grade3||0)+card("待核","待核",c.pending||0)+'</div><table class="sel-table"><thead><tr><th></th><th>产品</th><th class="sel-sort" data-sort="total_sales">总月销</th><th>有效最低价(店)</th><th>最高月销(店)</th><th>成本</th><th>每件赚(线下/美团)</th><th class="sel-sort" data-sort="margin">利润率</th><th>评估</th><th>款型</th><th>我方价(线下/美团)</th><th>库存</th><th>180天</th><th>建议</th></tr></thead><tbody>'+body+'</tbody></table></div>';
+    return '<div class="sel-wrap"><div class="sel-cards">'+card("1","评估1",c.grade1||0)+card("2","评估2",c.grade2||0)+card("3","评估3",c.grade3||0)+card("待核","待核",c.pending||0)+'<div class="sel-actions"><button class="sel-dl" data-dl="main">下载主表</button><button class="sel-dl" data-dl="detail">下载详情</button></div></div><table class="sel-table"><thead><tr><th></th><th>产品</th><th class="sel-sort" data-sort="total_sales">总月销</th><th>有效最低价(店)</th><th>最高月销(店)</th><th>成本</th><th>每件赚(线下/美团)</th><th class="sel-sort" data-sort="margin">利润率</th><th>评估</th><th>款型</th><th>我方价(线下/美团)</th><th>库存</th><th>180天</th><th>建议</th><th>操作</th></tr></thead><tbody>'+body+'</tbody></table></div>';
   },
   rivalOv: async function(){
     var d = await rvLive();
