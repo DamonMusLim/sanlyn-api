@@ -141,7 +141,7 @@ max_shop AS (
 valid_base AS (
   SELECT product_code, shop, price
     FROM public.v_selection_shop
-   WHERE monthly_sales > 0
+   WHERE monthly_sales >= 3  -- 0915:月销1~2的店不算市场价(BK34 宠胖胖 29.90 月销2 带偏)
      AND COALESCE(is_first_price, false) = false
      AND price > 1
 ),
