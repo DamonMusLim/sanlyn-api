@@ -66,6 +66,102 @@ function rvAddStyle(){
 }
 
 var PAGES = {
+  board: async function(){
+    if (!$("board-style")) document.head.insertAdjacentHTML("beforeend", '<style id="board-style">.board-tabs{display:flex;gap:8px;margin:0 0 12px}.board-tab,.board-btn{border:1px solid #d8e0ea;background:#fff;border-radius:8px;padding:7px 10px;cursor:pointer}.board-tab.on{background:#18212f;color:#fff;border-color:#18212f}.board-cards{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;margin:8px 0 8px}.board-card{border:1px solid #e2e8f0;background:#fff;border-radius:8px;padding:10px;cursor:pointer}.board-card b{display:block;font-size:22px;margin-top:5px}.board-card.red b{color:#c81e1e}.board-meta{color:#667085;font-size:12px;margin:0 0 12px}.board-head{display:flex;justify-content:space-between;align-items:center;gap:8px}.board-table{width:100%;border-collapse:collapse;background:#fff}.board-table th,.board-table td{border-bottom:1px solid #edf2f7;padding:9px 8px;text-align:left;vertical-align:top}.board-sub{color:#667085;font-size:12px}.board-detail{background:#fbfcfe}.board-pill{display:inline-block;border-radius:6px;padding:2px 6px;font-size:12px;background:#eef2f7}.board-pill.green{background:#dcfce7;color:#166534}.board-pill.yellow{background:#fef9c3;color:#854d0e}.board-pill.red,.board-pill.dead{background:#fee2e2;color:#991b1b}.board-pill.slow,.board-pill.stale{background:#ffedd5;color:#9a3412}.board-pill.fast{background:#dcfce7;color:#166534}.board-pill.steady{background:#dbeafe;color:#1d4ed8}.board-more{text-align:center;padding:12px}.board-grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:900px){.board-cards{grid-template-columns:repeat(2,1fr)}.board-grid2{grid-template-columns:1fr}.board-table{font-size:12px}}</style>');
+    var E = window.rvEsc || esc, N = window.rvN || num, M = window.rvMoney || function(v){return v==null?"—":"¥"+Number(v).toLocaleString("zh-CN")};
+    var st = window.__boardState || (window.__boardState = {tab:"overview",limit:100,data:null,open:{}});
+    if (st.data && Date.now() - (st.at||0) > 60000) { st.data = null; delete cache["db/petstore-store-board"]; }
+    var d = st.data || await get("db/petstore-store-board");
+    if (!st.data) st.at = Date.now();
+    st.data = d;
+    if (window.verdict) verdict(d.verdict || "—", d.verdict_level || "ok");
+    var cards = d.cards || {}, cats = d.categories || [], health = d.health || {};
+    function unk(v){ return v==null || v==="" ? "—" : E(v); }
+    function redraw(){
+      var host = $("board-main-host");
+      if (host) host.innerHTML = st.tab==="list" ? listHtml() : (st.tab==="health" ? healthHtml() : overviewHtml());
+      Array.prototype.forEach.call(document.querySelectorAll("[data-board-tab]"), function(x){ x.classList.toggle("on", x.dataset.boardTab===st.tab); });
+    }
+    function risk(filter){
+      window.__riskState = {tab:"main",filter:filter,limit:100,data:null};
+      show("risk");
+    }
+    function csv(){
+      var out = [["品类","商品编码","商品","规格","库存","90天销量","180天销量","动销层级","补货结论","最近销售","线下价","美团价","占款"].join(",")];
+      cats.forEach(function(c){
+        (c.products||[]).forEach(function(p){
+          out.push([c.category,p.product_code,p.product_name,p.spec,p.cur_stock,p.qty_90,p.qty_180,p.velocity_tier,p.restock_verdict,p.last_sale_at,p.store_price,p.mt_price,p.stock_value].map(function(x){return '"'+String(x==null?"":x).replace(/"/g,'""')+'"'}).join(","));
+        });
+      });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob(["\ufeff"+out.join("\n")], {type:"text/csv;charset=utf-8"}));
+      a.download = "petstore-store-board.csv"; a.click(); setTimeout(function(){URL.revokeObjectURL(a.href)}, 1000);
+    }
+    async function postGap(key){
+      var tk = ""; try { tk = localStorage.getItem("jdc_token") || localStorage.getItem("token") || ""; } catch(e){}
+      var hd = {"content-type":"application/json","accept":"application/json","x-gateway-auth":"gw-dataops-0903"};
+      if (tk) hd.Authorization = tk.indexOf("Bearer")===0 ? tk : "Bearer " + tk;
+      var r = await fetch(API+"db/petstore-store-board-act", {method:"POST",headers:hd,credentials:"include",body:JSON.stringify({gap_key:key})});
+      var j = await r.json();
+      if (!r.ok) { alert(j.error || "创建失败"); return; }
+      st.data = null; delete cache["db/petstore-store-board"]; show("board");
+    }
+    window.__boardOnClick = function(e){
+      var t = e.target.closest("[data-board-tab]"); if(t){ st.tab=t.dataset.boardTab; redraw(); return; }
+      var dl = e.target.closest("[data-board-download]"); if(dl){ csv(); return; }
+      var ex = e.target.closest("[data-board-expand]"); if(ex){
+        var k = ex.dataset.boardExpand, tr = $("board-detail-"+k);
+        if (tr) {
+          if (!tr.dataset.ready) { tr.children[1].innerHTML = productsHtml(cats[Number(ex.dataset.boardIndex)] || {}); tr.dataset.ready = "1"; }
+          tr.hidden = !tr.hidden;
+        }
+        return;
+      }
+      var riskBtn = e.target.closest("[data-board-risk]"); if(riskBtn){ risk(riskBtn.dataset.boardRisk); return; }
+      var gap = e.target.closest("[data-board-gap]"); if(gap){ postGap(gap.dataset.boardGap); return; }
+    };
+    if (!window.__boardBound) {
+      window.__boardBound = 1;
+      document.addEventListener("click", function(e){ if (window.__boardOnClick) window.__boardOnClick(e); });
+    }
+    var cardHtml = '<div class="board-cards">'
+      +'<div class="board-card"><span>压货</span><b>'+M(cards.stuck_value)+'</b><div class="board-sub">'+N(cards.stuck_n)+' 个</div></div>'
+      +'<div class="board-card red"><span>死库存</span><b>'+M(cards.dead_value)+'</b><div class="board-sub">'+N(cards.dead_n)+' 个</div></div>'
+      +'<div class="board-card"><span>卖得动</span><b>'+N(cards.moving_n)+'</b><div class="board-sub">'+(cards.moving_pct==null?"—":cards.moving_pct+"%")+'</div></div>'
+      +'<div class="board-card red" data-board-risk="onsale_no_stock"><span>在售没货</span><b>'+N(cards.onsale_no_stock_n)+'</b></div>'
+      +'<div class="board-card red" data-board-risk="expired_onsale"><span>已过期</span><b>'+M(cards.expired_amount)+'</b><div class="board-sub">在售 '+N(cards.expired_onsale_n)+'</div></div>'
+      +'<div class="board-card" data-board-tab="health"><span>数据源</span><b>'+N(cards.sources_fresh)+'/'+N(cards.sources_total)+'</b><div class="board-sub">今日更新</div></div></div>';
+    var meta = '<div class="board-meta">生成 '+unk(d.generated_at)+' '+(d.cached?"· 缓存":"")+' · 成本缺失 '+N(cards.cost_missing_n)+' 个不计入</div>';
+    function productsHtml(c){
+      return '<table class="board-table"><thead><tr><th>商品</th><th>库存</th><th>90天/180天</th><th>动销层级</th><th>补货结论</th><th>最近销售</th><th>线下/美团价</th><th>占款</th></tr></thead><tbody>'
+        +(c.products||[]).map(function(p){return '<tr><td><b>'+unk(p.product_name)+'</b><div class="board-sub">'+unk(p.spec)+'</div></td><td>'+N(p.cur_stock)+'</td><td>'+N(p.qty_90)+'/'+N(p.qty_180)+'</td><td><span class="board-pill '+E(p.velocity_tier||"")+'">'+unk(p.velocity_tier)+'</span></td><td>'+unk(p.restock_verdict)+'</td><td>'+unk(p.last_sale_at)+'</td><td>'+unk(p.store_price)+'/'+unk(p.mt_price)+'</td><td>'+M(p.stock_value)+'</td></tr>';}).join("")
+        +'</tbody></table>';
+    }
+    function overviewHtml(){
+      return '<div class="board-head"><b>库存总览</b><button class="board-btn" data-board-download>下载 CSV</button></div><table class="board-table"><thead><tr><th>▸</th><th>品类</th><th>品数</th><th>有货</th><th>卖得动(%)</th><th>占款</th><th>死库存占款(个数)</th><th>180天销量</th></tr></thead><tbody>'
+        +cats.map(function(c,i){return '<tr><td><button class="board-btn" data-board-expand="'+i+'" data-board-index="'+i+'">▸</button></td><td>'+unk(c.category)+'</td><td>'+N(c.skus)+'</td><td>'+N(c.in_stock)+'</td><td>'+N(c.moving)+'('+(c.moving_pct==null?"—":c.moving_pct+"%")+')</td><td>'+M(c.stock_value)+'</td><td>'+M(c.dead_value)+'('+N(c.dead_n)+')</td><td>'+N(c.qty_180)+'</td></tr><tr id="board-detail-'+i+'" hidden><td></td><td colspan="7" class="board-detail"></td></tr>';}).join("")
+        +'</tbody></table>';
+    }
+    function listHtml(){ return '<div id="board-list-host">读取中…</div>'; }
+    function taskOf(key){
+      var t = (d.open_tasks||[]).find(function(x){return x.dedupe_key==="health:"+key});
+      return t ? E(t.id) : null;
+    }
+    function healthHtml(){
+      var comp = health.completeness || {};
+      var compRows = [["上架率",comp.listed_pct,comp.listed,comp.total],["有货率",comp.in_stock_pct,comp.in_stock,comp.total],["条码率",comp.barcode_pct,comp.has_barcode,comp.total],["有图率",comp.pic_pct,comp.has_pic,comp.total]];
+      return '<div class="board-grid2"><div><b>数据源</b><table class="board-table"><thead><tr><th>src</th><th>状态</th><th>值</th><th>说明</th></tr></thead><tbody>'
+        +(health.daily_update||[]).map(function(x){return '<tr><td>'+unk(x.src)+'</td><td><span class="board-pill '+E(x.level||"")+'">'+unk(x.level)+'</span></td><td>'+unk(x.value)+'</td><td>'+unk(x.why)+'</td></tr>';}).join("")
+        +'</tbody></table></div><div><b>完整度</b><table class="board-table"><thead><tr><th>项</th><th>比例</th><th>数量</th></tr></thead><tbody>'
+        +compRows.map(function(r){return '<tr><td>'+r[0]+'</td><td>'+(r[1]==null?"—":r[1]+"%")+'</td><td>'+N(r[2])+'/'+N(r[3])+'</td></tr>';}).join("")
+        +'</tbody></table></div></div><p></p><b>缺口</b><table class="board-table"><thead><tr><th>缺口</th><th>数量</th><th>接单人</th><th>工单</th></tr></thead><tbody>'
+        +(health.gaps||[]).map(function(g){var t=taskOf(g.key); return '<tr><td>'+unk(g.label)+'</td><td>'+N(g.count)+'</td><td>'+unk(g.assignee)+'</td><td>'+(t||((Number(g.count)||0)>0?'<button class="board-btn" data-board-gap="'+E(g.key)+'">转工单</button>':'—'))+'</td></tr>';}).join("")
+        +'</tbody></table>';
+    }
+    var html = '<div class="board-tabs"><button class="board-tab '+(st.tab==="overview"?"on":"")+'" data-board-tab="overview">库存总览</button><button class="board-tab '+(st.tab==="list"?"on":"")+'" data-board-tab="list">商品明细</button><button class="board-tab '+(st.tab==="health"?"on":"")+'" data-board-tab="health">数据健康</button></div>'+cardHtml+meta+'<div id="board-main-host">'+(st.tab==="list"?listHtml():(st.tab==="health"?healthHtml():overviewHtml()))+'</div>';
+    setTimeout(async function(){ if(st.tab==="list" && $("board-list-host")) $("board-list-host").innerHTML = await renderList("shop"); }, 0);
+    return html;
+  },
   risk: async function(){
     if (!$("risk-style")) document.head.insertAdjacentHTML("beforeend", '<style id="risk-style">.risk-tabs{display:flex;gap:8px;margin:0 0 12px}.risk-tab,.risk-chip,.risk-act,.risk-dl{border:1px solid #d8e0ea;background:#fff;border-radius:8px;padding:7px 10px;cursor:pointer}.risk-tab.on,.risk-chip.on{background:#18212f;color:#fff;border-color:#18212f}.risk-cards{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;margin:8px 0 10px}.risk-card{border:1px solid #e2e8f0;background:#fff;border-radius:8px;padding:10px;cursor:pointer}.risk-card b{display:block;font-size:22px;margin-top:5px}.risk-card.red b{color:#c81e1e}.risk-meta{display:flex;justify-content:space-between;align-items:center;color:#667085;font-size:12px;margin:8px 0 12px}.risk-filters{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.risk-bulk{background:#c81e1e;color:#fff;border-color:#c81e1e}.risk-table{width:100%;border-collapse:collapse;background:#fff}.risk-table th,.risk-table td{border-bottom:1px solid #edf2f7;padding:9px 8px;text-align:left;vertical-align:top}.risk-name{font-weight:700}.risk-sub,.risk-small{color:#667085;font-size:12px}.risk-badge{display:inline-block;border-radius:6px;padding:2px 6px;margin:1px 3px 1px 0;font-size:12px;background:#eef2f7}.risk-badge.red{background:#fee2e2;color:#991b1b}.risk-badge.orange{background:#ffedd5;color:#9a3412}.risk-badge.yellow{background:#fef9c3;color:#854d0e}.risk-expired{color:#c81e1e;font-weight:700}.risk-detail{background:#fbfcfe}.risk-act{background:#f8fafc}.risk-act.red{background:#c81e1e;color:#fff;border-color:#c81e1e}.risk-more{text-align:center;padding:12px}@media(max-width:900px){.risk-cards{grid-template-columns:repeat(2,1fr)}.risk-table{font-size:12px}}</style>');
     var E = window.rvEsc || esc, N = window.rvN || num, M = window.rvMoney || function(v){return v==null?"—":"¥"+Number(v).toLocaleString("zh-CN")};
@@ -1250,7 +1346,7 @@ async function show(p){
   }
   if(p==="rival" && !rivalOk[window.__rivalTab]) window.__rivalTab = "sel";
   document.querySelectorAll(".snav").forEach(function(a){a.classList.toggle("on", a.dataset.p===p)});
-  $("ttl").textContent = ({list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",risk:"风险处理台",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",rival:rivalTitles[window.__rivalTab||"sel"],l10:"附近实时 · 美团H5",l11:"竞品历史库 · Excel导出2026-06-17 · ⛔已89天未更新,不代表当前在售",l12:"竞品今日行情 · 对手打法",l8:"竞店商品档(逐行明细,已并入历史库)",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
+  $("ttl").textContent = ({board:"金枋店经营台",list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",risk:"风险处理台",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",rival:rivalTitles[window.__rivalTab||"sel"],l10:"附近实时 · 美团H5",l11:"竞品历史库 · Excel导出2026-06-17 · ⛔已89天未更新,不代表当前在售",l12:"竞品今日行情 · 对手打法",l8:"竞店商品档(逐行明细,已并入历史库)",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
   $("body").innerHTML = '<div class="verdict">读取中…</div>';
   try { $("body").innerHTML = await PAGES[p](); }
   catch(e){ verdict("🔴 "+e.message,"red"); $("body").innerHTML=""; }
@@ -1268,7 +1364,7 @@ document.addEventListener("click", function(e){
 $("bsub").textContent = new Date().toISOString().slice(0,16).replace("T"," ")+" UTC";
 $("ft").innerHTML = "数据源：腾讯 PG · petstore-api:9010 · 三个接口只读<br>" +
   "第0层每天 01:10 落一次快照(cron PET-0052)，次日起才有读写增量";
-show("list");   // 默认打开产品分析 —— Damon 0903「加工层平时不用看」
+show("board");   // 默认打开金枋店经营台 —— Damon 0916「合并 金枋店 + 库存概况」
 
 // 金枋店(默认只看有货) 与 总商品库·全量(加工层) 共用这一个渲染器。
 // mode="shop" → stock=instock,带「显示0库存」开关;mode="all" → 不加库存筛选。
