@@ -394,15 +394,26 @@ var PAGES = {
       return '<button class="sel-card '+(filter===g?'on':'')+'" data-grade="'+g+'"><b>'+rvEsc(n)+'</b>'+rvEsc(label)+'</button>';
     }
     function detail(r,i){
+      // Damon 0915:一家店一条,分美团/饿了么两组(到手价·起送·月销),没有就写「0 未采集」
+      var NA = '<span class="sel-na">0 未采集</span>';
+      function m(v){ return v==null ? NA : rvMoney(v); }
+      function n(v){ return v==null ? NA : rvN(v); }
       var shops = (r.shops || []).map(function(s){
-        return '<tr><td>'+rvEsc(s.shop)+'</td><td>'+rvEsc(s.source)+'</td><td>'+rvN(s.monthly_sales)+'</td><td>'+rvMoney(s.price)+(s.small_unit?' <span class="sel-badge sel-g3">疑似单条/小规格</span>':'')+'</td><td>'+rvMoney(s.orig_price)+'</td><td>'+(s.is_first_price?'是':'否')+'</td><td>'+rvMoney(s.delivery_min)+'</td><td>'+rvN(s.distance)+'</td><td>'+rvN(s.shop_month_sales)+'</td><td>'+pct01(s.est_margin)+'</td><td><span class="sel-badge '+kindCls(s.shop_kind)+'">'+rvEsc(s.shop_kind)+'</span></td></tr>';
+        // 现有对手数据全部来自美团(手机美团OCR + 美团H5),饿了么尚未采集
+        return '<tr><td>'+rvEsc(s.shop)+'</td>'
+          +'<td>'+m(s.price)+(s.small_unit?' <span class="sel-badge sel-g3">疑似单条/小规格</span>':'')+(s.is_first_price?' <span class="sel-badge sel-gp">首件价</span>':'')+'</td><td>'+m(s.delivery_min)+'</td><td>'+n(s.monthly_sales)+'</td>'
+          +'<td>'+NA+'</td><td>'+NA+'</td><td>'+NA+'</td>'
+          +'<td>'+rvMoney(s.orig_price)+'</td><td>'+rvN(s.distance)+'</td><td>'+pct01(s.est_margin)+'</td><td><span class="sel-badge '+kindCls(s.shop_kind)+'">'+rvEsc(s.shop_kind)+'</span></td></tr>';
       }).join("");
       var o = r.ours || {};
-      var tail = '成本 '+rvMoney(o.cost)+' · 库存 '+rvN(o.cur_stock)+' · 180天 '+rvN(o.qty_180);
-      shops += '<tr style="background:#f3f8f4"><td><b>我方·线下</b></td><td>own</td><td>'+rvN(o.qty_180)+'(180天)</td><td>'+rvMoney(o.our_store_price)+'</td><td></td><td></td><td></td><td></td><td></td><td>'+pct01(o.store_margin)+'</td><td>'+tail+'</td></tr>';
-      shops += '<tr style="background:#f3f8f4"><td><b>我方·美团</b></td><td>own</td><td></td><td>'+(o.our_mt_price==null?'<span class="sel-na">未取到</span>':rvMoney(o.our_mt_price))+'</td><td></td><td></td><td></td><td></td><td></td><td>'+(o.our_mt_price==null?'':pct01(o.mt_margin)+' (扣5%)')+'</td><td></td></tr>';
-      shops += '<tr style="background:#f3f8f4"><td><b>我方·饿了么</b></td><td>own</td><td></td><td>'+(o.our_ele_price==null?'<span class="sel-na">未取到</span>':rvMoney(o.our_ele_price))+'</td><td></td><td></td><td></td><td></td><td></td><td>'+(o.our_ele_price==null?'':pct01(o.ele_margin)+' (扣5%)')+'</td><td></td></tr>';
-      return '<tr class="sel-detail-row" data-i="'+i+'" style="display:none"><td></td><td colspan="13" class="sel-detail"><table><thead><tr><th>店名</th><th>来源</th><th>月销</th><th>到手价</th><th>划线价</th><th>首件价?</th><th>起送</th><th>距离</th><th>店月销</th><th>按我方成本估利润率</th><th>款型</th></tr></thead><tbody>'+shops+'</tbody></table><div class="sel-gap">数据缺口:'+(r.gaps&&r.gaps.length?rvEsc(r.gaps.join("、")):"无")+'</div></td></tr>';
+      shops += '<tr style="background:#f3f8f4"><td><b>我方</b><div class="sel-spec">线下 '+rvMoney(o.our_store_price)+' · 利润率 '+pct01(o.store_margin)+'<br>成本 '+rvMoney(o.cost)+' · 库存 '+rvN(o.cur_stock)+' · 180天 '+rvN(o.qty_180)+'</div></td>'
+        +'<td>'+m(o.our_mt_price)+'</td><td>'+NA+'</td><td>'+NA+'</td>'
+        +'<td>'+m(o.our_ele_price)+'</td><td>'+NA+'</td><td>'+NA+'</td>'
+        +'<td></td><td></td><td>美团 '+(o.our_mt_price==null?'—':pct01(o.mt_margin))+' / 饿了么 '+(o.our_ele_price==null?'—':pct01(o.ele_margin))+'(扣5%)</td><td></td></tr>';
+      return '<tr class="sel-detail-row" data-i="'+i+'" style="display:none"><td></td><td colspan="13" class="sel-detail"><table><thead>'
+        +'<tr><th rowspan="2">店名</th><th colspan="3" style="text-align:center">美团</th><th colspan="3" style="text-align:center">饿了么</th><th rowspan="2">划线价</th><th rowspan="2">距离</th><th rowspan="2">按我方成本估利润率</th><th rowspan="2">款型</th></tr>'
+        +'<tr><th>到手价</th><th>起送</th><th>月销</th><th>到手价</th><th>起送</th><th>月销</th></tr>'
+        +'</thead><tbody>'+shops+'</tbody></table><div class="sel-gap">数据缺口:'+(r.gaps&&r.gaps.length?rvEsc(r.gaps.join("、")):"无")+'</div></td></tr>';
     }
     var body = rows.map(function(r,i){
       return '<tr><td><button class="sel-exp" data-i="'+i+'">▸</button></td><td class="sel-name">'+rvEsc(r.our_name||r.product_code)+'<div class="sel-spec">'+rvEsc(r.spec_text||"")+'</div></td><td>'+rvN(r.total_sales)+'</td><td>'+rvMoney(r.eff_min_price)+'<div class="sel-spec">'+rvEsc(r.eff_min_shop||"")+'</div></td><td>'+rvN(r.max_sales)+'<div class="sel-spec">'+rvEsc(r.max_shop||"")+'</div></td><td>'+rvMoney(r.cost)+'</td><td>'+rvMoney(r.unit_profit)+' / '+rvMoney(r.unit_profit_mt)+'</td><td>'+pct01(r.margin)+'</td><td><span class="sel-badge '+gradeCls(r.grade)+'">'+rvEsc(r.grade)+'</span></td><td><span class="sel-badge '+kindCls(r.kind)+'">'+rvEsc(r.kind)+'</span></td><td>'+rvMoney(r.our_store_price)+' / '+rvMoney(r.our_mt_price)+'</td><td>'+rvN(r.cur_stock)+'</td><td>'+rvN(r.qty_180)+'</td><td>'+rvEsc(r.advice||"")+'</td></tr>'+detail(r,i);
