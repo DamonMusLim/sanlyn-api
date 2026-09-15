@@ -385,12 +385,119 @@ var PAGES = {
   rivalOpp: async function(){
     var d = await rvLive();
     if (d.error || d.ok===false) return verdict("🔴 "+(d.error||d.message||"取数失败"),"red"), "";
+    var opp = await get("db/petstore-rival-opportunity");
+    if (opp.error || opp.ok===false) return verdict("🔴 "+(opp.error||opp.message||"机会池取数失败"),"red"), "";
     verdict(d.verdict, /^🔴/.test(d.verdict) ? "red" : "ok");
+
+    var typeName = {restock:"补货候选", new_item:"新品候选", review:"待复核", watch:"观察"};
+    var statusName = {
+      on_sale_in_stock:"在售有库存",
+      on_sale_out_of_stock:"在售缺货",
+      matched_no_dna:"已匹配无销量",
+      not_carried:"未经营",
+      unknown:"未知"
+    };
+    var confName = {high:"高", low:"低", none:"无"};
+    var rejectName = {
+      TOP20_ONLY:"仅 TOP20 可转单",
+      MED_RECORD_ONLY:"兽药只记录",
+      ACTION_MISMATCH:"动作与机会类型不一致",
+      LOW_CONF_REVIEW_ONLY:"低置信度只能复核",
+      DUPLICATE:"已有未关闭或近 30 天重复单",
+      DAILY_CAP_10:"今日已达 10 单上限",
+      QTY_REQUIRED:"补货数量必须为正整数",
+      BAD_REQUEST:"请求参数错误"
+    };
+    window.rvOppTab = window.rvOppTab || "restock";
+    window.rvOppDone = window.rvOppDone || {};
+    window.rvOppSwitch = function(t){
+      window.rvOppTab = t;
+      var tabs = document.querySelectorAll(".opp-tab");
+      for (var i=0;i<tabs.length;i++) tabs[i].className = "opp-tab" + (tabs[i].getAttribute("data-t")===t ? " on" : "");
+      var panes = document.querySelectorAll(".opp-pane");
+      for (var j=0;j<panes.length;j++) panes[j].style.display = panes[j].getAttribute("data-t")===t ? "" : "none";
+    };
+    window.rvOppAct = async function(btn, shop, name, action){
+      var qty;
+      if (action === "restock"){
+        var q = prompt("输入补货数量");
+        if (!/^[1-9][0-9]*$/.test(q || "")) return verdict("🔴 "+rejectName.QTY_REQUIRED, "red");
+        qty = Number(q);
+      }
+      btn.disabled = true;
+      var tk = "";
+      try { tk = localStorage.getItem("jdc_token") || localStorage.getItem("token") || ""; } catch(e){}
+      var hd = {"accept":"application/json","content-type":"application/json"};
+      if (tk) hd["Authorization"] = tk.indexOf("Bearer")===0 ? tk : ("Bearer " + tk);
+      try {
+        var r = await fetch(API + "db/petstore-rival-opportunity-act", {
+          method:"POST",
+          headers:hd,
+          credentials:"include",
+          body:JSON.stringify({shop:shop, product_name:name, action:action, qty:qty})
+        });
+        var j = await r.json().catch(function(){return {ok:false, code:"HTTP_"+r.status};});
+        if (j.ok){
+          window.rvOppDone[action+"|"+shop+"|"+name] = j.task_id;
+          btn.textContent = "已建单 " + j.task_id;
+          verdict("✅ 已建单 " + j.task_id, "ok");
+        } else {
+          btn.disabled = false;
+          verdict("🔴 " + (rejectName[j.code] || j.code || j.error || "转单失败"), "red");
+        }
+      } catch(e) {
+        btn.disabled = false;
+        verdict("🔴 转单失败", "red");
+      }
+    };
+
+    function oppRows(t){
+      var rows = (opp.groups && opp.groups[t]) || [];
+      var h = '<div class="opp-pane" data-t="'+rvEsc(t)+'" style="'+(window.rvOppTab===t?'':'display:none')+'">';
+      h += '<table><thead><tr><th>排名</th><th>店</th><th>商品</th><th>月销</th><th>到手价</th><th>机制</th><th>品类</th><th>我方状态</th><th>置信度</th><th>操作</th></tr></thead><tbody>';
+      for (var i=0;i<rows.length;i++){
+        var r = rows[i];
+        var key = t+"|"+r.shop+"|"+r.product_name;
+        var can = Number(r.rank_in_type)<=20 && !r.is_med && (t==="restock" || t==="new_item" || t==="review");
+        var op = '<span class="cm-na">—</span>';
+        if (r.is_med) op = '<span class="cm-warn">兽药·只记录</span>';
+        else if (can && window.rvOppDone[key]) op = '<button disabled>已建单 '+rvEsc(window.rvOppDone[key])+'</button>';
+        else if (can) op = '<button onclick="rvOppAct(this,'+JSON.stringify(r.shop)+','+JSON.stringify(r.product_name)+','+JSON.stringify(t)+')">'+(t==="restock"?"补货":t==="new_item"?"转新品":"转复核")+'</button>';
+        h += '<tr' + (r.is_med ? ' class="cm-med"' : '') + '><td>' + rvN(r.rank_in_type)
+          + '</td><td class="cm-shop">' + rvEsc(r.shop)
+          + '</td><td class="cm-name">' + rvEsc(r.product_name)
+          + (r.is_hook ? '<span class="cm-hook">引流价</span>' : '')
+          + (r.is_med ? '<span class="cm-warn">兽药·只记录</span>' : '')
+          + '</td><td>' + rvN(r.month_sale)
+          + '</td><td>' + rvMoney(r.hand_price)
+          + '</td><td>' + rvEsc(r.tier_text || r.tier_type || "—")
+          + '</td><td>' + rvEsc(r.category || "—")
+          + '</td><td>' + rvEsc(statusName[r.our_status] || r.our_status || "—")
+          + '</td><td>' + rvEsc(confName[r.confidence] || r.confidence || "—")
+          + '</td><td>' + op + '</td></tr>';
+      }
+      h += '</tbody></table></div>';
+      return h;
+    }
+
     var h = '<div class="cm-l12">';
+    h += '<h3>机会池</h3><div class="opp-cards">';
+    var ts = ["restock","new_item","review","watch"];
+    for (var a=0;a<ts.length;a++){
+      var t = ts[a];
+      h += '<button class="opp-card" onclick="rvOppSwitch(\''+t+'\')"><b>'+rvN((opp.counts||{})[t]||0)+'</b><span>'+rvEsc(typeName[t])+'</span></button>';
+    }
+    h += '</div><div class="opp-tabs">';
+    for (var b=0;b<ts.length;b++){
+      h += '<button data-t="'+ts[b]+'" class="opp-tab'+(window.rvOppTab===ts[b]?' on':'')+'" onclick="rvOppSwitch(\''+ts[b]+'\')">'+rvEsc(typeName[ts[b]])+'</button>';
+    }
+    h += '</div>';
+    for (var c=0;c<ts.length;c++) h += oppRows(ts[c]);
+
     h += '<h3>热卖同款汇总</h3>';
     h += '<table><thead><tr><th>商品</th><th>在卖店数</th><th>总月销</th><th>最高月销</th><th>最低正常到手价(&gt;¥1)</th><th>引流价</th><th>中位价</th><th>采集时段</th></tr></thead><tbody>';
-    for (var b=0;b<(d.hot_same||[]).length;b++){
-      var x = d.hot_same[b];
+    for (var b2=0;b2<(d.hot_same||[]).length;b2++){
+      var x = d.hot_same[b2];
       h += '<tr><td class="cm-name">' + rvEsc(x.product_name || x.product_code)
          + (x.match_suspect ? '<span class="cm-warn">疑似匹配错,勿用</span>' : '') + '</td><td>' + rvN(x.rival_shop_count)
          + '</td><td>' + rvN(x.rival_sales_total) + '</td><td>' + rvN(x.rival_sales_max) + '<br><span class="cm-shop">' + rvEsc(x.rival_sales_max_shop||"") + '</span>'
