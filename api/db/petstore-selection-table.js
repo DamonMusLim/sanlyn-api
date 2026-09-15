@@ -3,7 +3,7 @@ import { getPool, setCors } from "../db.js";
 const ROWS_SQL = `
 SELECT product_code, our_name, spec_text, total_sales, shop_count, max_sales, max_shop,
        eff_min_price, eff_min_shop, raw_min_price, our_store_price, our_mt_price,
-       qty_180, cur_stock, monthly_demand
+       qty_180, cur_stock, monthly_demand, our_ele_price
   FROM public.v_selection_rows
  ORDER BY total_sales DESC NULLS LAST, product_code`;
 
@@ -93,6 +93,8 @@ function gapsOf(r, cost, shops) {
   if (eff === null) gaps.push("无有效最低价");
   if (num(r.cur_stock) === null) gaps.push("库存为负/未知");
   if (!shops.some((s) => num(s.delivery_min) !== null)) gaps.push("起送价缺失");
+  if (num(r.our_mt_price) === null) gaps.push("我方美团价缺失");
+  if (num(r.our_ele_price) === null) gaps.push("我方饿了么价缺失");
   return gaps;
 }
 
@@ -136,6 +138,8 @@ function build(rows, shops, costs) {
         shop_month_sales: s.shop_month_sales || null,
         captured_at: s.captured_at,
         est_margin: estMargin,
+        // 0915 Damon:爪壮壮蓝氏波波1.99是单条价——远低于有效最低价的,标疑似单件/小规格
+        small_unit: eff !== null && price !== null && price < eff * 0.4,
         shop_kind: shopKind(s, estMargin)
       };
     });
@@ -172,11 +176,13 @@ function build(rows, shops, costs) {
       ours: {
         our_store_price: num(r.our_store_price),
         our_mt_price: num(r.our_mt_price),
+        our_ele_price: num(r.our_ele_price),
         cost,
         qty_180: num(r.qty_180),
         cur_stock: num(r.cur_stock),
         store_margin: div(moneyDiff(r.our_store_price, cost), r.our_store_price),
-        mt_margin: num(r.our_mt_price) === null || cost === null ? null : (num(r.our_mt_price) * 0.95 - cost) / num(r.our_mt_price)
+        mt_margin: num(r.our_mt_price) === null || cost === null ? null : (num(r.our_mt_price) * 0.95 - cost) / num(r.our_mt_price),
+        ele_margin: num(r.our_ele_price) === null || cost === null ? null : (num(r.our_ele_price) * 0.95 - cost) / num(r.our_ele_price)
       },
       gaps: gapsOf(r, cost, rowShops)
     };

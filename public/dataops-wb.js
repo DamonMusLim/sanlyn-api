@@ -395,10 +395,13 @@ var PAGES = {
     }
     function detail(r,i){
       var shops = (r.shops || []).map(function(s){
-        return '<tr><td>'+rvEsc(s.shop)+'</td><td>'+rvEsc(s.source)+'</td><td>'+rvN(s.monthly_sales)+'</td><td>'+rvMoney(s.price)+'</td><td>'+rvMoney(s.orig_price)+'</td><td>'+(s.is_first_price?'是':'否')+'</td><td>'+rvMoney(s.delivery_min)+'</td><td>'+rvN(s.distance)+'</td><td>'+rvN(s.shop_month_sales)+'</td><td>'+pct01(s.est_margin)+'</td><td><span class="sel-badge '+kindCls(s.shop_kind)+'">'+rvEsc(s.shop_kind)+'</span></td></tr>';
+        return '<tr><td>'+rvEsc(s.shop)+'</td><td>'+rvEsc(s.source)+'</td><td>'+rvN(s.monthly_sales)+'</td><td>'+rvMoney(s.price)+(s.small_unit?' <span class="sel-badge sel-g3">疑似单条/小规格</span>':'')+'</td><td>'+rvMoney(s.orig_price)+'</td><td>'+(s.is_first_price?'是':'否')+'</td><td>'+rvMoney(s.delivery_min)+'</td><td>'+rvN(s.distance)+'</td><td>'+rvN(s.shop_month_sales)+'</td><td>'+pct01(s.est_margin)+'</td><td><span class="sel-badge '+kindCls(s.shop_kind)+'">'+rvEsc(s.shop_kind)+'</span></td></tr>';
       }).join("");
       var o = r.ours || {};
-      shops += '<tr><td>我方</td><td>own</td><td></td><td>'+rvMoney(o.our_store_price)+'</td><td>'+rvMoney(o.our_mt_price)+'</td><td></td><td></td><td></td><td></td><td>线下 '+pct01(o.store_margin)+' / 美团 '+pct01(o.mt_margin)+'</td><td>成本 '+rvMoney(o.cost)+' · 库存 '+rvN(o.cur_stock)+' · 180天 '+rvN(o.qty_180)+'</td></tr>';
+      var tail = '成本 '+rvMoney(o.cost)+' · 库存 '+rvN(o.cur_stock)+' · 180天 '+rvN(o.qty_180);
+      shops += '<tr style="background:#f3f8f4"><td><b>我方·线下</b></td><td>own</td><td>'+rvN(o.qty_180)+'(180天)</td><td>'+rvMoney(o.our_store_price)+'</td><td></td><td></td><td></td><td></td><td></td><td>'+pct01(o.store_margin)+'</td><td>'+tail+'</td></tr>';
+      shops += '<tr style="background:#f3f8f4"><td><b>我方·美团</b></td><td>own</td><td></td><td>'+(o.our_mt_price==null?'<span class="sel-na">未取到</span>':rvMoney(o.our_mt_price))+'</td><td></td><td></td><td></td><td></td><td></td><td>'+(o.our_mt_price==null?'':pct01(o.mt_margin)+' (扣5%)')+'</td><td></td></tr>';
+      shops += '<tr style="background:#f3f8f4"><td><b>我方·饿了么</b></td><td>own</td><td></td><td>'+(o.our_ele_price==null?'<span class="sel-na">未取到</span>':rvMoney(o.our_ele_price))+'</td><td></td><td></td><td></td><td></td><td></td><td>'+(o.our_ele_price==null?'':pct01(o.ele_margin)+' (扣5%)')+'</td><td></td></tr>';
       return '<tr class="sel-detail-row" data-i="'+i+'" style="display:none"><td></td><td colspan="13" class="sel-detail"><table><thead><tr><th>店名</th><th>来源</th><th>月销</th><th>到手价</th><th>划线价</th><th>首件价?</th><th>起送</th><th>距离</th><th>店月销</th><th>按我方成本估利润率</th><th>款型</th></tr></thead><tbody>'+shops+'</tbody></table><div class="sel-gap">数据缺口:'+(r.gaps&&r.gaps.length?rvEsc(r.gaps.join("、")):"无")+'</div></td></tr>';
     }
     var body = rows.map(function(r,i){

@@ -105,7 +105,8 @@ WITH ops AS (
          product_name AS our_name,
          spec_text,
          store_price::numeric AS our_store_price,
-         mt_price::numeric AS our_mt_price
+         mt_price::numeric AS our_mt_price,
+         ele_price::numeric AS our_ele_price
     FROM public.petstore_ops_row
    WHERE product_code IS NOT NULL
    ORDER BY product_code
@@ -185,7 +186,8 @@ SELECT ss.product_code,
        o.our_mt_price,
        s.qty_180,
        s.cur_stock,
-       round((s.qty_180 * 30 / 142), 1) AS monthly_demand
+       round((s.qty_180 * 30 / 142), 1) AS monthly_demand,
+       o.our_ele_price
   FROM shop_sum ss
   LEFT JOIN ops o ON o.product_code = ss.product_code
   LEFT JOIN sales s ON s.product_code = ss.product_code
