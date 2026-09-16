@@ -1,4 +1,4 @@
-// 核销管理 · finance_settlement_links lens + guarded drafts.
+// 核销管理 · finance_settlement_links read lens.
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { appliedStatusWhere, linkJoinClause, linkMatchBasis, linkPaymentJoinClause } from "./settlement-management-matchers.js";
@@ -6,11 +6,10 @@ import { paymentRows, payIdentityExpr } from "./settlement-management-payments.j
 import { mergedPaymentRows, receiptConnectionMetrics, settlementReceiptRows } from "./settlement-management-receipts.js";
 import { connectionState, linkStats, metrics, paymentStats } from "./settlement-management-stats.js";
 
-const VERSION = "v2026.09.15-1";
+const VERSION = "v2026.09.16-2";
 const TABLE = "finance_settlement_links";
 const PAY_TABLE = "finance_payments";
 const READ_ROLES = new Set(["admin", "finance", "ceo", "superadmin"]);
-const WRITE_ROLES = new Set(["admin", "finance", "ceo", "superadmin"]);
 const FIELDS = [
   ["id", "核销ID"], ["payment_id", "收付ID"], ["target_type", "核销对象"],
   ["target_id", "对象编号"], ["amount_applied", "核销金额"], ["currency", "币种"],
@@ -18,7 +17,6 @@ const FIELDS = [
   ["created_at", "创建时间"], ["updated_at", "更新时间"],
 ];
 const REQUIRED = ["payment_id", "target_type", "target_id", "amount_applied", "currency", "status"];
-const EDIT_FIELDS = ["payment_id", "target_type", "target_id", "amount_applied", "currency", "status", "source", "created_by"];
 const PAY_FIELDS = [
   ["payment_id", "收付ID"], ["direction", "方向"], ["amount", "收款金额"],
   ["currency", "币种"], ["payment_date", "收付日期"], ["contract_no", "合同号"],
@@ -43,99 +41,6 @@ function pct(filled, total) {
 }
 function sqlIdent(name) {
   return `"${name.replace(/"/g, '""')}"`;
-}
-function parseValue(name, v) {
-  if (name === "amount_applied") {
-    if (!has(v)) return null;
-    const n = Number(v);
-    if (!Number.isFinite(n)) throw new Error("amount_applied must be numeric");
-    return n;
-  }
-  return has(v) ? clean(v, 500) : null;
-}
-function actorOf(req) {
-  const u = req.user || {};
-  return clean(u.username || u.name || u.email || u.account || u.sub || u.uid || u.id || u.role, 160) || "unknown";
-}
-async function auditWrite(client, req, action, row, before = null) {
-  const detail = {
-    module: "settlement-management",
-    table: TABLE,
-    action,
-    id: row?.id || before?.id || null,
-    before,
-    after: row,
-    actor: actorOf(req),
-  };
-  await client.query(
-    `INSERT INTO shipping_plan_audit (plan_id, plan_uid, action, actor, detail)
-     VALUES (NULL,$1,$2,$3,$4::jsonb)`,
-    [`settlement:${detail.id || "new"}`, `settlement_${action}`, detail.actor, JSON.stringify(detail)]
-  );
-}
-function writeInput(body, cols, requireId) {
-  const id = clean(body?.id, 80);
-  if (requireId && !id) throw new Error("id required");
-  const fields = [];
-  const values = [];
-  for (const name of EDIT_FIELDS) {
-    if (!Object.prototype.hasOwnProperty.call(body || {}, name)) continue;
-    if (!cols.has(name)) throw new Error(`未接入: 缺 ${TABLE}.${name}；当前填充率 未接入`);
-    fields.push(name);
-    values.push(parseValue(name, body[name]));
-  }
-  if (!fields.length) throw new Error("no editable fields");
-  return { id, fields, values };
-}
-async function writeRow(pool, req) {
-  const client = await pool.connect();
-  try {
-    if (!(await tableExists(client))) throw new Error(`未接入: 缺 ${TABLE}；当前填充率 未接入`);
-    const cols = await tableColumns(client);
-    if (!cols.has("id")) throw new Error(`未接入: 缺 ${TABLE}.id；当前填充率 未接入`);
-    await client.query("BEGIN");
-    if (req.method === "POST") {
-      const input = writeInput(req.body, cols, false);
-      const names = input.fields.map(sqlIdent);
-      const ph = input.fields.map((_, i) => `$${i + 1}`);
-      if (cols.has("created_at")) { names.push("created_at"); ph.push("NOW()"); }
-      if (cols.has("updated_at")) { names.push("updated_at"); ph.push("NOW()"); }
-      const r = await client.query(`INSERT INTO ${TABLE} (${names.join(",")}) VALUES (${ph.join(",")}) RETURNING id::text AS id`, input.values);
-      await auditWrite(client, req, "post", r.rows[0]);
-      await client.query("COMMIT");
-      return { id: r.rows[0]?.id };
-    }
-    if (req.method === "PATCH") {
-      const input = writeInput(req.body, cols, true);
-      const current = await client.query(`SELECT * FROM ${TABLE} WHERE id::text=$1 FOR UPDATE`, [input.id]);
-      if (!current.rowCount) throw new Error("not found");
-      const sets = input.fields.map((x, i) => `${sqlIdent(x)}=$${i + 1}`);
-      if (cols.has("updated_at")) sets.push("updated_at=NOW()");
-      const r = await client.query(`UPDATE ${TABLE} SET ${sets.join(",")} WHERE id::text=$${input.values.length + 1} RETURNING id::text AS id`, [...input.values, input.id]);
-      await auditWrite(client, req, "patch", r.rows[0], current.rows[0]);
-      await client.query("COMMIT");
-      return { id: r.rows[0]?.id };
-    }
-    if (req.method === "DELETE") {
-      const id = clean(req.body?.id || req.query?.id, 80);
-      if (!id) throw new Error("id required");
-      if (!cols.has("status")) throw new Error(`未接入: 缺 ${TABLE}.status；当前填充率 未接入`);
-      const current = await client.query(`SELECT * FROM ${TABLE} WHERE id::text=$1 FOR UPDATE`, [id]);
-      if (!current.rowCount) throw new Error("not found");
-      const sets = ["status=$1"];
-      if (cols.has("updated_at")) sets.push("updated_at=NOW()");
-      const r = await client.query(`UPDATE ${TABLE} SET ${sets.join(",")} WHERE id::text=$2 RETURNING id::text AS id`, ["voided", id]);
-      await auditWrite(client, req, "delete", { ...r.rows[0], soft_deleted: true }, current.rows[0]);
-      await client.query("COMMIT");
-      return { id: r.rows[0]?.id, soft_deleted: true };
-    }
-    throw new Error("method not allowed");
-  } catch (err) {
-    await client.query("ROLLBACK").catch(() => {});
-    throw err;
-  } finally {
-    client.release();
-  }
 }
 async function tableExists(pool) {
   const r = await pool.query("SELECT to_regclass($1) AS name", [`public.${TABLE}`]);
@@ -277,19 +182,11 @@ function alertsFor(row) {
   return out;
 }
 export default async function handler(req, res) {
-  setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
+  setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireAuth(req, res)) return;
   if (!READ_ROLES.has(req.user?.role)) return fail(res, 403, "Forbidden");
-  if (req.method !== "GET") {
-    if (!WRITE_ROLES.has(req.user?.role)) return fail(res, 403, "Forbidden");
-    try {
-      const changed = await writeRow(getPool(), req);
-      return res.status(200).json({ success: true, version: VERSION, changed });
-    } catch (err) {
-      return fail(res, err.message === "not found" ? 404 : 400, err.message);
-    }
-  }
+  if (req.method !== "GET") return fail(res, 405, "method not allowed: settlement-management is read-only");
   try {
     const pool = getPool();
     if (!(await tableExists(pool))) {

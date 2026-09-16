@@ -67,7 +67,7 @@ async function listShipments(pool, ctx, q) {
   const createdOrder = shipmentCols.has("created_at") ? "s.created_at DESC NULLS LAST, " : "";
   params.push(limit);
   const r = await pool.query(`
-    SELECT ${expr("s", shipmentCols, "id", "int")}, ${expr("s", shipmentCols, "etd")}, ${expr("s", shipmentCols, "status")},
+    SELECT ${expr("s", shipmentCols, "id")}, ${expr("s", shipmentCols, "etd")}, ${expr("s", shipmentCols, "status")},
       ${expr("s", shipmentCols, "company_code")}, ${expr("s", shipmentCols, "order_id")}, ${dynamic},
       ${companyName} AS company_name, ${biz.select}
     FROM customs_shipments s
@@ -103,6 +103,7 @@ function notConnectedResponse() {
       outbox_missing: [OUTBOX],
     },
     outbox: outboxState(false, [OUTBOX], [OUTBOX]),
+    required_sql: outboxSql(false, [OUTBOX]),
   };
 }
 
@@ -167,6 +168,7 @@ export default async function handler(req, res) {
           outbox_missing: outboxMissing,
         },
         outbox: outboxState(hasOutbox, rawOutboxMissing, outboxMissing, drafts),
+        required_sql: rawOutboxMissing.length ? outboxSql(hasOutbox, rawOutboxMissing) : "",
       });
     }
     if (req.method !== "POST") return fail(res, 405, "Method not allowed");

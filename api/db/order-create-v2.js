@@ -3,6 +3,7 @@
 // GET: fetch form helpers (customers list, products list)
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { getCustomerProductsCatalog } from "./customer-products-catalog.js";
 var ENSURE_LINE_ITEMS = `
   CREATE TABLE IF NOT EXISTS order_line_items (
     id              SERIAL PRIMARY KEY,
@@ -251,99 +252,15 @@ export default async function handler(req, res) {
           return res.status(403).json({ error: "Out of scope — you cannot view this customer's order history." });
         }
 
-        // Try company_products table first (authorized catalog with customer-specific pricing)
-        var cpRows = [];
-        try {
-          var cpResult = await pool.query(
-            `SELECT cp.id AS cp_id, cp.alias_sku, cp.price_cny, cp.price_usd, cp.moq, cp.lead_time_days, cp.notes AS cp_notes,
-                    p.sku, p.name_cn, p.name_en, p.brand, p.size, p.unit, p.cbm, p.gross_weight, p.net_weight,
-                    p.inner_qty, p.inner_unit, p.hs_code
-             FROM company_products cp
-             JOIN customers cust ON cust.id = cp.company_id
-             JOIN products p ON p.id = cp.product_id
-             WHERE cust.company_code = $1 AND cp.active = true
-             ORDER BY p.name_en`,
-            [code]
-          );
-          cpRows = cpResult.rows || [];
-        } catch(cpErr) {
-          // table may not exist or product_id FK issue — fall through to order history
-        }
-
-        if (cpRows.length > 0) {
-          var cpProducts = cpRows.map(function(r) {
-            return {
-              name: r.name_en || r.name_cn || "",
-              code: r.alias_sku || r.sku || "",
-              brand: r.brand || "",
-              size: r.size || "",
-              unit: r.unit || "CTN",
-              unitPrice: parseFloat(r.price_usd) || 0,
-              price_usd: parseFloat(r.price_usd) || 0,
-              price_cny: parseFloat(r.price_cny) || 0,
-              cbm: parseFloat(r.cbm) || 0,
-              grossWeight: parseFloat(r.gross_weight) || 0,
-              netWeight: parseFloat(r.net_weight) || 0,
-              innerQty: r.inner_qty || 0,
-              innerUnit: r.inner_unit || "PCS",
-              hsCode: r.hs_code || "",
-              moq: r.moq || 0,
-              leadTimeDays: r.lead_time_days || 0,
-              notes: r.cp_notes || "",
-              isAuthorized: true,
-            };
-          });
-          return res.status(200).json({
-            success: true,
-            products: cpProducts,
-            orderCount: 0,
-            defaults: {},
-            source: "company_products",
-            authorizedCount: cpProducts.length,
-          });
-        }
-
-        // Get products from this customer's recent orders
-        var recentOrders = await pool.query(
-          "SELECT products, customer_po, order_no, created_at FROM orders WHERE company_code = $1 AND products IS NOT NULL ORDER BY created_at DESC LIMIT 10",
-          [code]
-        );
-        // Extract unique products with latest qty/price
-        var productMap = {};
-        (recentOrders.rows || []).forEach(function(ord) {
-          var prods = [];
-          try { prods = typeof ord.products === "string" ? JSON.parse(ord.products) : (ord.products || []); } catch(e) {}
-          prods.forEach(function(p) {
-            var key = p.code || p.name;
-            if (key && !productMap[key]) {
-              productMap[key] = {
-                name: p.name || "", code: p.code || "", brand: p.brand || "",
-                size: p.size || "", unit: p.unit || "CTN",
-                unitPrice: p.unitPrice || p.price || 0,
-                cbm: p.cbm || 0, grossWeight: p.grossWeight || 0, netWeight: p.netWeight || 0,
-                lastQty: p.qty || 0, lastOrderNo: ord.order_no,
-                lastDate: ord.created_at,
-                innerQty: p.innerQty || p.bagsPerBox || 0,
-                innerUnit: p.innerUnit || "PCS",
-                declareAmountPerBox: p.declareAmountPerBox || 0,
-                vatRate: p.vatRate || 0, taxRebateRate: p.taxRebateRate || 0,
-                hsCode: p.hsCode || "",
-              };
-            }
-          });
-        });
-
-        // Also get this customer's default info
-        var custInfo = await pool.query(
-          "SELECT country, destination_port, customer_address, consignee, currency FROM orders WHERE company_code = $1 ORDER BY created_at DESC LIMIT 1",
-          [code]
-        ).catch(function() { return { rows: [] }; });
-
+        var catalog = await getCustomerProductsCatalog(pool, code);
         return res.status(200).json({
           success: true,
-          products: Object.values(productMap),
-          orderCount: recentOrders.rows.length,
-          defaults: custInfo.rows[0] || {},
+          products: catalog.products,
+          orderCount: catalog.orderCount,
+          defaults: catalog.defaults,
+          source: catalog.source,
+          authorizedCount: catalog.authorizedCount,
+          publicSupplierCount: catalog.publicSupplierCount,
         });
       }
 

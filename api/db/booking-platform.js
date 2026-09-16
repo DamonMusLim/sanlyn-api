@@ -5,7 +5,7 @@ import { DOC_LINK_FIELDS, docCoverage, docsForRows, rowDocs, downloadableDocs } 
 import { trialReadiness } from "./booking-platform-trial.js";
 import { PLATFORM_FIELDS, notConnectedCoverage, platformStatus } from "./booking-platform-access.js";
 
-const VERSION = "v2026.09.15-1";
+const VERSION = "v2026.09.16-1";
 const READ_ROLES = new Set(["admin", "logistics", "sales", "ops", "finance", "operator", "ceo", "superadmin"]);
 const CORE_FIELDS = [
   ["shipment_no", "CY号"], ["booking_no", "订舱号"], ["forwarder_booking_no", "货代订舱号"],

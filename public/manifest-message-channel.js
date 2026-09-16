@@ -1,7 +1,7 @@
 (function(){
   "use strict";
   var API="/api/db/manifest-message-channel";
-  var VERSION="v2026.09.15-1";
+  var VERSION="v2026.09.16-3";
   var state={rows:[],selected:null,coverage:null,outbox:null,preview:null,version:VERSION,generatedAt:null,canSave:false};
   var $=function(id){return document.getElementById(id)};
   function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
@@ -24,7 +24,7 @@
   function missingSources(fields, fallback){var xs=(fields||[]).filter(function(f){return f.state!=="ready"||!Number(f.total||0)||!Number(f.filled||0)}).map(function(f){return f.source||f.name});return xs.length?xs.join("、"):fallback}
   function sourceOf(f,table){return f.source||table+"."+f.name}
   function outboxNote(ob){
-    if(ob.state==="ready")return "manifest_message_outbox 已接入；必需字段 "+(ob.connected_fields||0)+"/"+(ob.required_fields||0)+"；当前填充率 100%；待发草稿数按真实记录显示";
+    if(ob.state==="ready")return "manifest_message_outbox 已接入；必需字段 "+(ob.connected_fields||0)+"/"+(ob.required_fields||0)+"；待发草稿数按真实记录显示";
     return "缺 "+((ob.missing_fields||[]).join("、")||"manifest_message_outbox")+"；当前填充率 "+fillText(ob.fill_rate);
   }
   function draftStateText(status){

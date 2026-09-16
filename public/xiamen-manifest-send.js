@@ -37,7 +37,7 @@
   }
   function rateFor(name,group){
     var f=(((state.coverage||{})[group]||[]).find(function(x){return x.name===name}));
-    if(!f||f.state!=="ready"||!Number(f.total)||!Number(f.filled))return "未接入";
+    if(!f||f.state!=="ready"||!Number(f.total))return "未接入";
     return pct(f.filled,f.total);
   }
   function lineRate(){
@@ -111,7 +111,9 @@
     if(!fields.length){box.appendChild(el("div","empty","未接入 · 缺字段清单，当前填充率 未接入。"));return}
     fields.forEach(function(f){
       var d=el("div","field"),name=el("b","",f.label),meta=el("span","");
-      if(f.state==="not_connected"||!Number(f.total))text(meta,"未接入 · 缺字段或真实记录 "+f.name+"；当前填充率 未接入");
+      if(f.state==="not_connected")text(meta,"未接入 · 缺字段 "+f.name+"；当前填充率 未接入");
+      else if(!Number(f.total))text(meta,"未接入 · 缺真实记录 "+f.name+"；当前填充率 未接入");
+      else if(!Number(f.filled||0))text(meta,"未接入 · 缺已填值 "+f.name+"；当前填充率 "+pct(0,f.total));
       else text(meta,f.name+" · "+f.filled+"/"+f.total+" · "+pct(f.filled,f.total));
       d.appendChild(name);d.appendChild(meta);box.appendChild(d);
     });
@@ -141,6 +143,7 @@
   $("reload").addEventListener("click",function(){load()});
   $("search").addEventListener("keydown",function(e){if(e.key==="Enter")load()});
   $("sendBtn").addEventListener("click",function(){alert("厦门舱单发送通道尚未对接：缺厦门口岸申报接口、通道凭证、xiamen_manifest_status / xiamen_manifest_sent_at / xiamen_manifest_receipt_no 三列；当前页面只做数据核对。")});
+  window.addEventListener("message",function(event){var d=event.data||{};if(event.origin===location.origin&&d.type==="sanlyn:module-refresh")load(state.selected&&state.selected.id)});
   if(window.parent!==window)window.parent.postMessage({type:"sanlyn:module-ready",protocol:"sanlyn:open-tab",module:"xiamen-manifest-send",title:"厦门-舱单发送",url:location.pathname+location.search,accepts:["sanlyn:module-refresh"]},location.origin);
   load();
 })();

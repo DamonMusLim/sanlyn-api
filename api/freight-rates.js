@@ -1,4 +1,5 @@
 import { getPool, setCors } from './db.js';
+import { requireAuth } from './auth.js';
 import { normalizeCarrier } from './db/lib/portcharge-close-loop.js';
 
 function normRateBody(body) {
@@ -11,6 +12,7 @@ function normRateBody(body) {
 export default async function handler(req, res) {
   setCors(req, res, 'GET, POST, PATCH, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') return res.status(200).end();
+  if (!requireAuth(req, res)) return;
 
   const pool = getPool();
 
@@ -65,7 +67,6 @@ export default async function handler(req, res) {
     if (Object.prototype.hasOwnProperty.call(body, 'forwarder') && !body.forwarder) return res.status(400).json({ error: 'forwarder required' });
     const fields = Object.keys(body).filter(k => allowed.includes(k));
     if (!fields.length) return res.status(400).json({ error: 'no updatable fields' });
-    const setClauses = fields.map((f, i) => '`' + f + '` = $' + (i + 1)).join(', ');
     const values = fields.map(f => body[f]);
     values.push(id);
     try {

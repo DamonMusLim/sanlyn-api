@@ -101,6 +101,19 @@ function orderSql(cols) {
   if (cols.has("id")) parts.push("s.id DESC");
   return parts.length ? parts.join(", ") : "1";
 }
+function companyJoin(ctx) {
+  return ctx.hasCompanies && ctx.companyCols.has("code") && ctx.shipmentCols.has("company_code")
+    ? "LEFT JOIN companies c ON c.code = s.company_code"
+    : "";
+}
+function companyNameExpr(ctx) {
+  if (!ctx.shipmentCols.has("company_code")) return "NULL::text";
+  const parts = companyJoin(ctx)
+    ? ["name_cn", "name_en", "name"].filter((name) => ctx.companyCols.has(name)).map((name) => `c.${name}`)
+    : [];
+  parts.push("s.company_code");
+  return `COALESCE(${parts.join(", ")})`;
+}
 function rowOut(row, headerCols, businessFields = []) {
   const missing = missingFor(row, HEADER_FIELDS, headerCols);
   const cargoType = normalizeCargoType(headerCols.has("cargo_type") ? row.cargo_type : null);
@@ -153,11 +166,11 @@ async function listShipments(pool, ctx, hasContainers, hasLines, q) {
   const sql = `
     SELECT ${idExpr} AS id, ${HEADER_FIELDS.map(([name]) => expr("s", cols, name)).join(", ")},
       ${expr("s", cols, "etd")}, ${expr("s", cols, "status")},
-      ${cols.has("company_code") ? "COALESCE(c.name_cn, c.name_en, s.company_code)" : "NULL::text"} AS company_name,
+      ${companyNameExpr(ctx)} AS company_name,
       ${biz.select}
       ${containerAgg}${lineAgg}
     FROM customs_shipments s
-    ${cols.has("company_code") ? "LEFT JOIN companies c ON c.code = s.company_code" : ""}
+    ${companyJoin(ctx)}
     ${biz.joins.order}
     ${biz.joins.plan}
     ${conds.length ? "WHERE " + conds.join(" AND ") : ""}
@@ -203,12 +216,15 @@ export default async function handler(req, res) {
     const headerCols = await columns(pool, "customs_shipments");
     const hasOrders = await tableExists(pool, "orders");
     const hasPlans = await tableExists(pool, "shipping_plans");
+    const hasCompanies = await tableExists(pool, "companies");
     const ctx = {
       shipmentCols: headerCols,
       hasOrders,
       orderCols: hasOrders ? await columns(pool, "orders") : new Set(),
       hasPlans,
       planCols: hasPlans ? await columns(pool, "shipping_plans") : new Set(),
+      hasCompanies,
+      companyCols: hasCompanies ? await columns(pool, "companies") : new Set(),
     };
     const hasContainers = await tableExists(pool, "customs_shipment_containers");
     const hasLines = await tableExists(pool, "customs_shipment_lines");

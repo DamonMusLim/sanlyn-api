@@ -8,7 +8,7 @@ function esc(value){
 function blank(value){return value==null||String(value).trim()===""}
 function fieldRate(row){
   var n=Number(row&&row.fill_rate);
-  if(!row||row.fill_rate==null||row.total_count==null||!Number.isFinite(n))return "未接入";
+  if(!row||row.fill_rate==null||row.total_count==null||Number(row.total_count)===0||!Number.isFinite(n))return "未接入";
   return Math.round(n*1000)/10+"%";
 }
 function hasSourceRow(row, opts){
@@ -121,6 +121,13 @@ function missingInText(templateText, values, mappings, opts){
   });
   return out;
 }
+function render(templateText, values, mappings, opts){
+  return {
+    html:renderText(templateText,values,mappings,opts),
+    plain:renderPlain(templateText,values,mappings,opts),
+    missing:missingInText(templateText,values,mappings,opts)
+  };
+}
 function groups(mappings){
   var order=[], map={};
   (mappings||[]).forEach(function(row){
@@ -130,5 +137,5 @@ function groups(mappings){
   });
   return order.map(function(key){return {key:key, rows:map[key]}});
 }
-global.HgjTemplateRenderer={esc:esc,fieldRate:fieldRate,missingText:missingText,missingBrief:missingBrief,valueText:valueText,renderText:renderText,renderInto:renderInto,renderPlain:renderPlain,missingInText:missingInText,groups:groups};
+global.HgjTemplateRenderer={esc:esc,fieldRate:fieldRate,missingText:missingText,missingBrief:missingBrief,valueText:valueText,render:render,renderText:renderText,renderInto:renderInto,renderPlain:renderPlain,missingInText:missingInText,groups:groups};
 })(window);

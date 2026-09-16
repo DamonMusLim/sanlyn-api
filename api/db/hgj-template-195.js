@@ -6,7 +6,7 @@ import { HGJ_TEMPLATE_195_MAP, HGJ_TEMPLATE_195_TABLES } from "./hgj-template-19
 const TEMPLATE = {
   code: "hgj-195",
   name: "海管家195模板",
-  version: "v2026.09.15-1",
+  version: "v2026.09.16-3",
   frontend_route: "/hgj-template-195",
 };
 
@@ -43,7 +43,7 @@ function rateText(rowOrValue) {
   const value = typeof rowOrValue === "object" && rowOrValue !== null ? rowOrValue.fill_rate : rowOrValue;
   const total = typeof rowOrValue === "object" && rowOrValue !== null ? rowOrValue.total_count : 1;
   const n = Number(value);
-  if (value == null || total == null || !Number.isFinite(n)) return "未接入";
+  if (value == null || total == null || Number(total) === 0 || !Number.isFinite(n)) return "未接入";
   return `${Math.round(n * 1000) / 10}%`;
 }
 
@@ -303,6 +303,7 @@ export default async function handler(req, res) {
       renderer_contract: {
         syntax: "{{placeholder}}",
         placeholder_pattern: "[A-Za-z0-9_]+",
+        renderer_api: "window.HgjTemplateRenderer.render(template, values, mappings, {tableHits}) => {html, plain, missing}",
         max_template_chars: MAX_TEMPLATE_TEXT,
         missing_policy: "无 record_key 不取样本；缺字段、缺记录、空值一律返回未接入并带当前填充率；金额/费率空值仅在真实记录命中后显示未设置。",
         escaping: "前端渲染器对用户内容执行 HTML escape；服务端返回纯文本和已转义 HTML 预览。",

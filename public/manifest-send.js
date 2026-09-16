@@ -209,6 +209,7 @@
   $("reload").addEventListener("click",function(){load()});
   $("search").addEventListener("keydown",function(e){if(e.key==="Enter")load()});
   $("sendBtn").addEventListener("click",function(){alert("申报通道尚未对接：需要与上海港舱单通道签约并取得接口凭证；当前页面只做舱单抬头/明细字段核对；启用还缺 declaration_channel_status / declaration_channel_sent_at / declaration_channel_receipt_no 三列和通道凭证。")});
+  window.addEventListener("message",function(event){var d=event.data||{};if(event.origin===location.origin&&d.type==="sanlyn:module-refresh")load()});
   if(window.parent!==window)window.parent.postMessage({type:"sanlyn:module-ready",protocol:"sanlyn:open-tab",module:"manifest-send",title:"上海-舱单发送",url:location.pathname+location.search,accepts:["sanlyn:module-refresh"]},location.origin);
   load();
 })();

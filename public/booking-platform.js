@@ -2,8 +2,10 @@
   "use strict";
   var API="/api/db/booking-platform";
   var params=new URLSearchParams(location.search);
-  var state={rows:[],selected:null,selectedKey:params.get("selected")||"",coverage:null,channel:null,platform:null,documents:null,trial:null,generatedAt:null,version:"v2026.09.15-1",nextOnly:params.get("next")!=="0"};
+  var state={rows:[],selected:null,selectedKey:params.get("selected")||"",coverage:null,channel:null,platform:null,documents:null,trial:null,generatedAt:null,version:"v2026.09.16-1",nextOnly:params.get("next")!=="0"};
   var $=function(id){return document.getElementById(id)};
+  function on(id,type,fn){var x=$(id);if(x)x.addEventListener(type,fn)}
+  function setDisabled(id,value){var x=$(id);if(x)x.disabled=!!value}
   function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
   function headers(){var h={},t=token();if(t)h.Authorization="Bearer "+t;return h}
   function clear(x){while(x.firstChild)x.removeChild(x.firstChild)}
@@ -50,6 +52,12 @@
     var a=document.createElement("a"),name=(r.shipment_no||r.bl_no||r.booking_no||"booking-docs").replace(/[^A-Za-z0-9_-]+/g,"-");
     a.href=URL.createObjectURL(blob);a.download=name+"-docs.json";document.body.appendChild(a);a.click();
     setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},0);
+  }
+  function downloadAllDocs(){
+    var docs=readyDocs();
+    if(!docs.length)return;
+    docs.forEach(downloadOne);
+    downloadManifest();
   }
   function readyDocs(){var r=state.selected,docs=(r&&r.docs)||[];return docs.filter(function(d){return safeUrl(d.url)&&(d.kind==="bl"||d.kind==="signed")})}
   function platformLinks(){return ((state.platform&&state.platform.entries)||[]).filter(function(x){return safeUrl(x.download_url)})}
@@ -117,11 +125,11 @@
     metricMeta("mBookingMeta","字段 shipping_plans.booking_no / forwarder_booking_no / so_no 任一有值；当前填充率 "+bookingRate+"。单列填充率 "+fieldRate(["booking_no","forwarder_booking_no","so_no"]));
     metricMeta("mScheduleMeta","字段 shipping_plans.vessel / voyage / etd；当前填充率 "+fieldRate(["vessel","voyage","etd"]));
     metricMeta("mChannelMeta","缺订舱外部发送接口/凭证/回执落库；当前填充率 未接入");
-    $("downloadAll").disabled=!readyDocs().length;
-    $("manifestBtn").disabled=!readyDocs().length;
-    $("downloadTrialPack").disabled=!state.selected;
-    $("openPlatform").disabled=!(platformLinks().length||platformLoginLinks().length);
-    $("openPlatform").textContent=platformLinks().length?"打开海管家下载入口":"打开海管家登录入口";
+    setDisabled("downloadAll",!readyDocs().length);
+    setDisabled("manifestBtn",!readyDocs().length);
+    setDisabled("downloadTrialPack",!state.selected);
+    setDisabled("openPlatform",!(platformLinks().length||platformLoginLinks().length));
+    $("openPlatform").textContent=platformLinks().length?"打开海管家下载入口":(platformLoginLinks().length?"打开海管家登录入口":"海管家入口未接入");
     $("summary").textContent=state.version+" · "+(state.nextOnly?"下一票试走 · ":"")+"生成时间 "+new Date(state.generatedAt||Date.now()).toLocaleString("zh-CN");
   }
   function rowKey(r){return String(r.id||r.plan_id||r.shipment_no||r.bl_no||"")}
@@ -210,12 +218,14 @@
     return req.length?req.map(function(x){return (x.table||"booking_platform_integrations")+"."+x.name+" 当前填充率 "+(x.fill_text||"未接入");}).join("；"):"booking_platform_integrations.hgj_account / hgj_session_status / hgj_login_url / hgj_download_url 当前填充率 未接入";
   }
   function hgjPackContext(){
+    var platformReq=(state.platform&&state.platform.required_fields)||[];
     return {
       selected:state.selected,
       version:state.version,
       ready_docs:readyDocs(),
       platform_entries:(state.platform&&state.platform.entries)||[],
       missing_fields:((state.trial&&state.trial.missing_fields)||[]).concat((state.platform&&state.platform.missing_fields)||[]),
+      required_fields:platformReq,
       fill_rates:{
         document_file_url:rateText(groupField("document_fields","file_url")),
         document_doc_type:rateText(groupField("document_fields","doc_type")),
@@ -229,9 +239,9 @@
     var r=state.selected, docs=(r&&r.docs)||[], ready=readyDocs();
     $("docPill").className="pill "+(ready.length?"":"bad");
     text($("docPill"),ready.length?("可下载 "+ready.length+" 份"):"未接入");
-    $("downloadAll").disabled=!ready.length;
-    $("manifestBtn").disabled=!ready.length;
-    $("openPlatform").disabled=!(platformLinks().length||platformLoginLinks().length);
+    setDisabled("downloadAll",!ready.length);
+    setDisabled("manifestBtn",!ready.length);
+    setDisabled("openPlatform",!(platformLinks().length||platformLoginLinks().length));
     if(!r){box.appendChild(el("div","empty","未接入 · 缺可读取 shipping_plans 记录；当前填充率 未接入。"));return}
     if(!ready.length){
       var why=docs.length?"缺 document_files/ocean_doc_intake.file_url 可下载提单/签单资料URL":("缺 "+docMissingText());
@@ -269,7 +279,7 @@
     }
     if(t.can_download){
       var steps=document.createElement("ol");steps.className="steps";
-      ["下载本票提单/签单资料", "核对订舱号/SO号/提单号与当前票一致", "资料齐后人工登录海管家订舱平台试走下载，不等货代微信转发"].forEach(function(s){steps.appendChild(el("li","",s))});
+      ["下载本票提单/签单资料和资料清单", "核对订舱号/SO号/提单号与当前票一致", "用清单里的真实入口人工登录海管家试走下载，不等货代微信转发"].forEach(function(s){steps.appendChild(el("li","",s))});
       box.appendChild(steps);
       box.appendChild(el("p","muted",(t.note||"已有真实 URL，可点击下载本票资料。")+"只读取系统已上传文件，不向外部平台发送数据；"+docCoverageText()+"。"));
     }
@@ -367,19 +377,18 @@
     var b=e.target.closest(".row");if(!b)return;
     var key=b.dataset.key;state.selectedKey=key;state.selected=state.rows.find(function(r){return rowKey(r)===key})||state.selected;render();load();
   });
-  $("reload").addEventListener("click",load);
-  $("nextTicket").addEventListener("click",function(){state.nextOnly=!state.nextOnly;load()});
-  $("searchBtn").addEventListener("click",load);
-  $("search").addEventListener("keydown",function(e){if(e.key==="Enter")load()});
-  $("state").addEventListener("change",load);
-  $("sendBtn").addEventListener("click",function(){alert("订舱通道未接入：缺 booking_channel_status / booking_channel_sent_at / booking_channel_receipt_no 和外部通道凭证；当前页面只读。")});
-  $("downloadAll").addEventListener("click",function(){readyDocs().forEach(downloadOne)});
-  $("downloadTrialPack").addEventListener("click",function(){
+  on("reload","click",load);
+  on("nextTicket","click",function(){state.nextOnly=!state.nextOnly;load()});
+  on("searchBtn","click",load);
+  on("search","keydown",function(e){if(e.key==="Enter")load()});
+  on("state","change",load);
+  on("downloadAll","click",downloadAllDocs);
+  on("downloadTrialPack","click",function(){
     if(window.BookingPlatformHgj)window.BookingPlatformHgj.downloadTrialPack(hgjPackContext());
   });
-  $("openPlatform").addEventListener("click",openPlatformDownloads);
-  $("manifestBtn").addEventListener("click",downloadManifest);
-  $("openWb").addEventListener("click",function(){
+  on("openPlatform","click",openPlatformDownloads);
+  on("manifestBtn","click",downloadManifest);
+  on("openWb","click",function(){
     openWorkbench("订舱平台",currentUrl());
   });
   $("search").value=params.get("q")||"";

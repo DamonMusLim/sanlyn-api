@@ -1,8 +1,8 @@
 (function(){
 "use strict";
 var API="/api/db/hgj-template-195";
-var VERSION="v2026.09.15-1";
-var GENERATED_AT="2026-09-15T00:00:00Z";
+var VERSION="v2026.09.16-3";
+var GENERATED_AT="2026-09-16T00:00:00Z";
 var state={data:null,tab:"mapping",previewTemplate:""};
 var sample=[
   "订单编号：{{ocean_order_no}}",
@@ -46,6 +46,7 @@ function missingPreviewText(item){
 }
 function metricCount(v,fallback){return v==null?fallback:String(v)}
 function readyCountText(s){return !s||!s.ready?"未接入":String(s.ready)}
+function missingCountText(s){return s.not_connected==null?"未接入":s.not_connected===0?"无未接入":String(s.not_connected)}
 function firstMissing(rows){
   return (rows||[]).find(function(row){return row.state!=="ready"})||null;
 }
@@ -132,7 +133,7 @@ function renderMetrics(){
   text(id("summary"),summaryText(d));
   text(id("mTotal"),metricCount(s.total,"未接入"));
   text(id("mReady"),readyCountText(s));
-  text(id("mMissing"),metricCount(s.not_connected,"未接入"));
+  text(id("mMissing"),missingCountText(s));
   text(id("mRate"),pct(s.data_fill_rate));
   text(id("mTotalNote"),s.total!=null?"字段数来自映射表；映射覆盖率 "+pct(s.mapping_fill_rate):"未接入 · 缺 summary.total；当前填充率 未接入");
   text(id("mReadyNote"),s.ready?"已通过 information_schema 校验":missingMetricNote(miss,"ready 映射"));
@@ -208,7 +209,7 @@ function renderContract(){
   clear(box);
   clear(mapBox);
   if(!c){box.appendChild(empty("未接入 · 缺 renderer_contract；当前填充率 未接入"));return}
-  appendContractRows(box,c,["syntax","placeholder_pattern","max_template_chars","missing_policy","escaping"]);
+  appendContractRows(box,c,["syntax","placeholder_pattern","renderer_api","max_template_chars","missing_policy","escaping"]);
   if(!m){mapBox.appendChild(empty("未接入 · 缺 mapping_contract；当前填充率 未接入"));return}
   appendContractRows(mapBox,m,["template_code","source","placeholder_count","table_count","connected_column_count","mapped_count","ui_only_count","not_mapped_count","source_policy","ignore_policy"]);
 }

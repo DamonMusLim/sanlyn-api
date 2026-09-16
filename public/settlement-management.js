@@ -1,6 +1,6 @@
 (function(){
   "use strict";
-  var API="/api/db/settlement-management",VERSION="v2026.09.15-1";
+  var API="/api/db/settlement-management",VERSION="v2026.09.16-2";
   var state={rows:[],payments:[],selected:null,coverage:null,metrics:{},settlementConnection:null,generatedAt:null,reason:""};
   var $=function(id){return document.getElementById(id);};
   var NF=new Intl.NumberFormat("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -31,38 +31,8 @@
   function connText(){return conn().reason||"未接入 · 缺 finance_settlement_links.payment_id 写入/回填；当前填充率 未接入。";}
   function visibleSettlementCount(){return state.payments.reduce(function(s,r){return s+Number(r.settlement_link_count||0);},0);}
   function effectiveLinkCount(){var m=state.metrics||{};return has(m.applied_settlement_links_effective)?m.applied_settlement_links_effective:(has(m.settlement_link_rows)?m.settlement_link_rows:(has(m.applied_links)?m.applied_links:(visibleSettlementCount()||null)));}
+  function effectiveSettledCount(){var m=state.metrics||{};return has(m.settled_receipts_effective)?m.settled_receipts_effective:(has(m.linked_receipts_effective)?m.linked_receipts_effective:effectiveLinkCount());}
   function joinBasis(a){return a&&a.length?a.join(" / "):"";}
-  function parseLines(s){var o={};String(s||"").split(/\n/).forEach(function(line){var i=line.indexOf("=");if(i<1)return;o[line.slice(0,i).trim()]=line.slice(i+1).trim();});return o;}
-  function editable(r){
-    return [
-      "payment_id="+idText(r&&r.payment_id,""),"target_type="+fmt(r&&r.target_type,"invoice_out"),
-      "target_id="+fmt(r&&r.target_id,""),"amount_applied="+fmt(r&&r.amount_applied,""),
-      "currency="+fmt(r&&r.currency,"CNY"),"status="+fmt(r&&r.status,"applied"),
-      "source="+fmt(r&&r.source,"manual"),"created_by="+fmt(r&&r.created_by,"")
-    ].join("\n");
-  }
-  async function save(method,body){
-    var r=await fetch(API,{method:method,headers:headers(true),body:JSON.stringify(body)});
-    var d=await r.json().catch(function(){return{success:false,error:"接口返回异常"};});
-    if(!r.ok||d.success===false)throw new Error(d.error||"保存失败");
-    return d;
-  }
-  async function addRow(){
-    var raw=prompt("新增核销链接，逐行填写 field=value。金额不确定请留空。",editable({}));
-    if(raw===null)return;
-    try{await save("POST",parseLines(raw));await load();}catch(e){alert(e.message);}
-  }
-  async function editRow(){
-    var r=state.selected;if(!r){alert("未选择记录");return;}
-    var raw=prompt("编辑核销链接，逐行填写 field=value。留空会保存为空，不会编造金额。",editable(r));
-    if(raw===null)return;
-    try{var body=parseLines(raw);body.id=r.id;await save("PATCH",body);await load();}catch(e){alert(e.message);}
-  }
-  async function voidRow(){
-    var r=state.selected;if(!r){alert("未选择记录");return;}
-    if(!confirm("作废当前核销链接？后端只写 voided 状态，不物理删除。"))return;
-    try{await save("DELETE",{id:r.id});await load();}catch(e){alert(e.message);}
-  }
   async function api(){
     var p=new URLSearchParams(),q=$("q").value.trim(),target=$("targetType").value,status=$("status").value;
     if(q)p.set("q",q);if(target)p.set("target_type",target);if(status)p.set("status",status);
@@ -76,7 +46,7 @@
   function renderMetrics(){
     var m=state.metrics||{};
     setMetric("mTotal",m.total_links);setMetric("mApplied",m.applied_links);setMetric("mAlerts",m.alert_count);
-    setMetric("mReceipts",has(m.total_receipts_effective)?m.total_receipts_effective:m.total_receipts);setMetric("mLinkedReceipts",effectiveLinkCount());setMetric("mUnlinkedReceipts",has(m.unmatched_settlement_links)?m.unmatched_settlement_links:m.unlinked_receipts);
+    setMetric("mReceipts",has(m.total_receipts_effective)?m.total_receipts_effective:m.total_receipts);setMetric("mLinkedReceipts",effectiveSettledCount());setMetric("mUnlinkedReceipts",has(m.unmatched_settlement_links)?m.unmatched_settlement_links:m.unlinked_receipts);
     setMetric("mHgjSettled",has(m.hgj_settled_receipts_effective)?m.hgj_settled_receipts_effective:m.hgj_settled_receipts);
     text($("mState"),connReady()?"核销已接入":(state.payments.length?"核销未接入":"未接入"));$("mState").className=connReady()?"num":"num warn";
     $("summary").textContent=VERSION+" · 生成时间 "+new Date(state.generatedAt||Date.now()).toLocaleString("zh-CN");
@@ -99,7 +69,7 @@
     });
   }
   function renderPayments(){
-    var box=$("payments");clear(box);var linkedCount=effectiveLinkCount();text($("paymentCount"),state.payments.length?(linkedCount?"已接 "+linkedCount+" 条 / 共 "+state.payments.length+" 行":state.payments.length):"未接入");
+    var box=$("payments");clear(box);var linkedCount=effectiveSettledCount();text($("paymentCount"),state.payments.length?(linkedCount?"已核销 "+linkedCount+" 笔 / 共 "+state.payments.length+" 行":state.payments.length):"未接入");
     if(!state.payments.length){box.appendChild(el("div","empty","未接入 · 缺 finance_payments 收款真源或当前权限范围无真实收款；当前填充率 未接入。"));return;}
     state.payments.forEach(function(r){
       var d=el("div","pay"),fromLinks=r.connection_source==="finance_settlement_links";
@@ -143,9 +113,6 @@
   $("list").addEventListener("click",function(e){var b=e.target.closest(".row");if(!b)return;var id=b.dataset.id;state.selected=state.rows.find(function(r){return String(r.id||"")===id;})||state.selected;render();});
   $("reload").addEventListener("click",load);$("q").addEventListener("keydown",function(e){if(e.key==="Enter")load();});
   $("targetType").addEventListener("change",load);$("status").addEventListener("change",load);
-  $("add").addEventListener("click",addRow);
-  $("edit").addEventListener("click",editRow);
-  $("del").addEventListener("click",voidRow);
   if(window.parent!==window)window.parent.postMessage({type:"sanlyn:module-ready",title:"核销管理",url:location.pathname+location.search},location.origin);
   load();
 })();

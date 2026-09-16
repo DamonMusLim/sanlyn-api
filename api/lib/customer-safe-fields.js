@@ -16,7 +16,7 @@
 //   - "customer"     → apply per-endpoint allowlist (default for unknown/forwarder)
 
 export const SHIPPING_CUSTOMER_SAFE = new Set([
-  "id", "_id", "shipment_no", "bl_no", "hbl_no", "mbl_no",
+  "id", "_id", "bl_no", "hbl_no", "mbl_no",  // shipment_no(CY) removed: anti-counterfeit, customer uses bl_no
   "vessel", "voyage", "carrier_code",
   "pol", "pol_country", "pod", "pod_country",
   "etd", "eta", "atd", "ata",
@@ -26,7 +26,7 @@ export const SHIPPING_CUSTOMER_SAFE = new Set([
   "cargo_description",
   "current_status", "current_status_cn", "status",
   "shipping_status", "flow_status", "release_type",
-  "contract_no", "order_contract_nos", "sub_order_no",
+  "sub_order_no",
   "booking_no", "forwarder_booking_no",  // GPT review fix: customer needs booking reference
   // D-001 (2026-05-25): ocean freight sell price — what the customer is charged.
   // freight_cost (Sanlyn's wholesale cost) is intentionally NOT included.
@@ -61,6 +61,16 @@ export const CUSTOMERS_CUSTOMER_SAFE = new Set([
 export const ACCOUNTS_CUSTOMER_SAFE = new Set([
   "id", "username", "role",
   "is_active", "created_at", "updated_at",
+]);
+
+export const ORDER_CREATE_PRODUCT_CUSTOMER_SAFE = new Set([
+  "name", "code", "sku", "brand", "size", "unit", "unitPrice",
+  "price_usd", "price_cny", "cbm", "grossWeight", "netWeight",
+  "innerQty", "innerUnit", "hsCode", "moq", "leadTimeDays", "notes",
+  "cat1", "cat2", "cat3", "category", "flavor", "barcode",
+  "image_url", "images", "lastQty", "lastOrderNo", "lastDate",
+  "declareAmountPerBox", "vatRate", "taxRebateRate",
+  "isAuthorized", "isPublicSupplier", "supplierLabel",
 ]);
 
 // Map JWT role → audience tier.
