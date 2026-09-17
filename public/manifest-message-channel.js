@@ -1,7 +1,7 @@
 (function(){
   "use strict";
   var API="/api/db/manifest-message-channel";
-  var VERSION="v2026.09.16-3";
+  var VERSION="v2026.09.17-2";
   var state={rows:[],selected:null,coverage:null,outbox:null,preview:null,version:VERSION,generatedAt:null,canSave:false};
   var $=function(id){return document.getElementById(id)};
   function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
@@ -9,7 +9,7 @@
   function clear(el){while(el.firstChild)el.removeChild(el.firstChild)}
   function text(el,v,fallback){el.textContent=v===null||v===undefined||v===""?(fallback||"未设置"):String(v)}
   function el(tag,cls,txt){var x=document.createElement(tag);if(cls)x.className=cls;if(txt!==undefined)text(x,txt);return x}
-  function pct(filled,total){if(!total||!Number(filled||0))return "未接入";return Math.round(Number(filled||0)*1000/Number(total))/10+"%"}
+  function pct(filled,total){if(!Number(total||0))return "未接入";return Math.round(Number(filled||0)*1000/Number(total))/10+"%"}
   function fillText(v){return v===null||v===undefined||!Number(v)?"未接入":String(v)+"%"}
   function rate(fields){var ready=(fields||[]).filter(function(f){return f.state==="ready"});if(!ready.length)return "未接入";var total=ready.reduce(function(a,f){return a+Number(f.total||0)},0),filled=ready.reduce(function(a,f){return a+Number(f.filled||0)},0);return total&&filled?pct(filled,total):"未接入"}
   function rateFor(name,group){var f=(((state.coverage||{})[group]||[]).find(function(x){return x.name===name}));if(!f||f.state!=="ready"||!Number(f.total)||!Number(f.filled))return "未接入";return pct(f.filled,f.total)}
@@ -17,11 +17,11 @@
     if(value!==null&&value!==undefined&&String(value).trim()!=="")return value;
     var f=(((state.coverage||{})[group]||[]).find(function(x){return x.name===name}))||{};
     var source=f.source||table+"."+name;
-    if(f.state==="ready"&&Number(f.total||0)&&Number(f.filled||0))return "未接入 · 当前记录缺已填值 "+source+"；当前填充率 "+rateFor(name,group);
-    if(f.state==="ready")return "未接入 · 缺已填值 "+source+"；当前填充率 未接入";
+    if(f.state==="ready"&&Number(f.total||0))return "未接入 · 当前记录缺已填值 "+source+"；当前填充率 "+rateFor(name,group);
+    if(f.state==="ready")return "未接入 · 缺 "+source+" 真实记录；当前填充率 未接入";
     return "未接入 · 缺 "+source+"；当前填充率 未接入";
   }
-  function missingSources(fields, fallback){var xs=(fields||[]).filter(function(f){return f.state!=="ready"||!Number(f.total||0)||!Number(f.filled||0)}).map(function(f){return f.source||f.name});return xs.length?xs.join("、"):fallback}
+  function missingSources(fields, fallback){var xs=(fields||[]).filter(function(f){return f.state!=="ready"||!Number(f.total||0)}).map(function(f){return f.source||f.name});return xs.length?xs.join("、"):fallback}
   function sourceOf(f,table){return f.source||table+"."+f.name}
   function outboxNote(ob){
     if(ob.state==="ready")return "manifest_message_outbox 已接入；必需字段 "+(ob.connected_fields||0)+"/"+(ob.required_fields||0)+"；待发草稿数按真实记录显示";

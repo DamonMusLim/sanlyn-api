@@ -2,7 +2,7 @@
   "use strict";
   var API="/api/db/booking-platform";
   var params=new URLSearchParams(location.search);
-  var state={rows:[],selected:null,selectedKey:params.get("selected")||"",coverage:null,channel:null,platform:null,documents:null,trial:null,generatedAt:null,version:"v2026.09.16-1",nextOnly:params.get("next")!=="0"};
+  var state={rows:[],selected:null,selectedKey:params.get("selected")||"",coverage:null,channel:null,platform:null,documents:null,trial:null,generatedAt:null,version:"v2026.09.17-3",nextOnly:params.get("next")!=="0"};
   var $=function(id){return document.getElementById(id)};
   function on(id,type,fn){var x=$(id);if(x)x.addEventListener(type,fn)}
   function setDisabled(id,value){var x=$(id);if(x)x.disabled=!!value}
@@ -33,19 +33,19 @@
     document.body.appendChild(a);a.click();a.remove();
   }
   function downloadManifest(){
-    var r=state.selected,docs=readyDocs();
-    if(!r||!docs.length)return;
+    var r=state.selected,docs=readyDocs(),platformDocs=platformLinks();
+    if(!r||(!docs.length&&!platformDocs.length))return;
     var payload={
       version:state.version,
       generated_at:new Date().toISOString(),
-      source:"document_files/ocean_doc_intake",
+      source:"document_files/ocean_doc_intake + booking_platform_integrations",
       shipment_no:r.shipment_no||"",
       booking_ref:r.booking_no||r.forwarder_booking_no||r.so_no||"",
       bl_no:r.bl_no||"",
       trial_order:r.trial_order||"",
       is_next_ticket:!!r.is_next_ticket,
       documents:docs.map(function(d){return {kind:d.kind||"",name:d.name||"",type:d.type||"",source:d.source||"",url:safeUrl(d.url),uploaded_at:d.uploaded_at||""}}),
-      platform_downloads:platformLinks().map(function(x){return {account:x.account||"",session_status:x.session_status||"",login_url:safeUrl(x.login_url),url:safeUrl(x.download_url),downloaded_at:x.downloaded_at||"",matched_refs:x.matched_refs||[]}}),
+      platform_downloads:platformDocs.map(function(x){return {account:x.account||"",session_status:x.session_status||"",login_url:safeUrl(x.login_url),url:safeUrl(x.download_url),downloaded_at:x.downloaded_at||"",matched_refs:x.matched_refs||[]}}),
       missing_fields:(state.trial&&state.trial.missing_fields)||[]
     };
     var blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
@@ -62,6 +62,7 @@
   function readyDocs(){var r=state.selected,docs=(r&&r.docs)||[];return docs.filter(function(d){return safeUrl(d.url)&&(d.kind==="bl"||d.kind==="signed")})}
   function platformLinks(){return ((state.platform&&state.platform.entries)||[]).filter(function(x){return safeUrl(x.download_url)})}
   function platformLoginLinks(){return ((state.platform&&state.platform.entries)||[]).filter(function(x){return safeUrl(x.login_url)})}
+  function platformDownloadCount(){return platformLinks().length}
   function matchedText(item){
     var refs=(item&&item.matched_refs)||[];
     if(refs.length)return refs.map(function(x){return x.field+"="+x.value}).join("；");
@@ -76,6 +77,12 @@
     var links=platformLinks();
     if(links.length){links.forEach(function(x){openExternalUrl(x.download_url)});return}
     platformLoginLinks().forEach(function(x){openExternalUrl(x.login_url)});
+  }
+  function downloadPlatformDocs(){
+    var links=platformLinks();
+    if(!links.length)return;
+    links.forEach(function(x){openExternalUrl(x.download_url)});
+    downloadManifest();
   }
   function openWorkbench(title,url){
     if(window.SanlynOpenTab){window.SanlynOpenTab(title,url);return}
@@ -126,10 +133,12 @@
     metricMeta("mScheduleMeta","字段 shipping_plans.vessel / voyage / etd；当前填充率 "+fieldRate(["vessel","voyage","etd"]));
     metricMeta("mChannelMeta","缺订舱外部发送接口/凭证/回执落库；当前填充率 未接入");
     setDisabled("downloadAll",!readyDocs().length);
-    setDisabled("manifestBtn",!readyDocs().length);
+    setDisabled("manifestBtn",!(readyDocs().length||platformDownloadCount()));
     setDisabled("downloadTrialPack",!state.selected);
+    setDisabled("downloadPlatformDocs",!platformDownloadCount());
     setDisabled("openPlatform",!(platformLinks().length||platformLoginLinks().length));
-    $("openPlatform").textContent=platformLinks().length?"打开海管家下载入口":(platformLoginLinks().length?"打开海管家登录入口":"海管家入口未接入");
+    $("downloadPlatformDocs").textContent=platformDownloadCount()?("下载海管家资料 "+platformDownloadCount()+" 份"):"海管家资料未接入";
+    $("openPlatform").textContent=platformDownloadCount()?"打开海管家下载入口":(platformLoginLinks().length?"打开海管家登录入口":"海管家入口未接入");
     $("summary").textContent=state.version+" · "+(state.nextOnly?"下一票试走 · ":"")+"生成时间 "+new Date(state.generatedAt||Date.now()).toLocaleString("zh-CN");
   }
   function rowKey(r){return String(r.id||r.plan_id||r.shipment_no||r.bl_no||"")}
@@ -143,7 +152,7 @@
       b.appendChild(el("strong","",rowTitle(r)));
       if(r.is_next_ticket)b.appendChild(el("span","","下一票试走 · 顺序 "+(r.trial_order||1)));
       b.appendChild(el("span","","订舱 "+(r.booking_no||r.forwarder_booking_no||r.so_no||"未接入")+" · "+(r.pol||"未设置")+" / "+(r.pod||"未设置")));
-      b.appendChild(el("span","","船期 "+([r.vessel,r.voyage].filter(Boolean).join(" / ")||"未接入")+" · ETD "+(r.etd||"未接入")+" · 资料 "+(r.doc_ready?("可下载 "+(r.doc_ready_count||1)+" 份"):"未接入")+" · 缺字段 "+(r.missing_count||"无")));
+      b.appendChild(el("span","","船期 "+([r.vessel,r.voyage].filter(Boolean).join(" / ")||"未接入")+" · ETD "+(r.etd||"未接入")+" · 系统资料 "+(r.doc_ready?("可下载 "+(r.doc_ready_count||1)+" 份"):"未接入")+" · 缺字段 "+(r.missing_count||"无")));
       box.appendChild(b);
     });
   }
@@ -240,7 +249,8 @@
     $("docPill").className="pill "+(ready.length?"":"bad");
     text($("docPill"),ready.length?("可下载 "+ready.length+" 份"):"未接入");
     setDisabled("downloadAll",!ready.length);
-    setDisabled("manifestBtn",!ready.length);
+    setDisabled("manifestBtn",!(ready.length||platformDownloadCount()));
+    setDisabled("downloadPlatformDocs",!platformDownloadCount());
     setDisabled("openPlatform",!(platformLinks().length||platformLoginLinks().length));
     if(!r){box.appendChild(el("div","empty","未接入 · 缺可读取 shipping_plans 记录；当前填充率 未接入。"));return}
     if(!ready.length){
@@ -306,7 +316,7 @@
     ].forEach(function(pair){var tr=document.createElement("tr");td(tr,pair[0],"未设置");td(tr,pair[1]);body.appendChild(tr)});
     table.appendChild(body);box.appendChild(table);
     if(canTry||canLogin){
-      box.appendChild(el("p","muted",(t.note||"可人工登录海管家平台，用本票订舱参考核对后下载；")+"系统资料未接入时仍按缺字段和填充率展示，不显示 0 或反推状态。页面只打开真实 URL，不自动登录、不发送订舱、不写费用或物流事实。"));
+      box.appendChild(el("p","muted",(t.note||"可人工登录海管家平台，用本票订舱参考核对后下载；")+"有 hgj_download_url 时可直接点“下载海管家资料”。系统资料未接入时仍按缺字段和填充率展示，不显示 0 或反推状态。页面只打开真实 URL，不自动登录、不发送订舱、不写费用或物流事实。"));
       if(canLogin&&!canTry)box.appendChild(el("p","muted","未接入 · 缺 booking_platform_integrations.hgj_download_url；当前填充率 "+platformRate("hgj_download_url")+"。可打开登录入口人工核对，但不显示平台已下载。"));
       return;
     }
@@ -335,7 +345,7 @@
         c3.appendChild(actions);tr.appendChild(c1);tr.appendChild(c2);tr.appendChild(c3);body.appendChild(tr);
       });
       table.appendChild(body);box.appendChild(table);
-      box.appendChild(el("p","muted",ready?"可从页面顶部直接打开本票海管家下载入口；只打开真实 URL，不自动登录、不发送订舱、不写下载次数。":"可从页面顶部打开海管家登录入口人工核对；缺下载 URL 时仍显示未接入，不显示 0 次下载。"));
+      box.appendChild(el("p","muted",ready?"可从页面顶部直接下载本票海管家资料，或打开真实下载入口人工核对；只打开真实 URL，不自动登录、不发送订舱、不写下载次数。":"可从页面顶部打开海管家登录入口人工核对；缺下载 URL 时仍显示未接入，不显示 0 次下载。"));
     }
     box.appendChild(el("p","muted",s.note||"缺海管家账号、登录入口、下载入口和下载回执落库；当前只能下载系统已有提单/签单资料。"));
     box.appendChild(el("p","muted","缺字段："+(missing||"无")+"。当前填充率："+(rates||"未接入")+"。必需接入："+platformRequiredText()+"。"));
@@ -386,6 +396,7 @@
   on("downloadTrialPack","click",function(){
     if(window.BookingPlatformHgj)window.BookingPlatformHgj.downloadTrialPack(hgjPackContext());
   });
+  on("downloadPlatformDocs","click",downloadPlatformDocs);
   on("openPlatform","click",openPlatformDownloads);
   on("manifestBtn","click",downloadManifest);
   on("openWb","click",function(){

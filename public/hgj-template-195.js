@@ -1,8 +1,8 @@
 (function(){
 "use strict";
 var API="/api/db/hgj-template-195";
-var VERSION="v2026.09.16-3";
-var GENERATED_AT="2026-09-16T00:00:00Z";
+var VERSION="v2026.09.17-3";
+var GENERATED_AT="2026-09-17T00:00:00Z";
 var state={data:null,tab:"mapping",previewTemplate:""};
 var sample=[
   "订单编号：{{ocean_order_no}}",
@@ -44,8 +44,8 @@ function missingPreviewText(item){
   var source=item.source_table&&item.source_column?" · "+item.source_table+"."+item.source_column:"";
   return item.placeholder+source+"："+(item.reason||("缺占位符 "+item.placeholder+" 的映射字段"))+"；当前填充率 "+HgjTemplateRenderer.fieldRate(item);
 }
-function metricCount(v,fallback){return v==null?fallback:String(v)}
-function readyCountText(s){return !s||!s.ready?"未接入":String(s.ready)}
+function metricCount(v,fallback){return v==null||Number(v)===0?fallback:String(v)}
+function readyCountText(s){return !s||s.ready==null||Number(s.ready)===0?"未接入":String(s.ready)}
 function missingCountText(s){return s.not_connected==null?"未接入":s.not_connected===0?"无未接入":String(s.not_connected)}
 function firstMissing(rows){
   return (rows||[]).find(function(row){return row.state!=="ready"})||null;
@@ -93,7 +93,8 @@ async function load(){
   try{
     var params=new URLSearchParams();
     if(id("recordKey").value.trim())params.set("record_key",id("recordKey").value.trim());
-    state.data=await fetchJson(API+"?"+params.toString(),{headers:headers()});
+    var qs=params.toString();
+    state.data=await fetchJson(API+(qs?"?"+qs:""),{headers:headers()});
     state.previewTemplate="";
     if(!id("templateText").value.trim())id("templateText").value=sample;
     render();
@@ -135,8 +136,8 @@ function renderMetrics(){
   text(id("mReady"),readyCountText(s));
   text(id("mMissing"),missingCountText(s));
   text(id("mRate"),pct(s.data_fill_rate));
-  text(id("mTotalNote"),s.total!=null?"字段数来自映射表；映射覆盖率 "+pct(s.mapping_fill_rate):"未接入 · 缺 summary.total；当前填充率 未接入");
-  text(id("mReadyNote"),s.ready?"已通过 information_schema 校验":missingMetricNote(miss,"ready 映射"));
+  text(id("mTotalNote"),s.total?("字段数来自映射表；映射覆盖率 "+pct(s.mapping_fill_rate)):"未接入 · 缺 summary.total；当前填充率 未接入");
+  text(id("mReadyNote"),s.ready?("已通过 information_schema 校验") : missingMetricNote(miss,"ready 映射"));
   text(id("mMissingNote"),missingSummaryNote(s,miss));
   text(id("mRateNote"),dataRateNote(s,miss));
 }
@@ -206,12 +207,14 @@ function appendContractRows(box, data, keys){
 function renderContract(){
   var box=id("contract"), c=state.data&&state.data.renderer_contract;
   var mapBox=id("mappingContract"), m=state.data&&state.data.mapping_contract;
+  var coverage=(state.data&&state.data.coverage_fields)||[];
   clear(box);
   clear(mapBox);
   if(!c){box.appendChild(empty("未接入 · 缺 renderer_contract；当前填充率 未接入"));return}
-  appendContractRows(box,c,["syntax","placeholder_pattern","renderer_api","max_template_chars","missing_policy","escaping"]);
+  appendContractRows(box,c,["syntax","placeholder_pattern","renderer_api","renderer_methods","max_template_chars","missing_policy","escaping"]);
   if(!m){mapBox.appendChild(empty("未接入 · 缺 mapping_contract；当前填充率 未接入"));return}
-  appendContractRows(mapBox,m,["template_code","source","placeholder_count","table_count","connected_column_count","mapped_count","ui_only_count","not_mapped_count","source_policy","ignore_policy"]);
+  appendContractRows(mapBox,m,["template_code","source","placeholder_count","table_count","connected_column_count","mappable_count","mapped_count","ui_only_count","not_mapped_count","source_policy","ignore_policy"]);
+  appendContractRows(mapBox,{coverage_fields:coverage.length||"未接入 · 缺 coverage_fields；当前填充率 未接入"},["coverage_fields"]);
 }
 function empty(msg){var d=document.createElement("div");d.className="empty";d.textContent=msg;return d}
 function openWorkbench(){
@@ -223,6 +226,7 @@ function bind(){
   id("reload").addEventListener("click",load);
   id("renderBtn").addEventListener("click",preview);
   id("openWb").addEventListener("click",openWorkbench);
+  id("recordKey").addEventListener("keydown",function(e){if(e.key==="Enter")load()});
   id("templateText").addEventListener("input",renderPreview);
   window.addEventListener("message",function(event){
     if(event.origin!==location.origin||!event.data||event.data.type!=="sanlyn:module-refresh")return;

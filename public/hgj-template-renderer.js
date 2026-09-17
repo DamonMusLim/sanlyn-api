@@ -11,10 +11,18 @@ function fieldRate(row){
   if(!row||row.fill_rate==null||row.total_count==null||Number(row.total_count)===0||!Number.isFinite(n))return "未接入";
   return Math.round(n*1000)/10+"%";
 }
+function optsOf(opts){
+  opts=opts||{};
+  if(opts.tableHits)return opts;
+  if(opts.table_hits)return {tableHits:opts.table_hits};
+  return opts;
+}
 function hasSourceRow(row, opts){
+  opts=optsOf(opts);
   return !row||!opts||!opts.tableHits||opts.tableHits[row.source_table]===true;
 }
 function lacksRecordKey(row, opts){
+  opts=optsOf(opts);
   return !!row&&!!opts&&!!opts.tableHits&&opts.tableHits[row.source_table]==null;
 }
 function missingText(row, opts, key){
@@ -37,6 +45,7 @@ function isUnsetField(row){
   return !!row&&row.value_policy==="unset_when_blank";
 }
 function canShowUnset(row, opts){
+  opts=optsOf(opts);
   return !!row&&isUnsetField(row)&&row.state==="ready"&&!!opts&&!!opts.tableHits&&opts.tableHits[row.source_table]===true;
 }
 function missingHtml(row, opts, key){
@@ -121,11 +130,20 @@ function missingInText(templateText, values, mappings, opts){
   });
   return out;
 }
+function placeholders(templateText){
+  var seen={}, out=[];
+  String(templateText||"").replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g,function(_m,key){
+    if(!seen[key]){seen[key]=true;out.push(key)}
+    return _m;
+  });
+  return out;
+}
 function render(templateText, values, mappings, opts){
   return {
     html:renderText(templateText,values,mappings,opts),
     plain:renderPlain(templateText,values,mappings,opts),
-    missing:missingInText(templateText,values,mappings,opts)
+    missing:missingInText(templateText,values,mappings,opts),
+    placeholders:placeholders(templateText)
   };
 }
 function groups(mappings){
@@ -137,5 +155,5 @@ function groups(mappings){
   });
   return order.map(function(key){return {key:key, rows:map[key]}});
 }
-global.HgjTemplateRenderer={esc:esc,fieldRate:fieldRate,missingText:missingText,missingBrief:missingBrief,valueText:valueText,render:render,renderText:renderText,renderInto:renderInto,renderPlain:renderPlain,missingInText:missingInText,groups:groups};
+global.HgjTemplateRenderer={esc:esc,fieldRate:fieldRate,canShowUnset:canShowUnset,missingText:missingText,missingBrief:missingBrief,valueText:valueText,render:render,renderText:renderText,renderInto:renderInto,renderPlain:renderPlain,missingInText:missingInText,placeholders:placeholders,groups:groups};
 })(window);

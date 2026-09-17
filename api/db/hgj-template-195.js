@@ -6,7 +6,7 @@ import { HGJ_TEMPLATE_195_MAP, HGJ_TEMPLATE_195_TABLES } from "./hgj-template-19
 const TEMPLATE = {
   code: "hgj-195",
   name: "海管家195模板",
-  version: "v2026.09.16-3",
+  version: "v2026.09.17-3",
   frontend_route: "/hgj-template-195",
 };
 
@@ -68,6 +68,29 @@ function mappedColumnCount(rows, columns) {
     row.source_column &&
     columns.get(row.source_table)?.has(row.source_column)
   )).length;
+}
+
+function mappingFill(rows, columns) {
+  const mappable = rows.filter(row => row.map_state !== "ui_only");
+  const mapped = mappedColumnCount(mappable, columns);
+  return { mapped, total: mappable.length, rate: rate(mapped, mappable.length) };
+}
+
+function coverageFields(rows) {
+  return rows.map(row => ({
+    placeholder: row.placeholder,
+    label: row.label,
+    group: row.group,
+    source_table: row.source_table || "",
+    source_column: row.source_column || "",
+    field: row.source_table && row.source_column ? `${row.source_table}.${row.source_column}` : "",
+    state: row.state,
+    reason: row.reason || "",
+    total_count: row.total_count ?? null,
+    filled_count: row.filled_count ?? null,
+    fill_rate: row.fill_rate ?? null,
+    can_ignore: false,
+  }));
 }
 
 function formatValue(value) {
@@ -282,8 +305,7 @@ export default async function handler(req, res) {
       ? renderText(templateText, valueData.values, mapped, valueData.table_hits)
       : { rendered: "", rendered_html: "", missing_placeholders: [] };
     const ready = mapped.filter(row => row.state === "ready").length;
-    const mappedColumns = mappedColumnCount(mapped, columns);
-    const mappingFillRate = mappedColumns ? rate(mappedColumns, mapped.length) : null;
+    const mappingFillData = mappingFill(mapped, columns);
     const dataFill = aggregateFill(mapped);
     const mapStates = mapStateCounts(mapped);
     return res.json({
@@ -295,7 +317,7 @@ export default async function handler(req, res) {
         total: mapped.length,
         ready,
         not_connected: mapped.length - ready,
-        mapping_fill_rate: mappingFillRate,
+        mapping_fill_rate: mappingFillData.rate,
         data_fill_rate: dataFill.fill_rate,
         data_total_count: dataFill.total_count,
         data_filled_count: dataFill.filled_count,
@@ -303,7 +325,8 @@ export default async function handler(req, res) {
       renderer_contract: {
         syntax: "{{placeholder}}",
         placeholder_pattern: "[A-Za-z0-9_]+",
-        renderer_api: "window.HgjTemplateRenderer.render(template, values, mappings, {tableHits}) => {html, plain, missing}",
+        renderer_api: "window.HgjTemplateRenderer.render(template, values, mappings, {tableHits|table_hits}) => {html, plain, missing, placeholders}",
+        renderer_methods: "render, renderInto, renderText, renderPlain, missingInText, placeholders, valueText, missingText",
         max_template_chars: MAX_TEMPLATE_TEXT,
         missing_policy: "无 record_key 不取样本；缺字段、缺记录、空值一律返回未接入并带当前填充率；金额/费率空值仅在真实记录命中后显示未设置。",
         escaping: "前端渲染器对用户内容执行 HTML escape；服务端返回纯文本和已转义 HTML 预览。",
@@ -313,7 +336,8 @@ export default async function handler(req, res) {
         source: "海管家195界面字段蓝图 + 系统真实字段白名单",
         placeholder_count: mapped.length,
         table_count: TABLES.length,
-        connected_column_count: mappedColumns,
+        connected_column_count: mappingFillData.mapped,
+        mappable_count: mappingFillData.total,
         mapped_count: mapStates.mapped,
         ui_only_count: mapStates.ui_only,
         not_mapped_count: mapStates.not_mapped,
@@ -321,6 +345,7 @@ export default async function handler(req, res) {
         ignore_policy: "未接入类条目不提供忽略操作；本接口只读，不写财务事实表。",
       },
       mappings: mapped,
+      coverage_fields: coverageFields(mapped),
       values: valueData.values,
       table_hits: valueData.table_hits,
       preview,

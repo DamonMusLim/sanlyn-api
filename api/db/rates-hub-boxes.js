@@ -9,6 +9,8 @@ ORDER BY is_common DESC, size_ft NULLS LAST, code`);
 
 export async function attachFreightRateBoxes(pool, rows) {
   if (!rows.length) return rows;
+  const exists = await pool.query("SELECT to_regclass($1) AS name", ["public.freight_rate_boxes"]);
+  if (!exists.rows[0]?.name) return rows.map((row) => ({ ...row, boxes: [] }));
   const ids = rows.map((row) => row.id).filter((id) => id !== null && id !== undefined);
   if (!ids.length) return rows.map((row) => ({ ...row, boxes: [] }));
   const r = await pool.query(

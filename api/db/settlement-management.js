@@ -6,7 +6,7 @@ import { paymentRows, payIdentityExpr } from "./settlement-management-payments.j
 import { mergedPaymentRows, receiptConnectionMetrics, settlementReceiptRows } from "./settlement-management-receipts.js";
 import { connectionState, linkStats, metrics, paymentStats } from "./settlement-management-stats.js";
 
-const VERSION = "v2026.09.16-2";
+const VERSION = "v2026.09.17-1";
 const TABLE = "finance_settlement_links";
 const PAY_TABLE = "finance_payments";
 const READ_ROLES = new Set(["admin", "finance", "ceo", "superadmin"]);

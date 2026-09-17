@@ -1617,7 +1617,19 @@ document.addEventListener("click", function(e){
 $("bsub").textContent = new Date().toISOString().slice(0,16).replace("T"," ")+" UTC";
 $("ft").innerHTML = "数据源：腾讯 PG · petstore-api:9010 · 三个接口只读<br>" +
   "第0层每天 01:10 落一次快照(cron PET-0052)，次日起才有读写增量";
-show("board");   // 默认打开金枋店经营台 —— Damon 0916「合并 金枋店 + 库存概况」
+// 0917 Damon「直接落在选品表」——支持深链:?p=rival&tab=sel(嵌进 War Room 时用)。
+// ⛔ 参数只认白名单里的页,认不出就照旧开经营台。
+(function(){
+  var qs = new URLSearchParams(location.search);
+  var p = qs.get("p") || "";
+  var tab = qs.get("tab") || "";
+  var okTab = {sel:1, ov:1, opp:1, l7:1};
+  if (p === "rival" && okTab[tab]) {
+    window.__rivalTab = tab;
+    try { localStorage.setItem("dataops_rival_tab", tab); } catch(e){}
+  }
+  show(PAGES[p] ? p : "board");
+})();
 
 // 金枋店(默认只看有货) 与 总商品库·全量(加工层) 共用这一个渲染器。
 // mode="shop" → stock=instock,带「显示0库存」开关;mode="all" → 不加库存筛选。

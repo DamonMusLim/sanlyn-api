@@ -5,7 +5,7 @@ import { DOC_LINK_FIELDS, docCoverage, docsForRows, rowDocs, downloadableDocs } 
 import { trialReadiness } from "./booking-platform-trial.js";
 import { PLATFORM_FIELDS, notConnectedCoverage, platformStatus } from "./booking-platform-access.js";
 
-const VERSION = "v2026.09.16-1";
+const VERSION = "v2026.09.17-3";
 const READ_ROLES = new Set(["admin", "logistics", "sales", "ops", "finance", "operator", "ceo", "superadmin"]);
 const CORE_FIELDS = [
   ["shipment_no", "CY号"], ["booking_no", "订舱号"], ["forwarder_booking_no", "货代订舱号"],
@@ -255,8 +255,9 @@ export default async function handler(req, res) {
           state: "not_connected",
           can_download: false,
           can_trial: false,
+          can_platform_login: false,
           can_platform_download: false,
-          platform_entry_count: 0,
+          platform_entry_count: "未接入",
           missing_fields: [{ name: "shipping_plans", label: "订舱记录", table: "shipping_plans", fill_text: "未接入" }],
           note: "缺 shipping_plans 真源表，不能定位下一票。",
         },
