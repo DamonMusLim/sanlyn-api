@@ -207,12 +207,13 @@ export async function handleVoid(req, res, db) {
     const blocked = await client.query(
       `SELECT
          COALESCE(SUM(COALESCE(b.ar_paid_amount,0)),0)::numeric AS paid,
+         COALESCE(SUM(COALESCE(b.invoiced_amount,0)),0)::numeric AS row_invoiced,
          EXISTS (SELECT 1 FROM finance_invoice_bill_links l JOIN freight_supplier_bills fb ON fb.id::text=l.bill_id::text WHERE fb.customer_bill_id=$1) AS invoiced,
          EXISTS (SELECT 1 FROM freight_bill_items i JOIN freight_bills h ON h.id=i.bill_id JOIN freight_supplier_bills fb ON fb.id=i.fee_id WHERE fb.customer_bill_id=$1 AND COALESCE(h.invoiced_amount,0)>0) AS bill_invoiced
        FROM freight_supplier_bills b WHERE b.customer_bill_id=$1`,
       [id]
     );
-    if (Number(blocked.rows[0].paid) > 0 || blocked.rows[0].invoiced || blocked.rows[0].bill_invoiced) {
+    if (Number(blocked.rows[0].paid) > 0 || Number(blocked.rows[0].row_invoiced) > 0 || blocked.rows[0].invoiced || blocked.rows[0].bill_invoiced) {
       await client.query("ROLLBACK");
       return res.status(409).json({ ok: false, error: "paid_or_invoiced" });
     }

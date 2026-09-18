@@ -1085,6 +1085,7 @@ ${printBtn}
         totalCny = locked.totals.CNY;
         fxRate = locked.fx_rate;
       }
+      const fobBillDate = fobLockedBill?.snapshot?.issue_date || docDate;
       const fobWarnings = ctnQty && ctnQty !== actualCtnQty
         ? [`container_qty(${ctnQty}) 与实际柜明细(${actualCtnQty})不一致, 已按实际柜数计算单价`]
         : [];
@@ -1119,8 +1120,8 @@ ${printBtn}
       // ⚖️ 铁则:客户单据用BL号,CY内部号不外泄。BL为空退 FS 合同号(contract_no),
       //    两者都空则不发号(见 normalizeDocSeed)。绝不降级用 shipment_no —— 那会把 CY 内部号
       //    印给客户(实测出过 FI-CY00416)。
-      let fobInvNo = fobLockedBill?.doc_no || await issueDocNo(pool, { docDate, noDate: false, noSeq: true,
-        prefix: "OF", seed: fobDocSeed, blNo: p.bl_no,
+      let fobInvNo = fobLockedBill?.doc_no || await issueDocNo(pool, { docDate, noDate: true, noSeq: true,
+        prefix: "FI", seed: fobDocSeed, blNo: p.bl_no,
         docType: "fob_invoice", totalUsd, totalCny,
         generatedBy: req.user?.email || req.user?.username || req.user?.name || req.user?.role || null,
         snapshot: { shipment_id: p.id, shipment_no: p.shipment_no, bl_no: p.bl_no, qty: actualCtnQty, warnings: fobWarnings, charges: fobChargeRows, used_fallback_freight_sale_usd: fobChargeRowsUsedFallback },
@@ -1205,7 +1206,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       <div class="row"><div class="lbl">TO (客户名称):</div><div class="val big" style="display:block;padding:5px 8px">${esc(billTo)}${billAddr?`<div style="font-size:9px;font-weight:400;color:#555;margin-top:2px">${esc(billAddr)}</div>`:''}</div></div>
       <div class="row"><div class="lbl">SHPT MODE:</div><div class="val">Sea Export</div></div>
       <div class="row"><div class="lbl">INV/BL NO.:</div><div class="val">${esc(blNo)}</div></div>
-      <div class="row"><div class="lbl">DATE (出单日期):</div><div class="val">${docDate}</div></div>
+      <div class="row"><div class="lbl">DATE (出单日期):</div><div class="val">${fobBillDate}</div></div>
     </div>
     <div class="info-box">
       <div class="row"><div class="lbl">Vessel/Voyage (船名航次):</div><div class="val">${esc(vessel)}</div></div>
@@ -1273,7 +1274,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
   </table>
 
   <div class="fx-note">* Please remit the full amount in ONE of the following currencies. / 请选择以下一种币种全额支付。</div>
-  <div class="fx-note">开票日期汇率 Invoice Date Rate (<strong>${docDate}</strong>): <strong>1 USD = ${fxRate.toFixed(4)} CNY</strong></div>
+  <div class="fx-note">开票日期汇率 Invoice Date Rate (<strong>${fobBillDate}</strong>): <strong>1 USD = ${fxRate.toFixed(4)} CNY</strong></div>
 
   <div class="pay-grid">
     <div class="pay-box usd">
@@ -1544,6 +1545,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
         portChargeRows = locked.rows;
         totalCny = locked.totals.CNY;
       }
+      const pcBillDate = pcLockedBill?.snapshot?.issue_date || docDate;
       // 汇总版(?summary=1):明细太长时只显港杂费总额一行(不列各费目)
       const _pcSummary = String((req.query && req.query.summary) || "") === "1";
       const chargeRowsHtml = (_pcSummary && portChargeRows.length)
@@ -1568,7 +1570,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       // ⚖️ 铁则:客户单据用BL号,CY内部号不外泄。BL为空退 FS 合同号(contract_no),
       //    两者都空则不发号(见 normalizeDocSeed)。绝不降级用 shipment_no —— 那会把 CY 内部号
       //    印给客户(实测出过 FI-CY00416)。
-      const portchargeNo = pcLockedBill?.doc_no || await issueDocNo(pool, { docDate, noDate: false, noSeq: true,
+      const portchargeNo = pcLockedBill?.doc_no || await issueDocNo(pool, { docDate, noDate: true, noSeq: true,
         prefix: "PC", seed: portchargeDocSeed, blNo: p.bl_no,
         docType: "fob_portcharge", totalCny,
         generatedBy: req.user?.email || req.user?.username || req.user?.name || req.user?.role || null,
@@ -1677,7 +1679,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       <div class="row"><div class="lbl">TO (工厂名称):</div><div class="val big" style="display:block;padding:3px 6px">${esc(billTo)}${(factory&&factory.address)?`<div style="font-size:8.5px;font-weight:400;color:#555;margin-top:1px">${esc(factory.address)}</div>`:''}</div></div>
       <div class="row"><div class="lbl">SHPT MODE:</div><div class="val">Sea Export</div></div>
       <div class="row"><div class="lbl">INV/BL NO.:</div><div class="val">${esc(blNo)}</div></div>
-      <div class="row"><div class="lbl">DATE (出单日期):</div><div class="val">${docDate}</div></div>
+      <div class="row"><div class="lbl">DATE (出单日期):</div><div class="val">${pcBillDate}</div></div>
     </div>
     <div class="info-box">
       <div class="row"><div class="lbl">Vessel/Voyage (船名航次):</div><div class="val">${esc(vessel)}</div></div>

@@ -32,7 +32,7 @@ const FEE_EN = {
 
 export async function renderExwInvoice(pool, p, orders, cust, query, res){
   query = query || {};
-  const genDate = docIssueDate(p);
+  let genDate = docIssueDate(p);
   const isQuote = String((query&&query.quote)||"")==="1"; // 报价表模式(发货前):英文QUOTATION,只客户+航线,无柜无银行
   const rawBlNo = cleanBlNo(p.bl_no);
   const blNo    = rawBlNo || "待补提单号";
@@ -48,8 +48,11 @@ export async function renderExwInvoice(pool, p, orders, cust, query, res){
 
   // ── 对外发票号 · 锁版:老号不动;新号=EXW-提单号-出单日 ──
   const _rawObj = (p.raw && typeof p.raw==="object") ? p.raw : {};
+  const lockedBill = await getLockedCustomerBill(pool, p.bl_no, "exw_invoice", query.payer_company_code);
+  if(lockedBill?.snapshot?.issue_date) genDate = lockedBill.snapshot.issue_date;
   let invNo = _rawObj.exw_invoice_no || p.exw_invoice_no || "";
-  if(!invNo){
+  if(lockedBill?.doc_no) invNo = lockedBill.doc_no;
+  if(!invNo && !lockedBill){
     if(isPendingBl(rawBlNo)){
       invNo = "待补提单号";
       docWarnings.push("提单号为空或待补，未生成EXW全费用单号");
@@ -129,7 +132,6 @@ export async function renderExwInvoice(pool, p, orders, cust, query, res){
     feeRows = r.rows||[];
   }catch(e){ feeRows=[]; }
 
-  const lockedBill = await getLockedCustomerBill(pool, p.bl_no, "exw_invoice", query.payer_company_code);
   if(lockedBill){
     const locked = applyLockedBill({ rows: feeRows }, lockedBill);
     feeRows = locked.rows || feeRows;
