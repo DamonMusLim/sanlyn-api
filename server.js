@@ -9,6 +9,7 @@ import { dirname } from "path";
 import { authMiddleware } from "./api/auth.js";
 import { portalGate }    from "./api/portal/gate.js";
 import { registerCoreRoutes } from "./routes-core.js";
+import { registerRfqPublicRoutes, registerRfqRoutes } from "./routes-rfq.js";
 import { registerTailRoutes } from "./routes-tail.js";
 import rateLimit from "express-rate-limit";
 
@@ -55,6 +56,7 @@ app.use("/api/factory-portal/upload-history", factoryPortalLimiter);
 // ── CORS middleware (replace Vercel headers config) ──
 const ALLOWED_ORIGINS = [
   "https://ai.sanlyn.cn",
+  "https://client.sanlyn.cn",
   "https://pet.sanlyn.cn",
   "https://ai.sanlynos.com",
   "https://sanlyn-os.vercel.app",
@@ -163,6 +165,7 @@ mount("/api/wx-mini-login", () => import("./api/wx-mini-login.js"));
 mount("/api/brief-notes", () => import("./api/brief-notes.js"));
 mount("/kp", () => import("./api/db/kp.js"));
 mount("/api/console/daily-check", () => import("./api/console-daily-check.js"));
+registerRfqPublicRoutes(app, mount);
 
 // ── JWT 鉴权中间件 ──
 app.use(authMiddleware);
@@ -188,65 +191,13 @@ function mount(route, handlerModule) {
 }
 // Route Registration — mirrors Vercel's file-based routing
 // ── /api/db/* endpoints ──
-mount("/api/db/hgj-template-195", () => import("./api/db/hgj-template-195.js"));
-mount("/api/db/rates-hub", () => import("./api/db/rates-hub.js"));
-mount("/api/db/booking-platform", () => import("./api/db/booking-platform.js"));
-mount("/api/db/settlement-management", () => import("./api/db/settlement-management.js"));
-mount("/api/db/manifest-fields", () => import("./api/db/manifest-fields.js"));
-mount("/api/db/manifest-message-channel", () => import("./api/db/manifest-message-channel.js"));
-mount("/api/db/manifest-send", () => import("./api/db/manifest-send.js"));
-mount("/api/db/qingdao-manifest-send", () => import("./api/db/qingdao-manifest-send.js"));
-mount("/api/db/xiamen-manifest-send", () => import("./api/db/xiamen-manifest-send.js"));
-mount("/api/db/tianjin-dalian-manifest-send", () => import("./api/db/tianjin-dalian-manifest-send.js"));
-mount("/api/db/shenzhen-nansha-manifest-send", () => import("./api/db/shenzhen-nansha-manifest-send.js"));
 registerCoreRoutes(app, mount);
+registerRfqRoutes(app, mount);
 // ── Static files (driver-evidence page) ──
 import { join } from "path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 app.use("/public", express.static(join(__dirname, "public")));
 app.use("/templates", express.static(join(__dirname, "public/templates")));
-app.get("/hgj-template-195", (_req, res) => {
-  res.sendFile(join(__dirname, "public/hgj-template-195.html"));
-});
-app.get("/hgj-2025-bill-import", (_req, res) => {
-  res.sendFile(join(__dirname, "public/hgj-2025-bill-import.html"));
-});
-app.get("/rates-hub", (_req, res) => {
-  res.sendFile(join(__dirname, "public/rates-hub.html"));
-});
-app.get("/freight-rate-management", (_req, res) => {
-  res.sendFile(join(__dirname, "public/freight-rate-management.html"));
-});
-app.get("/booking-platform", (_req, res) => {
-  res.sendFile(join(__dirname, "public/booking-platform.html"));
-});
-app.get("/settlement-management", (_req, res) => {
-  res.sendFile(join(__dirname, "public/settlement-management.html"));
-});
-app.get("/manifest-fields", (_req, res) => {
-  res.sendFile(join(__dirname, "public/manifest-fields.html"));
-});
-app.get("/manifest-message-channel", (_req, res) => {
-  res.sendFile(join(__dirname, "public/manifest-message-channel.html"));
-});
-app.get("/manifest-send", (_req, res) => {
-  res.sendFile(join(__dirname, "public/manifest-send.html"));
-});
-app.get("/qingdao-manifest-send", (_req, res) => {
-  res.sendFile(join(__dirname, "public/qingdao-manifest-send.html"));
-});
-app.get("/xiamen-manifest-send", (_req, res) => {
-  res.sendFile(join(__dirname, "public/xiamen-manifest-send.html"));
-});
-app.get("/tianjin-dalian-manifest-send", (_req, res) => {
-  res.sendFile(join(__dirname, "public/tianjin-dalian-manifest-send.html"));
-});
-app.get("/shenzhen-nansha-manifest-send", (_req, res) => {
-  res.sendFile(join(__dirname, "public/shenzhen-nansha-manifest-send.html"));
-});
-app.get(/^\/([A-Za-z0-9_-]+)\.js$/, (req, res) => {
-  res.sendFile(join(__dirname, "public", req.params[0] + ".js"));
-});
 // Short link for factory fill: /f/<token> → static page
 app.get("/f/:token", (req, res) => {
   res.redirect("/public/factory-fill.html?t=" + encodeURIComponent(req.params.token));
