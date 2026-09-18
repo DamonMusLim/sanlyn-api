@@ -62,20 +62,21 @@ export async function handleConfirm(req, res, db) {
   if (b.status === "confirmed") return res.status(409).json({ ok: false, error: "already_final" });
   if (b.status !== "sent") return res.status(409).json({ ok: false, error: "not_finalizable" });
   const ip = clean(req.headers["x-forwarded-for"] || req.socket?.remoteAddress, 120);
-  await db.query("BEGIN");
+  const client = await db.connect();
   try {
-    const u = await db.query(
+    await client.query("BEGIN");
+    const u = await client.query(
       `UPDATE customer_bills
           SET status='confirmed', confirmed_at=NOW(), confirmed_by_name=$2, confirmed_ip=$3, updated_at=NOW()
         WHERE id=$1 AND status='sent' RETURNING line_ids`,
       [b.id, clean(req.body?.name, 120) || "customer", ip]
     );
-    if (!u.rows.length) { await db.query("ROLLBACK"); return res.status(409).json({ ok: false, error: "already_final" }); }
-    await db.query(`UPDATE freight_supplier_bills SET customer_bill_id=$1 WHERE id=ANY($2::uuid[])`, [b.id, u.rows[0].line_ids || []]);
-    await event(db, b.id, "confirmed", null, { name: clean(req.body?.name, 120), ip });
-    await db.query("COMMIT");
+    if (!u.rows.length) { await client.query("ROLLBACK"); return res.status(409).json({ ok: false, error: "already_final" }); }
+    await client.query(`UPDATE freight_supplier_bills SET customer_bill_id=$1 WHERE id=ANY($2::uuid[])`, [b.id, u.rows[0].line_ids || []]);
+    await event(client, b.id, "confirmed", null, { name: clean(req.body?.name, 120), ip });
+    await client.query("COMMIT");
     res.json({ ok: true });
-  } catch (e) { await db.query("ROLLBACK"); throw e; }
+  } catch (e) { await client.query("ROLLBACK"); throw e; } finally { client.release(); }
 }
 
 export async function handleComment(req, res, db) {

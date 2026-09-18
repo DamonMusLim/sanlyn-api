@@ -12,7 +12,7 @@ import { renderInspectionRequest } from "./inspection-request-form.js"; // 出�
 import { renderCustomsBundle } from "./customs-bundle-pdf.js"; // 一次性报关合成多页PDF 2026-07-05
 import { renderReceiptDoc } from "./receipt-doc.js"; // 收款证明(银行原版docx母版灌数据) 2026-07-07
 import { docIssueDate, isChinaPayer as isChinaFreightPayer, issueDocNo, loadPortChargeIssue, normalizeDocSeed, resolvePayerCompany } from "./lib/portcharge-close-loop.js";
-import { getLockedCustomerBill, renderLockedCustomerBillHtml } from "./lib/customer-bill-snapshot.js";
+import { applyLockedBill, getLockedCustomerBill } from "./lib/customer-bill-snapshot.js";
 import { loadMainHsByNetWeight } from "./shipping-main-hs.js";
 
 // 合同号/PO 展示用：去掉前导公司码前缀(如 "38-XM-244" -> "XM-244")，纯展示，不影响任何金额/归属计算。
@@ -841,14 +841,12 @@ ${printBtn}
     // 海运费发票 Freight Invoice
     // ══════════════════════════════════════════
     if (isFobInvoice) {
-      const lockedBill = await getLockedCustomerBill(pool, p.bl_no, "fob_invoice", req.query.payer_company_code);
-      if (lockedBill) return res.status(200).send(renderLockedCustomerBillHtml(lockedBill));
       // 拉最新汇率 USD_CNY
       const fxRes = await pool.query(
         `SELECT rate FROM exchange_rates WHERE currency_pair='USD_CNY' AND fetched_at::date <= $1::date ORDER BY fetched_at DESC LIMIT 1`, [docDate]
       );
       const baseRate = fxRes.rows.length ? parseFloat(fxRes.rows[0].rate) : 7.0;
-      const fxRate   = Math.round((baseRate + 0.1) * 10000) / 10000; // +0.1，保留4位
+      let fxRate   = Math.round((baseRate + 0.1) * 10000) / 10000; // +0.1，保留4位
 
       const billTo    = cust ? (cust.name_en || cust.name_cn || "") : (p.customer_en || "");
       const billAddr  = cust ? (cust.address || "") : "";
@@ -1034,6 +1032,7 @@ ${printBtn}
       let fobChargeRows = [];
       let fobChargeRowsUsedFallback = false;
       let fobChargeFallbackReason = "";
+      let payerCode = String(req.query.payer_company_code || "").trim();
       try {
         const fobChargeRes = await pool.query(
           `SELECT cost_category, charge_basis, currency, qty, unit_price, sale_amount, payer_company_code
@@ -1046,7 +1045,6 @@ ${printBtn}
         );
         const usdRows = fobChargeRes.rows || [];
         const payerCodes = [...new Set(usdRows.map(r => String(r.payer_company_code || "").trim()).filter(Boolean))];
-        const payerCode = String(req.query.payer_company_code || "").trim();
         if (payerCodes.length > 1 && !payerCode) {
           return res.status(409).send("<h1>Multiple payer_company_code found</h1><pre>" + esc(JSON.stringify(payerCodes, null, 2)) + "</pre>");
         }
@@ -1077,8 +1075,16 @@ ${printBtn}
           sale_amount: fallbackTotalUsd,
         }];
       }
-      const totalUsd = fobChargeRows.reduce((sum, r) => sum + (parseFloat(r.sale_amount) || 0), 0);
-      const totalCny  = Math.round(totalUsd * fxRate * 100) / 100;
+      let totalUsd = fobChargeRows.reduce((sum, r) => sum + (parseFloat(r.sale_amount) || 0), 0);
+      let totalCny  = Math.round(totalUsd * fxRate * 100) / 100;
+      const fobLockedBill = await getLockedCustomerBill(pool, p.bl_no, "fob_invoice", payerCode);
+      if (fobLockedBill) {
+        const locked = applyLockedBill({ rows: fobChargeRows, totals: { USD: totalUsd, CNY: totalCny }, fx_rate: fxRate }, fobLockedBill);
+        fobChargeRows = locked.rows;
+        totalUsd = locked.totals.USD;
+        totalCny = locked.totals.CNY;
+        fxRate = locked.fx_rate;
+      }
       const fobWarnings = ctnQty && ctnQty !== actualCtnQty
         ? [`container_qty(${ctnQty}) 与实际柜明细(${actualCtnQty})不一致, 已按实际柜数计算单价`]
         : [];
@@ -1113,8 +1119,8 @@ ${printBtn}
       // ⚖️ 铁则:客户单据用BL号,CY内部号不外泄。BL为空退 FS 合同号(contract_no),
       //    两者都空则不发号(见 normalizeDocSeed)。绝不降级用 shipment_no —— 那会把 CY 内部号
       //    印给客户(实测出过 FI-CY00416)。
-      const fobInvNo = await issueDocNo(pool, { docDate, noDate: true, noSeq: true,
-        prefix: "FI", seed: fobDocSeed, blNo: p.bl_no,
+      let fobInvNo = fobLockedBill?.doc_no || await issueDocNo(pool, { docDate, noDate: false, noSeq: true,
+        prefix: "OF", seed: fobDocSeed, blNo: p.bl_no,
         docType: "fob_invoice", totalUsd, totalCny,
         generatedBy: req.user?.email || req.user?.username || req.user?.name || req.user?.role || null,
         snapshot: { shipment_id: p.id, shipment_no: p.shipment_no, bl_no: p.bl_no, qty: actualCtnQty, warnings: fobWarnings, charges: fobChargeRows, used_fallback_freight_sale_usd: fobChargeRowsUsedFallback },
@@ -1365,8 +1371,6 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
     // 克隆 fob_invoice 洋宝宝版式，只含工厂承担的非海运CNY港杂费
     // ══════════════════════════════════════════
     if (isFobPortcharge) {
-      const lockedBill = await getLockedCustomerBill(pool, p.bl_no, "fob_portcharge", req.query.payer_company_code);
-      if (lockedBill) return res.status(200).send(renderLockedCustomerBillHtml(lockedBill));
       const blNo      = p.bl_no || "—";
       const scNo      = p.contract_no || "—";
       const orderNo   = p.raw?.customerPO || "—";
@@ -1533,7 +1537,13 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       }
       billTo = factory ? (factory.name_cn || factoryCode) : factoryCode;
 
-      const totalCny = pcIssue.totalCny;
+      let totalCny = pcIssue.totalCny;
+      const pcLockedBill = await getLockedCustomerBill(pool, p.bl_no, "fob_portcharge", factoryCode);
+      if (pcLockedBill) {
+        const locked = applyLockedBill({ rows: portChargeRows, totals: { USD: 0, CNY: totalCny } }, pcLockedBill);
+        portChargeRows = locked.rows;
+        totalCny = locked.totals.CNY;
+      }
       // 汇总版(?summary=1):明细太长时只显港杂费总额一行(不列各费目)
       const _pcSummary = String((req.query && req.query.summary) || "") === "1";
       const chargeRowsHtml = (_pcSummary && portChargeRows.length)
@@ -1558,7 +1568,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       // ⚖️ 铁则:客户单据用BL号,CY内部号不外泄。BL为空退 FS 合同号(contract_no),
       //    两者都空则不发号(见 normalizeDocSeed)。绝不降级用 shipment_no —— 那会把 CY 内部号
       //    印给客户(实测出过 FI-CY00416)。
-      const portchargeNo = await issueDocNo(pool, { docDate, noDate: true, noSeq: true,
+      const portchargeNo = pcLockedBill?.doc_no || await issueDocNo(pool, { docDate, noDate: false, noSeq: true,
         prefix: "PC", seed: portchargeDocSeed, blNo: p.bl_no,
         docType: "fob_portcharge", totalCny,
         generatedBy: req.user?.email || req.user?.username || req.user?.name || req.user?.role || null,

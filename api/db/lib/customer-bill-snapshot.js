@@ -26,7 +26,9 @@ export async function getCustomerBillFxRate(db, issueDate) {
       ORDER BY fetched_at DESC LIMIT 1`,
     [issueDate]
   );
-  const base = r.rows.length ? Number(r.rows[0].rate) : 7;
+  if (!r.rows.length) return null;
+  const base = Number(r.rows[0].rate);
+  if (!Number.isFinite(base)) return null;
   return Math.round((base + 0.1) * 10000) / 10000;
 }
 
@@ -69,6 +71,14 @@ export async function getLockedCustomerBill(db, bl, docType, payer) {
   const args = [clean(bl, 120), clean(docType, 40)];
   const where = ["bl_no=$1", "doc_type=$2", "status IN ('confirmed','sent')"];
   if (clean(payer, 80)) { args.push(clean(payer, 80)); where.push(`payer_company_code=$${args.length}`); }
+  if (!clean(payer, 80)) {
+    const c = await db.query(
+      `SELECT COUNT(DISTINCT payer_company_code) AS n FROM customer_bills
+        WHERE bl_no=$1 AND doc_type=$2 AND status IN ('confirmed','sent')`,
+      args
+    );
+    if (Number(c.rows[0]?.n) > 1) return null;
+  }
   const r = await db.query(
     `SELECT * FROM customer_bills
       WHERE ${where.join(" AND ")}
@@ -80,25 +90,29 @@ export async function getLockedCustomerBill(db, bl, docType, payer) {
   return { ...row, snapshot: jsonObj(row.snapshot) };
 }
 
-function esc(s) {
-  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-function fmt(v) {
-  return money(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-export function renderLockedCustomerBillHtml(locked) {
+export function applyLockedBill(ctx, locked) {
   const s = jsonObj(locked?.snapshot);
   const rows = Array.isArray(s.lines) ? s.lines : [];
-  const title = s.doc_type === "fob_portcharge" ? "Port Charge Statement" : s.doc_type === "exw_invoice" ? "EXW Full-Charge Invoice" : "Freight Invoice";
-  const body = rows.map(r => `<tr><td>${esc(r.fee_name)}</td><td>${esc(r.basis)}</td><td>${esc(r.currency)}</td><td class="c">${esc(r.qty)}</td><td class="r">${fmt(r.unit_price)}</td><td class="r">${fmt(r.amount)}</td></tr>`).join("");
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} - ${esc(s.doc_no)}</title><style>
-body{font-family:Arial,"Microsoft YaHei",sans-serif;background:#eee;margin:0;padding:24px;color:#111}.page{max-width:190mm;margin:auto;background:white;padding:12mm}
-h1{font-size:22px;margin:0 0 4px}.meta{display:grid;grid-template-columns:120px 1fr 120px 1fr;border:1px solid #ddd;margin:16px 0;font-size:12px}.meta div{padding:7px;border-right:1px solid #eee;border-bottom:1px solid #eee}.k{background:#f7f7f7;font-weight:700}
-table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ddd;padding:7px}th{background:#f7f7f7}.c{text-align:center}.r{text-align:right}.tot{margin-top:14px;text-align:right;font-weight:800}
-</style></head><body><div class="page"><h1>${esc(title)}</h1><div>${esc(s.doc_no || "")}</div>
-<div class="meta"><div class="k">B/L No.</div><div>${esc(s.bl_no)}</div><div class="k">Issue Date</div><div>${esc(s.issue_date)}</div><div class="k">Vessel/Voyage</div><div>${esc(s.vessel_voyage)}</div><div class="k">FX Rate</div><div>${esc(s.fx_rate)}</div><div class="k">POL</div><div>${esc(s.pol)}</div><div class="k">POD</div><div>${esc(s.pod)}</div></div>
-<table><thead><tr><th>Charge</th><th>Basis</th><th>Cur</th><th>Qty</th><th>Unit</th><th>Amount</th></tr></thead><tbody>${body}</tbody></table>
-<div class="tot">Total USD: ${fmt(s.totals?.USD)} &nbsp;&nbsp; Total CNY: ${fmt(s.totals?.CNY)}</div></div></body></html>`;
+  if (!locked || !rows.length) return ctx || {};
+  return {
+    ...(ctx || {}),
+    locked_bill_id: locked.id,
+    doc_no: s.doc_no || ctx?.doc_no,
+    issue_date: s.issue_date || ctx?.issue_date,
+    fx_rate: s.fx_rate == null ? ctx?.fx_rate : Number(s.fx_rate),
+    rows: rows.map(r => ({
+      id: r.id,
+      cost_category: r.fee_name,
+      charge_basis: r.basis,
+      currency: r.currency,
+      qty: r.qty,
+      unit_price: r.unit_price,
+      amount: r.amount,
+      sale_amount: r.amount,
+    })),
+    totals: {
+      USD: money(s.totals?.USD),
+      CNY: money(s.totals?.CNY),
+    },
+  };
 }
