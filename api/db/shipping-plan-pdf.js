@@ -12,6 +12,7 @@ import { renderInspectionRequest } from "./inspection-request-form.js"; // 出�
 import { renderCustomsBundle } from "./customs-bundle-pdf.js"; // 一次性报关合成多页PDF 2026-07-05
 import { renderReceiptDoc } from "./receipt-doc.js"; // 收款证明(银行原版docx母版灌数据) 2026-07-07
 import { docIssueDate, isChinaPayer as isChinaFreightPayer, issueDocNo, loadPortChargeIssue, normalizeDocSeed, resolvePayerCompany } from "./lib/portcharge-close-loop.js";
+import { getLockedCustomerBill, renderLockedCustomerBillHtml } from "./lib/customer-bill-snapshot.js";
 import { loadMainHsByNetWeight } from "./shipping-main-hs.js";
 
 // 合同号/PO 展示用：去掉前导公司码前缀(如 "38-XM-244" -> "XM-244")，纯展示，不影响任何金额/归属计算。
@@ -840,6 +841,8 @@ ${printBtn}
     // 海运费发票 Freight Invoice
     // ══════════════════════════════════════════
     if (isFobInvoice) {
+      const lockedBill = await getLockedCustomerBill(pool, p.bl_no, "fob_invoice", req.query.payer_company_code);
+      if (lockedBill) return res.status(200).send(renderLockedCustomerBillHtml(lockedBill));
       // 拉最新汇率 USD_CNY
       const fxRes = await pool.query(
         `SELECT rate FROM exchange_rates WHERE currency_pair='USD_CNY' AND fetched_at::date <= $1::date ORDER BY fetched_at DESC LIMIT 1`, [docDate]
@@ -1362,6 +1365,8 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
     // 克隆 fob_invoice 洋宝宝版式，只含工厂承担的非海运CNY港杂费
     // ══════════════════════════════════════════
     if (isFobPortcharge) {
+      const lockedBill = await getLockedCustomerBill(pool, p.bl_no, "fob_portcharge", req.query.payer_company_code);
+      if (lockedBill) return res.status(200).send(renderLockedCustomerBillHtml(lockedBill));
       const blNo      = p.bl_no || "—";
       const scNo      = p.contract_no || "—";
       const orderNo   = p.raw?.customerPO || "—";

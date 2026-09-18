@@ -5,6 +5,7 @@
 // 版式复用 fob_portcharge 的洋宝宝 INVOICE + 集装箱明细;字段级 data-field/data-row 供前端绑定。
 // 渲染逻辑独立于 shipping-plan-pdf.js(单文件≤500行铁律)。
 import { docIssueDate } from "./lib/portcharge-close-loop.js";
+import { getLockedCustomerBill, renderLockedCustomerBillHtml } from "./lib/customer-bill-snapshot.js";
 
 function esc(s){ if(s===null||s===undefined)return""; return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function fmtNum(v){ var n=Number(v); if(!isFinite(n))return"0.00"; return n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -31,6 +32,8 @@ const FEE_EN = {
 
 export async function renderExwInvoice(pool, p, orders, cust, query, res){
   query = query || {};
+  const lockedBill = await getLockedCustomerBill(pool, p.bl_no, "exw_invoice", query.payer_company_code);
+  if (lockedBill) return renderLockedCustomerBillHtml(lockedBill);
   const genDate = docIssueDate(p);
   const isQuote = String((query&&query.quote)||"")==="1"; // 报价表模式(发货前):英文QUOTATION,只客户+航线,无柜无银行
   const rawBlNo = cleanBlNo(p.bl_no);

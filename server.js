@@ -165,6 +165,8 @@ mount("/api/wx-mini-login", () => import("./api/wx-mini-login.js"));
 mount("/api/brief-notes", () => import("./api/brief-notes.js"));
 mount("/kp", () => import("./api/db/kp.js"));
 mount("/api/console/daily-check", () => import("./api/console-daily-check.js"));
+mount("/api/public/customer-bill", () => import("./api/db/customer-bill.js"));
+mount("/api/public/customer-bill/:action", () => import("./api/db/customer-bill.js"));
 registerRfqPublicRoutes(app, mount);
 
 // ── JWT 鉴权中间件 ──
@@ -192,6 +194,8 @@ function mount(route, handlerModule) {
 // Route Registration — mirrors Vercel's file-based routing
 // ── /api/db/* endpoints ──
 registerCoreRoutes(app, mount);
+mount("/api/db/customer-bill", () => import("./api/db/customer-bill.js"));
+mount("/api/db/customer-bill/:action", () => import("./api/db/customer-bill.js"));
 registerRfqRoutes(app, mount);
 // ── Static files (driver-evidence page) ──
 import { join } from "path";
