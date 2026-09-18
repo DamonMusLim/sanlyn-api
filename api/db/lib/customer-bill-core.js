@@ -208,16 +208,17 @@ export async function handleVoid(req, res, db) {
       `SELECT
          COALESCE(SUM(COALESCE(b.ar_paid_amount,0)),0)::numeric AS paid,
          COALESCE(SUM(COALESCE(b.invoiced_amount,0)),0)::numeric AS row_invoiced,
+         COUNT(*) FILTER (WHERE b.rebill_finance_slip_id IS NOT NULL)::int AS rebill_slips,
          EXISTS (SELECT 1 FROM finance_invoice_bill_links l JOIN freight_supplier_bills fb ON fb.id::text=l.bill_id::text WHERE fb.customer_bill_id=$1) AS invoiced,
          EXISTS (SELECT 1 FROM freight_bill_items i JOIN freight_bills h ON h.id=i.bill_id JOIN freight_supplier_bills fb ON fb.id=i.fee_id WHERE fb.customer_bill_id=$1 AND COALESCE(h.invoiced_amount,0)>0) AS bill_invoiced
        FROM freight_supplier_bills b WHERE b.customer_bill_id=$1`,
       [id]
     );
-    if (Number(blocked.rows[0].paid) > 0 || Number(blocked.rows[0].row_invoiced) > 0 || blocked.rows[0].invoiced || blocked.rows[0].bill_invoiced) {
+    if (Number(blocked.rows[0].paid) > 0 || Number(blocked.rows[0].row_invoiced) > 0 || Number(blocked.rows[0].rebill_slips) > 0 || blocked.rows[0].invoiced || blocked.rows[0].bill_invoiced) {
       await client.query("ROLLBACK");
       return res.status(409).json({ ok: false, error: "paid_or_invoiced" });
     }
-    await client.query(`UPDATE customer_bills SET status='void', magic_link_id=NULL, voided_at=NOW(), voided_by=$2, void_reason=$3, updated_at=NOW() WHERE id=$1`, [id, actor(req), clean(req.body?.reason, 500)]);
+    await client.query(`UPDATE customer_bills SET status='void', voided_at=NOW(), voided_by=$2, void_reason=$3, updated_at=NOW() WHERE id=$1`, [id, actor(req), clean(req.body?.reason, 500) || "void"]);
     await revokeMagicLink(client, bill.rows[0].magic_link_id);
     await client.query(`UPDATE freight_supplier_bills SET customer_bill_id=NULL WHERE customer_bill_id=$1`, [id]);
     await event(client, id, "voided", "staff", actor(req), clean(req.body?.reason, 500));
@@ -231,6 +232,26 @@ export async function handleLegacy(req, res, db) {
   const b = req.body || {}, bl = clean(b.bl || b.bl_no, 120), type = clean(b.type, 40), payer = clean(b.payer_company_code, 80);
   if (!bl || !payer || !TYPES.has(type) || !b.doc_no || !b.issue_date || !Array.isArray(b.line_ids)) return res.status(400).json({ ok: false, error: "bad_request" });
   const plan = await loadPlan(db, bl), lines = await loadLines(db, { bl, type, ids: b.line_ids });
+  const wanted = new Set(b.line_ids.map(x => clean(x, 80)));
+  const found = new Set(lines.map(x => clean(x.id, 80)));
+  const missing = [...wanted].filter(x => !found.has(x));
+  if (missing.length) return res.status(400).json({ ok: false, error: "line_not_found_or_scope", line_ids: missing });
+  const badAmount = lines.filter(x => num(x.amount) == null).map(x => x.id);
+  if (badAmount.length) return res.status(400).json({ ok: false, error: "missing_floor", line_ids: badAmount });
+  const below = lines.filter(x => num(x.sale_amount) == null || num(x.sale_amount) < num(x.amount)).map(x => ({ line_id: x.id, floor: num(x.amount), sale: num(x.sale_amount) }));
+  if (below.length) return res.status(400).json({ ok: false, error: "below_floor", lines: below });
+  const bound = lines.filter(x => x.customer_bill_id).map(x => x.id);
+  if (bound.length) {
+    const linked = await db.query(
+      `SELECT fb.id, fb.customer_bill_id, cb.status
+         FROM freight_supplier_bills fb
+         LEFT JOIN customer_bills cb ON cb.id=fb.customer_bill_id
+        WHERE fb.id=ANY($1::uuid[]) AND fb.customer_bill_id IS NOT NULL
+          AND COALESCE(cb.status,'') <> 'void'`,
+      [bound]
+    );
+    if (linked.rows.length) return res.status(400).json({ ok: false, error: "line_bound_to_active_bill", lines: linked.rows });
+  }
   const snapshot = buildCustomerBillSnapshot({ bill: { doc_type: type, doc_no: b.doc_no, issue_date: b.issue_date, fx_rate: b.fx_rate, bl_no: bl, payer_company_code: payer }, plan, lines });
   snapshot.totals = { USD: num(b.total_usd) || 0, CNY: num(b.total_cny) || 0 };
   const fp = fingerprintSnapshot(snapshot);

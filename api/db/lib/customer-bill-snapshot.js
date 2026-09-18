@@ -34,16 +34,16 @@ export async function getCustomerBillFxRate(db, issueDate) {
 
 export function buildCustomerBillSnapshot({ bill, plan, lines }) {
   const rows = (lines || []).map(r => {
-    const qty = r.qty == null || r.qty === "" ? 1 : Number(r.qty);
+    const rawQty = r.qty == null || r.qty === "" ? 1 : Number(r.qty);
+    const qty = Number.isFinite(rawQty) && rawQty !== 0 ? rawQty : 1;
     const sale = money(r.sale_amount);
-    const unit = r.unit_price == null || r.unit_price === "" ? (qty ? money(sale / qty) : sale) : money(r.unit_price);
     return {
       id: clean(r.id, 80),
       fee_name: clean(r.cost_category, 160),
       basis: clean(r.charge_basis || "", 80),
       currency: clean(r.currency || "CNY", 10).toUpperCase(),
       qty,
-      unit_price: unit,
+      unit_price: money(sale / qty),
       amount: sale,
     };
   });

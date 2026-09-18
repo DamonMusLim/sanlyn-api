@@ -61,6 +61,43 @@ ALTER TABLE freight_supplier_bills
   ADD CONSTRAINT fk_fsb_customer_bill
   FOREIGN KEY (customer_bill_id) REFERENCES customer_bills(id);
 
+CREATE OR REPLACE FUNCTION guard_customer_bill_locked()
+RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.status = 'confirmed' THEN
+      RAISE EXCEPTION 'customer_bill_locked';
+    END IF;
+    RETURN OLD;
+  END IF;
+
+  IF OLD.status = 'confirmed' THEN
+    IF NEW.status = 'void'
+       AND NEW.voided_at IS NOT NULL
+       AND NEW.voided_by IS NOT NULL
+       AND NEW.void_reason IS NOT NULL
+       AND NEW.updated_at IS NOT NULL
+       AND NEW.status IS DISTINCT FROM OLD.status
+       AND NEW.voided_at IS DISTINCT FROM OLD.voided_at
+       AND NEW.voided_by IS DISTINCT FROM OLD.voided_by
+       AND NEW.void_reason IS DISTINCT FROM OLD.void_reason
+       AND NEW.updated_at IS DISTINCT FROM OLD.updated_at
+       AND (to_jsonb(NEW) - 'status' - 'voided_at' - 'voided_by' - 'void_reason' - 'updated_at')
+           IS NOT DISTINCT FROM
+           (to_jsonb(OLD) - 'status' - 'voided_at' - 'voided_by' - 'void_reason' - 'updated_at') THEN
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'customer_bill_locked';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_guard_customer_bill_locked ON customer_bills;
+CREATE TRIGGER trg_guard_customer_bill_locked
+  BEFORE UPDATE OR DELETE ON customer_bills
+  FOR EACH ROW EXECUTE FUNCTION guard_customer_bill_locked();
+
 CREATE OR REPLACE FUNCTION guard_customer_bill_locked_fsb()
 RETURNS trigger AS $$
 DECLARE
@@ -83,7 +120,8 @@ BEGIN
       OLD.unit_price IS DISTINCT FROM NEW.unit_price OR
       OLD.currency IS DISTINCT FROM NEW.currency OR
       OLD.payer_company_code IS DISTINCT FROM NEW.payer_company_code OR
-      OLD.rebill_status IS DISTINCT FROM NEW.rebill_status
+      OLD.rebill_status IS DISTINCT FROM NEW.rebill_status OR
+      OLD.customer_bill_id IS DISTINCT FROM NEW.customer_bill_id
     ) THEN
       RAISE EXCEPTION 'customer_bill_locked';
     END IF;

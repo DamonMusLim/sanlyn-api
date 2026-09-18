@@ -1,4 +1,5 @@
 import { rawToHash } from "./collab-shared.js";
+import { resolvePayerCompany } from "./portcharge-close-loop.js";
 
 function clean(v, max = 500) { return String(v == null ? "" : v).trim().slice(0, max); }
 function jsonObj(v) { if (!v) return {}; if (typeof v === "object") return v; try { return JSON.parse(v) || {}; } catch (_) { return {}; } }
@@ -21,7 +22,17 @@ async function scopedBills(db, auth, billId = null) {
   if (auth.recipient_role === "customer_bill") {
     args.push(Number(auth.meta.bill_id)); where.push(`id=$${args.length}`);
   } else {
-    args.push(Number(auth.meta.shipment_id)); where.push(`plan_id=$${args.length}`);
+    const planId = Number(auth.meta.shipment_id || auth.meta.plan_id || auth.meta.shipping_plan_id);
+    if (!planId) return [];
+    const plan = await db.query(
+      `SELECT id, customer, customer_en, customer_cn, customer_company_id, raw
+         FROM shipping_plans WHERE id=$1 LIMIT 1`,
+      [planId]
+    );
+    const payer = plan.rows[0] ? await resolvePayerCompany(db, plan.rows[0]) : null;
+    if (!clean(payer?.code, 80)) return [];
+    args.push(planId); where.push(`plan_id=$${args.length}`);
+    args.push(clean(payer.code, 80)); where.push(`payer_company_code=$${args.length}`);
   }
   const r = await db.query(`SELECT * FROM customer_bills WHERE ${where.join(" AND ")} ORDER BY seq,id`, args);
   return r.rows;
