@@ -195,7 +195,8 @@ var PAGES = {
     }
     function redraw(){
       var host = $("risk-main-host");
-      if (host) host.innerHTML = st.tab==="queue" ? queue() : filt()+main();
+      if (host) host.innerHTML = st.tab==="nearexp" ? '<div id="nearexp-host">读取中…</div>' : (st.tab==="queue" ? queue() : filt()+main());
+      if (st.tab==="nearexp" && window.NEAREXP) window.NEAREXP.render($("nearexp-host"));   // 0919 临期清仓页签(dataops-nearexp.js)
       var tabs = document.querySelectorAll("[data-risk-tab]");
       Array.prototype.forEach.call(tabs, function(x){ x.classList.toggle("on", x.dataset.riskTab===st.tab); });
     }
@@ -256,7 +257,8 @@ var PAGES = {
       +'<div class="risk-card" data-risk-filter="onsale_no_stock">在售没货<b>'+N(cards.onsale_no_stock_n)+'</b></div>'
       +'<div class="risk-card" data-risk-filter="no_date">会坏没日期<b>'+N(cards.no_date_n)+'</b></div>'
       +'<div class="risk-card" data-risk-tab="queue">未处理工单<b>'+N(cards.open_tasks_n)+'</b></div>'
-      +'<div class="risk-card" data-risk-tab="queue">待批报损<b>'+N(cards.pending_writeoff_n)+'</b></div></div>';
+      +'<div class="risk-card" data-risk-tab="queue">待批报损<b>'+N(cards.pending_writeoff_n)+'</b></div>'
+      +'<div class="risk-card red" data-risk-tab="nearexp">临期清仓<b>→</b></div></div>';
     function filt(){ return '<div class="risk-filters">'+ps.map(function(p){return '<button class="risk-chip '+(st.filter===p.key?'on':'')+'" data-risk-filter="'+E(p.key)+'">'+E(p.label)+' '+N((d.problem_counts||{})[p.key]||0)+'</button>'}).join("")+(st.filter?'<button class="risk-chip risk-bulk" data-risk-bulk="'+E(st.filter)+'">本类前20转工单</button>':'')+'</div>'; }
     function tasks(ts){ return ts&&ts.length ? ts.map(function(t){return '<div>'+E(t.id)+'<div class="risk-small">'+E(t.status)+' '+E(t.next_holder||"")+'</div></div>'}).join("") : "—"; }
     function detailHtml(r){
@@ -281,7 +283,7 @@ var PAGES = {
       var seen={}, ts=[]; (d.open_tasks||[]).forEach(function(t){if(!seen[t.id]){seen[t.id]=1;ts.push(t)}});
       return '<table class="risk-table"><thead><tr><th>工单号</th><th>标题</th><th>接单人</th><th>状态</th><th>创建时间</th><th>截止</th><th>问题</th></tr></thead><tbody>'+ts.map(function(t){return '<tr><td>'+E(t.id)+'</td><td>'+E(t.title||"—")+'</td><td>'+E(t.next_holder||"—")+'</td><td>'+E(t.status||"—")+'</td><td>'+E(t.created_at||"—")+'</td><td>'+E(t.due_at||"—")+'</td><td>'+E(t.problem_key||"—")+'</td></tr>'}).join("")+'</tbody></table>';
     }
-    return '<div class="risk-tabs"><button class="risk-tab '+(st.tab==="main"?"on":"")+'" data-risk-tab="main">效期与问题</button><button class="risk-tab '+(st.tab==="queue"?"on":"")+'" data-risk-tab="queue">工单队列</button></div>'+cardHtml+meta+'<div id="risk-main-host">'+(st.tab==="queue"?queue():filt()+main())+'</div>';
+    return '<div class="risk-tabs"><button class="risk-tab '+(st.tab==="main"?"on":"")+'" data-risk-tab="main">效期与问题</button><button class="risk-tab '+(st.tab==="queue"?"on":"")+'" data-risk-tab="queue">工单队列</button><button class="risk-tab '+(st.tab==="nearexp"?"on":"")+'" data-risk-tab="nearexp">临期清仓</button></div>'+cardHtml+meta+'<div id="risk-main-host">'+(st.tab==="nearexp"?'<div id="nearexp-host">读取中…</div>':(st.tab==="queue"?queue():filt()+main()))+'</div>';
   },
   rival: async function(){
     var tabs = [
