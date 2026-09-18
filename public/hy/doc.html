@@ -16,6 +16,8 @@
     .bl{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hgj-muted)}
     .tabs{display:flex;align-items:center;gap:6px}
     .spacer{flex:1}
+    .internal-info{flex:0 1 640px;min-width:0;color:var(--hgj-muted);font-size:12px;line-height:1.35;overflow-wrap:anywhere}
+    .internal-info:empty{display:none}
     .btn{height:32px;border:1px solid var(--hgj-line);border-radius:4px;background:var(--hgj-card);color:var(--hgj-text);padding:0 10px;cursor:pointer;font:inherit}
     .btn[aria-selected="true"],.btn.primary{border-color:var(--hgj-primary, #006AFF);background:var(--hgj-primary-bg);color:var(--hgj-primary, #006AFF)}
     .btn:disabled{opacity:.55;cursor:default}
@@ -27,6 +29,7 @@
     iframe{display:block;width:100%;height:100%;border:0;background:var(--hgj-card)}
     @media(max-width:720px){
       .bar{flex-wrap:wrap}
+      .internal-info{order:2;flex:1 1 100%;max-width:100%}
       .tabs{order:3;width:100%;overflow:auto}
       .spacer{flex:1 0 auto}
       .bl{max-width:calc(100vw - 92px)}
@@ -45,6 +48,7 @@
         <button class="btn" type="button" data-type="receipt" role="tab" title="跨境业务人民币结算收款说明(2016版)·银行原版母版·自动盖章">收款证明</button>
       </div>
       <div class="spacer"></div>
+      <div id="internalInfo" class="internal-info" aria-label="内部信息"></div>
       <button id="printBtn" class="btn" type="button">打印</button>
       <button id="pdfBtn" class="btn primary" type="button">下载PDF</button>
     </header>

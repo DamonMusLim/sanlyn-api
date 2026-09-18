@@ -12,6 +12,7 @@ import { renderInspectionRequest } from "./inspection-request-form.js"; // 出�
 import { renderCustomsBundle } from "./customs-bundle-pdf.js"; // 一次性报关合成多页PDF 2026-07-05
 import { renderReceiptDoc } from "./receipt-doc.js"; // 收款证明(银行原版docx母版灌数据) 2026-07-07
 import { docIssueDate, isChinaPayer as isChinaFreightPayer, issueDocNo, loadPortChargeIssue, normalizeDocSeed, resolvePayerCompany } from "./lib/portcharge-close-loop.js";
+import { loadMainHsByNetWeight } from "./shipping-main-hs.js";
 
 // 合同号/PO 展示用：去掉前导公司码前缀(如 "38-XM-244" -> "XM-244")，纯展示，不影响任何金额/归属计算。
 // 呼应 documents.js 里同名用途的 stripPrefix()（那边只硬编码strip "40-"，这里适配任意公司码前缀）。
@@ -261,7 +262,7 @@ export default async function handler(req, res) {
     //    正解：先用外键 orders.shipping_plan_id 查（那才是真关联），数组只作兜底。
     try {
       const _fk = await pool.query(
-        `SELECT _id, order_no, contract_no, customer_po, raw,
+        `SELECT id, _id, order_no, contract_no, customer_po, raw,
                 issuing_company_id, seller_code, shipping_plan_id,
                 total_qty, gross_weight, net_weight, total_cbm
            FROM orders WHERE shipping_plan_id = $1 ORDER BY order_no`, [p.id]);
@@ -271,7 +272,7 @@ export default async function handler(req, res) {
     if (!orders.length && Array.isArray(orderNos) && orderNos.length > 0) {
       const ph = orderNos.map((_, i) => `$${i + 1}`).join(",");
       const oRes = await pool.query(
-        `SELECT _id, order_no, contract_no, customer_po, raw,
+        `SELECT id, _id, order_no, contract_no, customer_po, raw,
                 issuing_company_id, seller_code, shipping_plan_id,
                 total_qty, gross_weight, net_weight, total_cbm
          FROM orders
@@ -426,7 +427,7 @@ export default async function handler(req, res) {
     if (isBooking || isBlDraft) {
       // ── Aggregate cargo data from linked orders ──
       let totalCbm = 0, totalGw = 0, totalQty = 0;
-      let blDescSet = new Set(), hsCodeSet = new Set();
+      let blDescSet = new Set();
       // 🔴 2026-08-06 修：原来硬编码默认三林，只有 raw.issuingCompanyEN 有值才覆盖 →
       //    巴匕的票照印「XIAMEN SANLYN」。与 0804 淘蓝单盖错章是同一类问题：主体不跟单走。
       //    真源顺序：orders.issuing_company_id → companies；地址取 seller_profiles（与 export-docs 一致）。
@@ -464,33 +465,30 @@ export default async function handler(req, res) {
         if (raw.blDescription) blDescSet.add(raw.blDescription);
         if (raw.issuingCompanyEN) issuingCoEN = raw.issuingCompanyEN;      // 单上人工指定优先
         else if (raw.issuingCompany)  issuingCoEN = raw.issuingCompany;
-        // Extract SKUs from products array in raw JSON
-        const prods = raw.products || [];
-        prods.forEach(pr => { if (pr.sku) hsCodeSet.add("__sku__" + pr.sku); });
       }
 
-      // Query HS codes + bl_description from products table
-      const skus = [...hsCodeSet].map(s => s.replace("__sku__","")).filter(Boolean);
+      // Query bl_description from products table; HS comes from OLI net-weight dominance below.
+      const skus = [...new Set(orders.flatMap(o => {
+        const raw = typeof o.raw === "string" ? (() => { try { return JSON.parse(o.raw); } catch(e) { return {}; } })() : (o.raw || {});
+        return (raw.products || []).map(pr => pr && pr.sku).filter(Boolean);
+      }))];
       if (skus.length > 0) {
         try {
           const ph2 = skus.map((_,i) => `$${i+1}`).join(",");
           const hsRes = await pool.query(
-            `SELECT DISTINCT hs_code, bl_description FROM products WHERE sku IN (${ph2}) AND hs_code IS NOT NULL AND hs_code != ''`,
+            `SELECT DISTINCT bl_description FROM products WHERE sku IN (${ph2}) AND bl_description IS NOT NULL AND bl_description != ''`,
             skus
           );
           hsRes.rows.forEach(r => {
-            if (r.hs_code) hsCodeSet.add(r.hs_code);
             if (r.bl_description && !blDescSet.size) blDescSet.add(r.bl_description);
           });
-          // Remove the __sku__ placeholders
-          skus.forEach(s => hsCodeSet.delete("__sku__" + s));
         } catch(e) {}
       }
 
       const consignee = cust ? (cust.consignee || cust.name_en || cust.name_cn) : fmt(p.customer_en || p.customer);
       const consigneeAddr = cust ? (cust.address || cust.destination_port || "") : "";
-      const blDescText = [...blDescSet].join(" / ") || "PET PRODUCTS";
-      const hsText = [...hsCodeSet].filter(s => !s.startsWith("__sku__")).join(" / ") || "—";
+      const blDescText = [...blDescSet].filter(Boolean).join(" / ") || "PET PRODUCTS";
+      const hsText = await loadMainHsByNetWeight(pool, orders) || "—";
       const cbmText = totalCbm > 0 ? totalCbm.toFixed(3) + " CBM" : "—";
       const gwText  = totalGw  > 0 ? totalGw.toLocaleString() + " KG" : "—";
       const qtyText = totalQty > 0 ? totalQty + " CTNS" : "—";
@@ -1093,8 +1091,6 @@ ${printBtn}
       // TODO: companies 当前没有银行地址真源字段, 不再打印来源不明的 Bank Addr; 将来有字段再恢复输出。
       const fobBankAddressLine = fobSellerBank.bank_address_en ? `Bank Addr: ${esc(fobSellerBank.bank_address_en)}<br>` : "";
       const fobWarningHtml = fobWarnings.length ? `<div style="background:#fff7ed;border:1px solid #fb923c;color:#9a3412;border-radius:4px;padding:7px 10px;margin-bottom:10px;font-size:10px;font-weight:800">${esc(fobWarnings.join("；"))}</div>` : "";
-      const fobSellerStampUrl = await loadSellerStampDataUri(pool);
-      const fobSellerStampHtml = fobSellerStampUrl ? `<div class="seal-area"><img class="company-seal" src="${esc(fobSellerStampUrl)}"><div class="seal-label">盖章 / Company Seal</div></div>` : "";
       const fobChargeRowsHtml = fobChargeRows.map(r => {
         const qty = r.qty == null || r.qty === "" ? 1 : Number(r.qty);
         const amount = parseFloat(r.sale_amount) || 0;
@@ -1129,7 +1125,8 @@ ${printBtn}
 body{font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;font-size:11px;color:#111;background:#e5e7eb;padding:0}
 .page{max-width:200mm;margin:14px auto;padding:11mm 13mm;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.1)}
 .hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #111;padding-bottom:10px;margin-bottom:14px}
-.hdr-l .co-en{font-size:15px;font-weight:900;color:#111;letter-spacing:.01em;line-height:1.2}
+.hdr-l{min-width:0;overflow:hidden;padding-right:8px}
+.hdr-l .co-en{font-size:14px;font-weight:900;color:#111;letter-spacing:.01em;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hdr-l .co-cn{font-size:10px;color:#555;margin-top:3px}
 .hdr-l .tag{font-size:8.5px;color:#888;margin-top:4px}
 .hdr-r{text-align:right}
@@ -1181,7 +1178,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 <div class="page">
   <div class="hdr">
     <div class="hdr-l">
-      <div class="co-en">${esc(fobSellerBank.name_en || "SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.")}</div>
+      <div class="co-en">${esc((fobSellerBank.name_en || "SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.").replace(/international/ig, "INT'L"))}</div>
       <div class="co-cn">上海洋宝宝国际物流有限公司</div>
       <div style="font-size:9px;color:#555;margin-top:2px">${esc(fobSellerBank.address_en || "")}</div>
       <div class="tag">Ocean Freight · Air Freight · Express · Integrated Logistics Solutions</div>
@@ -1300,7 +1297,6 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       CNY Account (人民币账号): <strong>${esc(fobCnyAccount)}</strong><br>
       <span style="color:#c00;font-size:8px">* Please check the account number carefully before remittance.</span>
     </div>
-    ${fobSellerStampHtml}
   </div>
 
 
