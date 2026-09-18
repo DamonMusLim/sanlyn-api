@@ -20,6 +20,7 @@ const PAGE_BY_ROLE = {
   trucking_booking:   "collab-trucking.html",
   shipper_booking:    "templates/invoice-collab-section.html",
   customer_myportal:  "templates/customer-myportal.html",
+  customer_bill:      "customer-bill.html",  // 客户账单确认 0919
 };
 
 function hashOf(raw) {

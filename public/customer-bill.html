@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Customer Bill Confirmation · Sanlyn</title>
+  <style>
+    :root{--ink:#12212e;--sub:#5a6b78;--faint:#8a99a6;--line:#e2e8ee;--soft:#f6f9fb;--paper:#fff;--red:#b91c1c;--ok:#166534;--okbg:#dcfce7;--warnbg:#fff7ed;--warn:#9a3412}
+    *{box-sizing:border-box}body{margin:0;background:var(--soft);color:var(--ink);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+    .wrap{max-width:900px;margin:0 auto;padding:22px 16px 56px}.top{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:14px}
+    h1{font-size:20px;line-height:1.25;margin:0 0 4px}.sub{color:var(--sub);font-size:13px}.brand{text-align:right;font-weight:800}.brand span{display:block;color:var(--faint);font-size:12px;font-weight:600}
+    .state{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:20px;text-align:center;color:var(--sub)}.state b{display:block;color:var(--ink);font-size:17px;margin-bottom:6px}
+    .bill{background:var(--paper);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:14px 0;box-shadow:0 1px 3px rgba(18,33,46,.04)}
+    .bill-hd{display:flex;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--line)}.doc{font-weight:800;font-size:17px}.meta{display:flex;gap:8px 16px;flex-wrap:wrap;color:var(--sub);font-size:12.5px;margin-top:7px}.meta b{color:var(--ink)}
+    .badge{display:inline-flex;align-items:center;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:800;white-space:nowrap}.badge.sent{background:var(--warnbg);color:var(--warn)}.badge.confirmed{background:var(--okbg);color:var(--ok)}
+    .locked{display:none;background:var(--okbg);color:var(--ok);font-weight:800;padding:12px 20px;border-bottom:1px solid #bbf7d0}.locked.on{display:block}.locked small{display:block;color:#14532d;font-weight:600;margin-top:2px}
+    .sec{padding:16px 20px}.sec+.sec{border-top:1px solid var(--line)}.sec-t{font-size:12px;font-weight:800;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px}
+    .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}table{width:100%;min-width:660px;border-collapse:collapse;font-size:13px}th,td{padding:9px 10px;border-bottom:1px solid #eef2f6;text-align:left;vertical-align:top}th{font-size:11px;color:var(--faint);font-weight:800;background:#fbfdff}td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tr:last-child td{border-bottom:0}
+    .totals{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.total{border:1px solid var(--line);border-radius:8px;padding:12px;background:#fbfdff}.total label{display:block;color:var(--faint);font-size:11px;font-weight:800;text-transform:uppercase}.total b{font-size:20px;font-variant-numeric:tabular-nums}.note{margin-top:10px;color:var(--sub);background:var(--soft);border-radius:8px;padding:10px 12px;font-size:13px}
+    .actions{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}.btn{border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font-weight:800;padding:11px 12px;cursor:pointer}.btn.primary{background:var(--red);border-color:var(--red);color:#fff}.btn:disabled{opacity:.55;cursor:default}
+    textarea,input{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px 11px;font:inherit;background:#fff;color:var(--ink)}textarea{min-height:86px;resize:vertical}.hint{font-size:12px;color:var(--faint);margin-top:7px}.msg{font-size:12px;font-weight:700;margin-top:8px}.msg.ok{color:var(--ok)}.msg.err{color:var(--red)}
+    dialog{border:0;border-radius:10px;padding:0;width:min(420px,calc(100vw - 32px));box-shadow:0 20px 60px rgba(18,33,46,.25)}dialog::backdrop{background:rgba(18,33,46,.35)}.modal{padding:18px}.modal h2{font-size:17px;margin:0 0 8px}.modal p{margin:0 0 14px;color:var(--sub)}.modal .row{display:flex;gap:10px;margin-top:12px}.modal .row .btn{flex:1}
+    @media(max-width:640px){.wrap{padding:16px 10px 40px}.top,.bill-hd{display:block}.brand{text-align:left;margin-top:10px}.bill-hd,.sec{padding:15px 14px}.totals,.actions{grid-template-columns:1fr}h1{font-size:18px}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="top">
+      <div>
+        <h1>Customer Bill Confirmation</h1>
+        <div class="sub">客户账单确认 · Please review and confirm the bill below.</div>
+      </div>
+      <div class="brand">Sanlyn<span>Customer collaboration</span></div>
+    </header>
+    <div id="app" class="state"><b>Loading...</b>正在加载...</div>
+  </main>
+
+  <dialog id="nameDialog">
+    <form method="dialog" class="modal">
+      <h2>Confirm this bill / 确认账单</h2>
+      <p>Please enter your name. / 请输入确认人姓名。</p>
+      <input id="confirmName" autocomplete="name" maxlength="120" required>
+      <div id="nameErr" class="msg err"></div>
+      <div class="row">
+        <button class="btn" value="cancel" type="submit">Cancel</button>
+        <button class="btn primary" id="nameOk" value="ok" type="submit">Confirm</button>
+      </div>
+    </form>
+  </dialog>
+  <script src="/customer-bill-page.js"></script>
+</body>
+</html>
