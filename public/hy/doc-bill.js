@@ -82,7 +82,7 @@ function installStyle(){
   document.head.appendChild(s);
 }
 
-var state={bl:"",type:"",data:null,payer:"",msg:"",ok:false,loading:false,req:0,admin:false};
+var state={bl:"",type:"",data:null,payer:"",msg:"",ok:false,loading:false,req:0,admin:false,lastLink:""};
 
 function root(){
   var el=document.querySelector("#customerBillPanel");
@@ -135,10 +135,14 @@ function render(){
     '<div class="bill-head"><strong>客户账单</strong><span>BL '+esc(state.bl)+'</span>',
     payers.length>1?'<select id="billPayer" class="bill-select">'+payers.map(function(p){return '<option value="'+esc(p)+'"'+(p===state.payer?' selected':'')+'>'+esc(p)+'</option>'}).join("")+'</select>':'<span>付款方 '+esc(state.payer||payers[0]||"")+'</span>',
     '<button id="billSend" class="bill-btn primary" type="button">'+sendText+'</button>',
-    '<span id="billMsg" class="bill-msg '+(state.ok?"ok":"")+'">'+esc(state.msg)+'</span></div>',
+    '<span id="billMsg" class="bill-msg '+(state.ok?"ok":"")+'">'+msgHtml()+'</span></div>',
     rowsHtml(), billsHtml(), historyHtml()
   ].join("");
   bindPanel();
+}
+function msgHtml(){
+  if(state.lastLink)return '已生成客户链接：'+esc(state.lastLink)+' <button id="billCopyLink" class="bill-btn" type="button">复制链接</button>';
+  return esc(state.msg);
 }
 function rowsHtml(){
   var rows=visibleLines();
@@ -174,9 +178,11 @@ function historyHtml(){
 }
 function bindPanel(){
   var sel=document.querySelector("#billPayer");
-  if(sel)sel.addEventListener("change",function(){state.payer=sel.value;state.msg="";render()});
+  if(sel)sel.addEventListener("change",function(){state.payer=sel.value;state.msg="";state.lastLink="";render()});
   var send=document.querySelector("#billSend");
   if(send)send.addEventListener("click",sendBill);
+  var copy=document.querySelector("#billCopyLink");
+  if(copy)copy.addEventListener("click",function(){navigator.clipboard&&navigator.clipboard.writeText(state.lastLink)});
   Array.prototype.forEach.call(document.querySelectorAll(".bill-input"),function(inp){
     inp.addEventListener("blur",function(){saveLine(inp)});
   });
@@ -186,7 +192,9 @@ function bindPanel(){
 }
 function load(){
   var req=++state.req,t=token();
-  state.bl=blNo(); state.type=activeType(); state.admin=roleFromToken(t)==="admin"; state.loading=!!state.bl; state.msg=""; render();
+  var nextType=activeType();
+  if(state.type&&state.type!==nextType)state.lastLink="";
+  state.bl=blNo(); state.type=nextType; state.admin=roleFromToken(t)==="admin"; state.loading=!!state.bl; state.msg=""; render();
   if(!state.bl)return;
   fetch(api("?bl="+encodeURIComponent(state.bl)+"&type="+encodeURIComponent(state.type)),{credentials:"same-origin",headers:t?{Authorization:"Bearer "+t}:{}})
     .then(function(r){return r.json().catch(function(){return {ok:false,error:"bad_response"}})})
@@ -204,19 +212,16 @@ function saveLine(inp){
   if(clean(inp.value)===old)return;
   if(floor==null){box.textContent="没有底价（货代账单未录），不能发";inp.value=old;return}
   if(markup==null){box.textContent="请输入数字";inp.value=old;return}
-  post("/line-price",{line_id:inp.getAttribute("data-line"),sale_amount:floor+markup}).then(function(j){
+  post("/line-price",{line_id:inp.getAttribute("data-line"),sale_amount:Math.round((floor+markup)*100)/100}).then(function(j){
     if(!j.ok){box.textContent=errorText(j);inp.value=old;return}
     state.msg="已保存";state.ok=true;load();
   }).catch(function(){box.textContent="保存失败";inp.value=old});
 }
 function sendBill(){
-  state.msg="发送中...";state.ok=false;render();
+  state.msg="发送中...";state.ok=false;state.lastLink="";render();
   post("/send",{bl:state.bl,type:state.type,payer_company_code:state.payer}).then(function(j){
     if(!j.ok){state.msg=errorText(j);state.ok=false;render();return}
-    state.msg="已生成客户链接："+clean(j.url);state.ok=true;render();
-    var m=document.querySelector("#billMsg"),b=document.createElement("button");
-    b.className="bill-btn";b.type="button";b.textContent="复制链接";b.onclick=function(){navigator.clipboard&&navigator.clipboard.writeText(clean(j.url))};
-    if(m)m.appendChild(b);
+    state.msg="已生成客户链接："+clean(j.url);state.ok=true;state.lastLink=clean(j.url);render();load();
   }).catch(function(){state.msg="发送失败";state.ok=false;render()});
 }
 function voidBill(id){
@@ -230,7 +235,7 @@ function voidBill(id){
 function init(){
   installStyle();
   load();
-  Array.prototype.forEach.call(document.querySelectorAll("[data-type]"),function(btn){btn.addEventListener("click",function(){setTimeout(load,0)})});
+  Array.prototype.forEach.call(document.querySelectorAll("[data-type]"),function(btn){btn.addEventListener("click",function(){state.lastLink="";setTimeout(load,0)})});
   window.addEventListener("popstate",load);
   window.HyDocBill={reload:load};
 }

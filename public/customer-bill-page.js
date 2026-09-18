@@ -2,7 +2,7 @@
 "use strict";
 
 var API_GET="/api/public/customer-bill";
-var API_POST="/api/db/customer-bill";
+var API_POST="/api/public/customer-bill";
 var qs=new URLSearchParams(location.search);
 var token=clean(qs.get("token"));
 var state={bills:[],busy:false,pendingBill:null};
@@ -93,7 +93,8 @@ function submitConfirm(id,name){
   if(!name){nameErr.textContent="Name is required / 请填写姓名";return}
   setMsg("confirm",id,"","Submitting... / 提交中...");
   post("/confirm",{token:token,bill_id:Number(id),name:name}).then(function(j){
-    if(j.ok||j.error==="already_final"||j._status===409){markConfirmed(id,name,new Date().toISOString());return}
+    if(j.ok||j.error==="already_final"){markConfirmed(id,name,new Date().toISOString());return}
+    if(j._status===409){setMsg("confirm",id,"err","This bill is no longer open for confirmation / 该账单已撤回，请联系 Sanlyn");load();return}
     setMsg("confirm",id,"err",j.error||"Submit failed / 提交失败");
   }).catch(function(e){setMsg("confirm",id,"err",e.message||"Submit failed / 提交失败")});
 }

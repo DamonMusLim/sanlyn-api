@@ -60,7 +60,13 @@ export async function handlePublicGet(req, res, db) {
     );
     if (!seen.rows.length) await event(db, b.id, "viewed", null, { ip });
   }
-  res.json({ ok: true, bills: bills.map(b => ({ id: b.id, status: b.status, snapshot: jsonObj(b.snapshot) })) });
+  res.json({ ok: true, bills: bills.map(b => ({
+    id: b.id,
+    status: b.status,
+    confirmed_at: b.confirmed_at,
+    confirmed_by_name: b.confirmed_by_name,
+    snapshot: jsonObj(b.snapshot)
+  })) });
 }
 
 export async function handleConfirm(req, res, db) {
