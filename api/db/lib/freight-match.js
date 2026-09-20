@@ -1,3 +1,5 @@
+import { buildInvoiceByTicket, ticketKey } from "./freight-match-sources.js";
+
 const FEE_TOLERANCE = { CNY: 200, USD: 50 };
 const norm = (v) => String(v ?? "").trim();
 const upper = (v) => norm(v).toUpperCase();
@@ -12,8 +14,6 @@ const ccy = (v) => {
 };
 const moneyText = (amount, currency) => `${currency} ${num(amount).toFixed(2)}`;
 const invoiceDateFromNo = (v) => upper(v).match(/-(\d{8})(?:-\d+)?$/)?.[1]?.replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3") || null;
-const invoicePrefix = (v) => /^(FI|OF|PC|EXW|PB)[A-Z0-9-]*/i.test(norm(v));
-const ticketKey = (t) => norm(t.cy_no || t.shipment_no) || norm(t.bl_no);
 
 function refToken(v, kind = "ref") {
   const s = upper(v);
@@ -22,38 +22,6 @@ function refToken(v, kind = "ref") {
   if (kind === "bl" && /^\d{9,}$/.test(s)) return s;
   if (s.length < 8 || !/[A-Z]/.test(s) || !/\d/.test(s)) return "";
   return s;
-}
-
-function parseJsonish(raw) {
-  const text = norm(raw);
-  if (!text) return null;
-  try {
-    let data = JSON.parse(text);
-    if (typeof data === "string") data = JSON.parse(data);
-    return data && typeof data === "object" && !Array.isArray(data) ? data : null;
-  } catch {
-    return null;
-  }
-}
-
-function parseFreightRefs(raw, blNo) {
-  const data = parseJsonish(raw);
-  if (!data?.freight_invoice) return null;
-  const amountText = norm(data.freight_amount);
-  const usd = amountText.match(/USD\s*([\d,]+(?:\.\d+)?)/i)?.[1];
-  const cnyAmount = amountText.match(/(?:CNY|RMB|人民币|¥)\s*([\d,]+(?:\.\d+)?)/i)?.[1];
-  return {
-    bl_no: blNo || data.bl || null,
-    invoice_no: norm(data.freight_invoice),
-    currency: usd ? "USD" : cnyAmount ? "CNY" : "",
-    amount_usd: usd ? num(usd) : 0,
-    amount_cny: cnyAmount ? num(cnyAmount) : 0,
-    invoice_date: invoiceDateFromNo(data.freight_invoice),
-    is_cif: false,
-    source: "shipping_plans.freight_refs",
-    source_file: null,
-    note: amountText || "amount unavailable",
-  };
 }
 
 function invoiceMentions(text) {
@@ -110,57 +78,6 @@ function refBelongsToTicket(ref, ticket, invoices = []) {
   const bl = upper(ticket.bl_no);
   return (!!cy && new RegExp(`^(FI|OF|EXW)-${cy}(?:-|$)`).test(r))
     || (!!bl && new RegExp(`^(PC|OF|EXW)-${bl}(?:-|$)`).test(r));
-}
-
-function applyFx(invoices, fxRows) {
-  const rates = (fxRows || [])
-    .filter((x) => upper(x.currency_pair) === "USD_CNY" && num(x.rate))
-    .map((x) => ({ date: date10(x.fetched_at), rate: num(x.rate) }))
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  for (const inv of invoices) {
-    if (ccy(inv.currency) !== "USD" || !num(inv.amount_usd) || num(inv.amount_cny)) continue;
-    const d = invoiceDateFromNo(inv.invoice_no) || date10(inv.invoice_date);
-    const rate = [...rates].reverse().find((x) => !d || x.date <= d)?.rate || rates.at(-1)?.rate || 0;
-    if (!rate) continue;
-    inv.fx_rate = Math.round((rate + 0.1) * 10000) / 10000;
-    inv.amount_cny = num(inv.amount_usd * inv.fx_rate);
-    inv.note = `${inv.note ? `${inv.note}; ` : ""}按 ${inv.fx_rate.toFixed(4)} 折 ¥${inv.amount_cny.toFixed(2)}`;
-  }
-}
-
-function collectInvoices(tickets, plans, registry, fio, fx) {
-  const byKey = new Map(tickets.map((t) => [ticketKey(t), []]));
-  const ticketsByBl = new Map(tickets.map((t) => [upper(t.bl_no), t]));
-  const add = (key, inv) => {
-    if (!key || !byKey.has(key) || !norm(inv.invoice_no)) return;
-    const list = byKey.get(key);
-    if (list.some((x) => upper(x.invoice_no) === upper(inv.invoice_no))) return;
-    list.push({
-      invoice_no: norm(inv.invoice_no),
-      currency: ccy(inv.currency),
-      amount_usd: num(inv.amount_usd),
-      amount_cny: num(inv.amount_cny),
-      invoice_date: date10(inv.invoice_date || inv.issue_date),
-      is_cif: ["t", "true", true].includes(inv.is_cif),
-      source: inv.source || "registry",
-      source_file: inv.source_file || null,
-      note: inv.note || null,
-    });
-  };
-  for (const inv of registry || []) add(ticketKey(ticketsByBl.get(upper(inv.bl_no)) || {}), inv);
-  for (const p of plans || []) {
-    const t = ticketsByBl.get(upper(p.bl_no)) || tickets.find((x) => upper(x.cy_no) === upper(p.shipment_no));
-    const inv = parseFreightRefs(p.freight_refs || p.freight_refs_0918, p.bl_no);
-    if (t && inv) add(ticketKey(t), inv);
-  }
-  for (const inv of fio || []) {
-    if (!norm(inv.invoice_no)) continue;
-    const refs = upper([inv.contract_nos, inv.invoice_no].join(" "));
-    const t = tickets.find((x) => refs.includes(upper(x.bl_no)) || refs.includes(upper(x.cy_no)));
-    if (t) add(ticketKey(t), { ...inv, source: "finance_invoices_out", amount_cny: inv.currency === "CNY" ? inv.amount_incl_tax : 0, amount_usd: inv.currency === "USD" ? inv.amount_incl_tax : 0 });
-  }
-  for (const list of byKey.values()) applyFx(list, fx);
-  return byKey;
 }
 
 function invoiceEntries(invoiceByTicket) {
@@ -384,7 +301,7 @@ function settle(ticket, invoices, receipts) {
 
 export function matchFreight(input) {
   const tickets = input.tickets || [];
-  const invoiceByTicket = collectInvoices(tickets, input.plans || [], input.registry || [], input.fio || [], input.fx || []);
+  const invoiceByTicket = input.invoiceByTicket || buildInvoiceByTicket(input);
   const ticketByKey = new Map(tickets.map((t) => [ticketKey(t), t]));
   const entries = invoiceEntries(invoiceByTicket);
   const ctx = { tickets, ticketByKey, invoiceByTicket, tokensByTicket: buildTokens(tickets, invoiceByTicket), invoiceIndex: buildInvoiceIndex(entries) };
