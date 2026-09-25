@@ -197,4 +197,7 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/order-merge-groups/:id/remove-item", () => import("./api/db/order-merge-groups.js"));
   mount("/api/public/container-types", () => import("./api/public/container-types.js"));
   mount("/api/public/forwarder-lane-quote/:code", () => import("./api/public/forwarder-lane-quote.js"));
+  // 生产上这行在 routes-core.js:421；因 routes-core.js 已 519 行触顶 500 行铁律，回流时落在本文件。
+  // 行为等价（server.js 先 registerCoreRoutes 再 registerTailRoutes），待 routes-core.js 拆分后可归位。
+  mount("/api/public/customer-apply", () => import("./api/public/customer-apply.js")); // 新客户申请开户(公开)
 }
