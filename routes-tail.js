@@ -204,5 +204,6 @@ export function registerTailRoutes(app, mount) {
   mount("/api/public/forwarder-port-charge-basis/:code", () => import("./api/public/forwarder-port-charge-basis.js"));
   mount("/api/public/forwarder-free-days/:code", () => import("./api/public/forwarder-free-days.js"));
   mount("/api/db/client-session",    () => import("./api/db/client-session.js"));
+  mount("/api/db/client-accounts",   () => import("./api/db/client-accounts.js"));
   mount("/api/db/client-auth-check", () => import("./api/db/client-auth-check.js"));
 }
