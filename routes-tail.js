@@ -190,6 +190,9 @@ export function registerTailRoutes(app, mount) {
   mount("/api/so/customs-acknowledge",     () => import("./api/so/trigger.js"));
   mount("/api/so/collab-share",           () => import("./api/so/collab-share.js"));
   mount("/api/so/collab-public/*",         () => import("./api/so/collab-share.js"));
+  mount("/api/db/hy-doc-internal", () => import("./api/db/hy-doc-internal.js"));
+  mount("/api/db/freight-receipts", () => import("./api/db/freight-receipts.js"));
+  mount("/api/db/freight-overview", () => import("./api/db/freight-overview.js"));
   mount("/api/db/order-parties", () => import("./api/db/order-parties.js"));
   mount("/api/portal/dossier", () => import("./api/db/portal-dossier.js"));
   mount("/api/db/order-merge-groups", () => import("./api/db/order-merge-groups.js"));
@@ -197,4 +200,9 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/order-merge-groups/:id/remove-item", () => import("./api/db/order-merge-groups.js"));
   mount("/api/public/container-types", () => import("./api/public/container-types.js"));
   mount("/api/public/forwarder-lane-quote/:code", () => import("./api/public/forwarder-lane-quote.js"));
+  mount("/api/public/forwarder-carrier-history/:code", () => import("./api/public/forwarder-carrier-history.js"));
+  mount("/api/public/forwarder-port-charge-basis/:code", () => import("./api/public/forwarder-port-charge-basis.js"));
+  mount("/api/public/forwarder-free-days/:code", () => import("./api/public/forwarder-free-days.js"));
+  mount("/api/db/client-session",    () => import("./api/db/client-session.js"));
+  mount("/api/db/client-auth-check", () => import("./api/db/client-auth-check.js"));
 }
