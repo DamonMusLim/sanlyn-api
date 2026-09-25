@@ -53,13 +53,19 @@ async function roleMenus(pool, roleId, companyCode) {
     throw err;
   }
   const result = await pool.query(
-    `SELECT menu_path
+    `SELECT menu_path,
+            COALESCE(can_view, false) AS can_view,
+            COALESCE(can_edit, false) AS can_edit
        FROM petstore_role_menus
       WHERE role_id = $1 AND company_code = $2
       ORDER BY menu_path`,
     [roleId, companyCode],
   );
-  return result.rows.map((row) => row.menu_path);
+  return result.rows.map((row) => ({
+    menu_path: row.menu_path,
+    can_view: row.can_view,
+    can_edit: row.can_edit,
+  }));
 }
 
 async function listRows(req) {

@@ -16,6 +16,26 @@ function cleanTextArray(value, max = 160) {
   return [...new Set(value.map((item) => cleanText(item, max)).filter(Boolean))];
 }
 
+function cleanMenuRows(body) {
+  if (Object.prototype.hasOwnProperty.call(body, "menus")) {
+    if (!Array.isArray(body.menus)) return null;
+    const byPath = new Map();
+    for (const item of body.menus) {
+      const menuPath = cleanText(item?.menu_path, 200);
+      if (!menuPath) continue;
+      const canView = item?.can_view === true;
+      const canEdit = item?.can_edit === true;
+      if (canEdit && !canView) badRequest("edit_requires_view");
+      byPath.set(menuPath, { menuPath, canView, canEdit });
+    }
+    return [...byPath.values()];
+  }
+
+  const menuPaths = cleanTextArray(body.menu_paths, 200);
+  if (!menuPaths) return null;
+  return menuPaths.map((menuPath) => ({ menuPath, canView: true, canEdit: false }));
+}
+
 function json(res, status, data) {
   return res.status(status).json(data);
 }
@@ -90,29 +110,35 @@ async function upsertRole(client, body, companyCode) {
      RETURNING id`,
     [companyCode, roleKey, roleName, description],
   );
-  return result.rowCount;
+  return { affected: result.rowCount, role_id: result.rows[0]?.id };
 }
 
 async function setRoleMenus(client, body, companyCode) {
   const roleId = positiveInt(body.role_id);
-  const menuPaths = cleanTextArray(body.menu_paths, 200);
-  if (!roleId || !menuPaths) badRequest("role_id_and_menu_paths_required");
+  const menuRows = cleanMenuRows(body);
+  if (!roleId || !menuRows) badRequest("role_id_and_menu_paths_required");
   await assertRole(client, roleId, companyCode);
 
   const deleted = await client.query(
     `DELETE FROM petstore_role_menus WHERE role_id = $1 AND company_code = $2`,
     [roleId, companyCode],
   );
-  if (menuPaths.length === 0) return deleted.rowCount;
+  if (menuRows.length === 0) return deleted.rowCount;
   const result = await client.query(
     `INSERT INTO petstore_role_menus (company_code, role_id, menu_path, can_view, can_edit)
-     SELECT $1, $2, path, true, false
-       FROM unnest($3::text[]) AS path
+     SELECT $1, $2, m.menu_path, m.can_view, m.can_edit
+       FROM unnest($3::text[], $4::boolean[], $5::boolean[]) AS m(menu_path, can_view, can_edit)
      ON CONFLICT (role_id, menu_path) DO UPDATE
        SET company_code = EXCLUDED.company_code,
            can_view = EXCLUDED.can_view,
            can_edit = EXCLUDED.can_edit`,
-    [companyCode, roleId, menuPaths],
+    [
+      companyCode,
+      roleId,
+      menuRows.map((item) => item.menuPath),
+      menuRows.map((item) => item.canView),
+      menuRows.map((item) => item.canEdit),
+    ],
   );
   return deleted.rowCount + result.rowCount;
 }
@@ -191,9 +217,12 @@ async function runAction(user, body) {
     await client.query("BEGIN");
     const companyCode = await tenantCompanyCode(client, user);
     if (!companyCode) forbidden("account_company_required");
-    const affected = await actions[action](client, body || {}, companyCode);
+    const actionResult = await actions[action](client, body || {}, companyCode);
     await client.query("COMMIT");
-    return { ok: true, affected };
+    if (actionResult && typeof actionResult === "object" && !Array.isArray(actionResult)) {
+      return { ok: true, ...actionResult };
+    }
+    return { ok: true, affected: actionResult };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     throw err;
