@@ -55,6 +55,17 @@ function safeRateRow(r) {
   };
 }
 
+async function resolveSubmitter(db, req) {
+  const user = req.user || {};
+  const account = user.username || user.account || null;
+  let staffNo = user.staff_no || null;
+  if (staffNo) {
+    const r = await db.query("SELECT staff_no FROM ai_staff WHERE staff_no = $1", [staffNo]);
+    staffNo = r.rows[0]?.staff_no || null;
+  }
+  return { staffNo, account };
+}
+
 async function handleQuotes(pool, res) {
   const { rows } = await pool.query(`
     SELECT r.id, r.pol, r.pod, r.pod_port_id, r.pol_port_id, r.carrier, r.forwarder, r.supplier_id,
@@ -150,6 +161,7 @@ async function handleQuotes(pool, res) {
 
 async function handlePublish(pool, req, res) {
   const b = req.body || {};
+  const submitter = await resolveSubmitter(pool, req);
   const rateId = b.rate_id ? Number(b.rate_id) : null;
   const pol = String(b.pol || "").trim();
   const pod = String(b.pod || "").trim();
@@ -174,36 +186,41 @@ async function handlePublish(pool, req, res) {
     } else {
       const inserted = await client.query(
         `INSERT INTO freight_rates
-           (pol, pod, carrier, customer_gp20, customer_hq40, source, status, valid_from, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, 'manual_price', 'active', CURRENT_DATE, NOW(), NOW())
+           (pol, pod, carrier, customer_gp20, customer_hq40, submitted_by_staff_no, submitted_by_account, source, status, valid_from, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'manual_price', 'active', CURRENT_DATE, NOW(), NOW())
          RETURNING id, pol, pod, carrier`,
-        [pol, pod, carrier, gp20, hq40]
+        [pol, pod, carrier, gp20, hq40, submitter.staffNo, submitter.account]
       );
       target = inserted.rows[0];
     }
 
     await client.query(
       `UPDATE freight_rates
-          SET status = 'expired', updated_at = NOW()
+          SET status = 'expired',
+              submitted_by_staff_no = $5,
+              submitted_by_account = $6,
+              updated_at = NOW()
         WHERE status = 'active'
           AND id <> $1
           AND lower(btrim(pol)) = lower(btrim($2))
           AND lower(btrim(pod)) = lower(btrim($3))
           AND lower(btrim(carrier)) = lower(btrim($4))`,
-      [target.id, target.pol, target.pod, target.carrier]
+      [target.id, target.pol, target.pod, target.carrier, submitter.staffNo, submitter.account]
     );
 
     const updated = await client.query(
       `UPDATE freight_rates
           SET customer_gp20 = COALESCE($2, customer_gp20),
               customer_hq40 = COALESCE($3, customer_hq40),
+              submitted_by_staff_no = $4,
+              submitted_by_account = $5,
               status = 'active',
               valid_from = CURRENT_DATE,
               updated_at = NOW()
         WHERE id = $1
       RETURNING id, pol, pod, carrier, customer_gp20::numeric AS customer_gp20,
                 customer_hq40::numeric AS customer_hq40, valid_from`,
-      [target.id, gp20, hq40]
+      [target.id, gp20, hq40, submitter.staffNo, submitter.account]
     );
     await client.query("COMMIT");
     return res.status(200).json({ ok: true, rate: safeRateRow(updated.rows[0]) });
@@ -217,14 +234,18 @@ async function handlePublish(pool, req, res) {
 
 async function handleUnpublish(pool, req, res) {
   const rateId = Number((req.body || {}).rate_id);
+  const submitter = await resolveSubmitter(pool, req);
   if (!Number.isFinite(rateId)) return res.status(400).json({ ok: false, error: "rate_id required" });
   const r = await pool.query(
-    `UPDATE freight_rates
-        SET status = 'expired', updated_at = NOW()
+      `UPDATE freight_rates
+        SET status = 'expired',
+            submitted_by_staff_no = $2,
+            submitted_by_account = $3,
+            updated_at = NOW()
       WHERE id = $1
     RETURNING id, pol, pod, carrier, customer_gp20::numeric AS customer_gp20,
               customer_hq40::numeric AS customer_hq40, valid_from`,
-    [rateId]
+    [rateId, submitter.staffNo, submitter.account]
   );
   if (!r.rows.length) return res.status(404).json({ ok: false, error: "rate_not_found" });
   return res.status(200).json({ ok: true, rate: safeRateRow(r.rows[0]) });

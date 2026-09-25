@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { resolvePort } from "./port-resolver.js";
+import { partitionCompanyIds } from "./_blacklist.js";
 
 const APP_BASE = process.env.APP_BASE_URL || "https://ai.sanlyn.cn";
 const ALPH = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
@@ -54,6 +55,20 @@ export default async function handler(req, res) {
   if (pol.status !== "resolved") return badPort(res, "pol", pol);
   if (pod.status !== "resolved") return badPort(res, "pod", pod);
 
+  const companyPartition = await partitionCompanyIds(pool, b.forwarder_company_ids);
+  const blockedBlacklisted = companyPartition.blocked.map((row) => ({
+    id: row.id,
+    name: row.name,
+    hit_name: row.hit.name_cn,
+  }));
+  if (!companyPartition.allowed.length) {
+    return res.status(400).json({
+      ok: false,
+      error: "所选货代全部在黑名单,无法派单",
+      blocked_blacklisted: blockedBlacklisted,
+    });
+  }
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -82,7 +97,7 @@ export default async function handler(req, res) {
     const companies = await client.query(
       `SELECT id, COALESCE(name_cn, name_en, code, id::text) AS name
          FROM companies WHERE id = ANY($1::int[])`,
-      [b.forwarder_company_ids.map(Number).filter(Number.isFinite)]
+      [companyPartition.allowed]
     );
     const invites = [];
     for (const co of companies.rows) {
@@ -107,7 +122,7 @@ export default async function handler(req, res) {
       invites.push({ forwarder_company_id: co.id, name: co.name, url, wechat_text: wechatText(co.name, rfq, url) });
     }
     await client.query("COMMIT");
-    return res.json({ ok: true, rfq_id: rfq.id, invites });
+    return res.json({ ok: true, rfq_id: rfq.id, invites, blocked_blacklisted: blockedBlacklisted });
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
     return res.status(500).json({ ok: false, error: e.message });

@@ -51,6 +51,35 @@ export function normalizeDocSeed(blNo, contractNo) {
   return firstNonEmpty(blNo) || firstNonEmpty(contractNo);
 }
 
+export function inferActorKind(generatedBy) {
+  const s = cleanText(generatedBy).toLowerCase();
+  if (!s) return null;
+  if (s.startsWith("claude")) return "ai";
+  if (/^(svc|service)[_-]/.test(s) || s === "system" || s === "cron" || s === "scheduler") return "service";
+  return "human";
+}
+
+function normalizeActorKind(actorKind, generatedBy) {
+  const explicit = cleanText(actorKind).toLowerCase();
+  if (explicit === "human" || explicit === "ai" || explicit === "service") return explicit;
+  return inferActorKind(generatedBy);
+}
+
+async function loadTemplateVersion(pool, templateCode) {
+  const code = cleanText(templateCode);
+  if (!code) return null;
+  try {
+    const r = await pool.query(
+      "SELECT version FROM doc_template_registry WHERE code=$1 LIMIT 1",
+      [code]
+    );
+    return cleanText(r.rows[0]?.version) || null;
+  } catch (e) {
+    console.warn("[issueDocNo] template version lookup failed:", e.message);
+    return null;
+  }
+}
+
 export function countryNorm(v) {
   return String(v || "").trim().toUpperCase();
 }
@@ -187,9 +216,12 @@ export async function normalizeChargeName(pool, rawName, carrier = "*", sampleBl
   return { name: raw, unmapped: true, original_name: raw };
 }
 
-export async function issueDocNo(pool, { prefix, seed, docType, blNo, totalUsd = 0, totalCny = 0, generatedBy = null, snapshot = {}, docDate = null, noDate = false, noSeq = false }) {
+export async function issueDocNo(pool, { prefix, seed, docType, blNo, totalUsd = 0, totalCny = 0, generatedBy = null, snapshot = {}, docDate = null, noDate = false, noSeq = false, templateCode = null, actorKind = null }) {
   const today = String(docDate || new Date().toISOString().slice(0, 10)).slice(0, 10).replace(/-/g, ""); // 0813铁则: 单号日期段=出运日
   const base = noDate ? `${prefix}-${docKey(seed)}` : `${prefix}-${docKey(seed)}-${today}`;
+  const issueTemplateCode = cleanText(templateCode) || null;
+  const issueTemplateVersion = await loadTemplateVersion(pool, issueTemplateCode);
+  const issueActorKind = normalizeActorKind(actorKind, generatedBy);
   // ⚖️ 2026-08-24 Damon:「前缀 + BL 号,字段表就可以了」——对外单据号不再拼出运日与递增序号。
   //    BL 号本来就是现成字段,号即 `${prefix}-${BL}`。同一票重复出单 = 同一个号(幂等),
   //    不是每点一次生成一个新号(原来 PC-COAU9507915320-20260707-5 那个 -5 就是被点了 5 次)。
@@ -199,9 +231,9 @@ export async function issueDocNo(pool, { prefix, seed, docType, blNo, totalUsd =
     try {
       await pool.query(
         `INSERT INTO doc_issue_log
-           (doc_no, bl_no, doc_type, total_usd, total_cny, generated_by, snapshot)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-        [base, cleanText(blNo) || null, docType, num(totalUsd), num(totalCny), generatedBy, JSON.stringify(snapshot)]
+           (doc_no, bl_no, doc_type, total_usd, total_cny, generated_by, snapshot, template_code, template_version, actor_kind)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)`,
+        [base, cleanText(blNo) || null, docType, num(totalUsd), num(totalCny), generatedBy, JSON.stringify(snapshot), issueTemplateCode, issueTemplateVersion, issueActorKind]
       );
     } catch (e) {
       if (e?.code !== "23505") throw e;   // 并发下别人先插了,照样返回该号
@@ -221,9 +253,9 @@ export async function issueDocNo(pool, { prefix, seed, docType, blNo, totalUsd =
     try {
       await pool.query(
         `INSERT INTO doc_issue_log
-           (doc_no, bl_no, doc_type, total_usd, total_cny, generated_by, snapshot)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-        [docNo, cleanText(blNo) || null, docType, num(totalUsd), num(totalCny), generatedBy, JSON.stringify(snapshot)]
+           (doc_no, bl_no, doc_type, total_usd, total_cny, generated_by, snapshot, template_code, template_version, actor_kind)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)`,
+        [docNo, cleanText(blNo) || null, docType, num(totalUsd), num(totalCny), generatedBy, JSON.stringify(snapshot), issueTemplateCode, issueTemplateVersion, issueActorKind]
       );
       return docNo;
     } catch (e) {

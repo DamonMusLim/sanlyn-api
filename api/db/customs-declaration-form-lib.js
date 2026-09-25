@@ -1,3 +1,11 @@
+import {
+  CUSTOMS_DECLARATION_ELEMENTS_EXPR,
+  CUSTOMS_DECLARATION_NAME_EXPR,
+  CUSTOMS_HS_EXPR,
+  CUSTOMS_PRODUCT_JOIN_SQL,
+  CUSTOMS_PRODUCT_ONE_CTE,
+} from "./customs-product-resolver.js";
+
 export function esc(s) {
   if (s == null) return "";
   return String(s)
@@ -299,25 +307,21 @@ export async function resolveOrdersForContainer(pool, planOrBl, container_no) {
 
 export async function loadLines(pool, orderIds) {
   if (!orderIds.length) return [];
+  var ciqRows = await loadCiqLines(pool, orderIds);
+  if (ciqRows) return ciqRows;
   var r = await pool.query(
-    `WITH product_one AS (
-       SELECT DISTINCT ON (sku)
-              sku, hs_code, declaration_name, declaration_elements
-       FROM products
-       WHERE NULLIF(btrim(sku), '') IS NOT NULL
-       ORDER BY sku, active DESC NULLS LAST, updated_at DESC NULLS LAST, id DESC
-     ),
+    `WITH ${CUSTOMS_PRODUCT_ONE_CTE},
      keyed AS (
        SELECT
-         NULLIF(btrim(COALESCE(oli.hs_code, p.hs_code, '')), '') AS hs_code,
-         COALESCE(NULLIF(btrim(oli.declaration_name), ''), NULLIF(btrim(p.declaration_name), ''), NULLIF(btrim(oli.product_name), '')) AS declaration_name,
-         NULLIF(btrim(p.declaration_elements), '') AS declaration_elements,
+         ${CUSTOMS_HS_EXPR} AS hs_code,
+         ${CUSTOMS_DECLARATION_NAME_EXPR} AS declaration_name,
+         ${CUSTOMS_DECLARATION_ELEMENTS_EXPR} AS declaration_elements,
          oli.qty_ctn,
          oli.nw_ctn, oli.gw_ctn,
          oli.unit_price, oli.declare_amount_per_box,
          oli.subtotal
        FROM order_line_items oli
-       LEFT JOIN product_one p ON p.sku = oli.sku
+       ${CUSTOMS_PRODUCT_JOIN_SQL}
        WHERE oli.order_id = ANY($1::int[])
      ),
      -- 2026-08-07 DNA「合并 + 全写要么无」(Damon): 合并行的申报要素绝不用 MIN/MAX 随便取一个 SKU 的。
@@ -376,6 +380,133 @@ export async function loadLines(pool, orderIds) {
     [orderIds]
   );
   return r.rows;
+}
+
+function _ciqNum(v) {
+  var n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function _ciqSku(v) {
+  return clean(v).toUpperCase();
+}
+
+function _mergeDeclarationElements(rows) {
+  var parts = {};
+  (rows || []).forEach(function (row) {
+    String(row.declaration_elements || "").split("|").forEach(function (part) {
+      var m = /^\s*([0-9]+)\s*:\s*([^:]+?)\s*:\s*(.*)$/.exec(part || "");
+      if (!m) return;
+      var k = m[1] + ":" + m[2];
+      var val = clean(m[3]);
+      if (!parts[k]) parts[k] = { no: Number(m[1]), name: m[2], vals: {} };
+      if (val) parts[k].vals[val] = 1;
+    });
+  });
+  return Object.keys(parts).sort(function (a, b) {
+    return parts[a].no - parts[b].no;
+  }).map(function (k) {
+    var p = parts[k];
+    return p.no + ":" + p.name + ":" + Object.keys(p.vals).sort().join("/");
+  }).join("|");
+}
+
+function _ciqWarn(kind, detail) {
+  console.warn("[customs-decl] ciq_lines_" + kind + ": " + detail);
+}
+
+async function loadCiqLines(pool, orderIds) {
+  var ordersR = await pool.query("SELECT id, order_no, raw FROM orders WHERE id = ANY($1::int[]) ORDER BY id", [orderIds]);
+  var ciqGroups = [];
+  ordersR.rows.forEach(function (o) {
+    var raw = parseRaw(o.raw);
+    var ciq = raw && raw.ciq;
+    var lines = ciq && Array.isArray(ciq.lines) ? ciq.lines : [];
+    if (lines.length) ciqGroups.push({ orderId: Number(o.id), orderNo: o.order_no, lines: lines });
+  });
+  if (!ciqGroups.length) return null;
+
+  var liR = await pool.query(
+    `WITH ${CUSTOMS_PRODUCT_ONE_CTE}
+     SELECT
+       oli.order_id,
+       oli.sku,
+       ${CUSTOMS_HS_EXPR} AS hs_code,
+       ${CUSTOMS_DECLARATION_NAME_EXPR} AS declaration_name,
+       ${CUSTOMS_DECLARATION_ELEMENTS_EXPR} AS declaration_elements,
+       oli.qty_ctn,
+       oli.nw_ctn, oli.gw_ctn,
+       oli.unit_price, oli.declare_amount_per_box,
+       oli.subtotal
+     FROM order_line_items oli
+     ${CUSTOMS_PRODUCT_JOIN_SQL}
+     WHERE oli.order_id = ANY($1::int[])
+     ORDER BY oli.order_id, oli.sort_order, oli.id`,
+    [orderIds]
+  );
+  var allItems = liR.rows || [];
+  var byOrder = {};
+  allItems.forEach(function (li) {
+    (byOrder[String(li.order_id)] || (byOrder[String(li.order_id)] = [])).push(li);
+  });
+
+  var covered = {};
+  var out = [];
+  ciqGroups.forEach(function (group) {
+    var items = byOrder[String(group.orderId)] || [];
+    group.lines.slice().sort(function (a, b) { return Number(a.no || 0) - Number(b.no || 0); }).forEach(function (line) {
+      var lineSkus = Array.isArray(line.skus) ? line.skus.map(_ciqSku).filter(Boolean) : null;
+      var lineSkuSet = {};
+      (lineSkus || []).forEach(function (s) { lineSkuSet[s] = 1; });
+      var hs = clean(line.hs);
+      var matched = items.filter(function (li) {
+        var sku = _ciqSku(li.sku);
+        if (lineSkus) return !!lineSkuSet[sku];
+        if (line.sku_rule && hs) return clean(li.hs_code) === hs;
+        return false;
+      });
+      matched.forEach(function (li) {
+        if (li.sku) covered[String(group.orderId) + "|" + _ciqSku(li.sku)] = 1;
+      });
+      if (lineSkus) {
+        lineSkus.forEach(function (sku) {
+          if (!items.some(function (li) { return _ciqSku(li.sku) === sku; })) {
+            _ciqWarn("missing_sku", "order " + (group.orderNo || group.orderId) + " line " + clean(line.no) + " sku " + sku);
+          }
+        });
+      }
+      var qtySum = matched.reduce(function (s, li) { return s + (Number(li.qty_ctn) || 0); }, 0);
+      var amountSum = matched.reduce(function (s, li) {
+        var q = Number(li.qty_ctn) || 0;
+        return s + Number(q * Number(li.declare_amount_per_box || 0) || li.subtotal || 0);
+      }, 0);
+      var grossSum = matched.reduce(function (s, li) {
+        var q = Number(li.qty_ctn) || 0;
+        var gw = Number(li.gw_ctn);
+        return s + (Number.isFinite(gw) ? gw * q : 0);
+      }, 0);
+      out.push({
+        hs_code: hs,
+        declaration_name: clean(line.decl_name),
+        declaration_elements: _mergeDeclarationElements(matched),
+        qty_ctn: _ciqNum(line.qty_ctn),
+        net_weight_kg: _ciqNum(line.nw_kg),
+        gross_weight_kg: grossSum || null,
+        unit_price: qtySum > 0 ? Number((amountSum / qtySum).toFixed(5)) : null,
+        total_amount: _ciqNum(line.amount_cny),
+        origin: clean(line.origin),
+        packing: clean(line.packing),
+        ciq_no: line.no,
+      });
+    });
+  });
+  allItems.forEach(function (li) {
+    var sku = _ciqSku(li.sku);
+    if (sku && !covered[String(li.order_id) + "|" + sku]) {
+      _ciqWarn("uncovered_sku", "order_id " + li.order_id + " sku " + sku);
+    }
+  });
+  return out;
 }
 
 export function cell(label, value, cls, field) {
@@ -471,7 +602,7 @@ export function cargoRows(lines, destination, sourceArea, hsSpecs) {
       <td data-field="price_amount_currency" data-row="${i}">${money || '<span class="empty">—</span>'}</td>
       <td data-field="origin_country" data-row="${i}">中国(CHN)</td>
       <td data-field="dest_country" data-row="${i}">${blank(destination)}</td>
-      <td data-field="source_area" data-row="${i}">${sourceArea ? esc(sourceArea) : '<span class="empty">—</span>'}</td>
+      <td data-field="source_area" data-row="${i}">${clean(l.origin) ? esc(clean(l.origin)) : (sourceArea ? esc(sourceArea) : '<span class="empty">—</span>')}</td>
       <td data-field="levy_exempt" data-row="${i}">照章征税</td>
     </tr>`;
   }).join("");

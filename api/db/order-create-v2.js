@@ -3,6 +3,8 @@
 // GET: fetch form helpers (customers list, products list)
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { getCustomerProductsCatalog } from "./customer-products-catalog.js";
+import { isAgentCaller, checkFivePrices, hasPositiveNumber } from "./order-price-guard.js";
 var ENSURE_LINE_ITEMS = `
   CREATE TABLE IF NOT EXISTS order_line_items (
     id              SERIAL PRIMARY KEY,
@@ -251,99 +253,15 @@ export default async function handler(req, res) {
           return res.status(403).json({ error: "Out of scope — you cannot view this customer's order history." });
         }
 
-        // Try company_products table first (authorized catalog with customer-specific pricing)
-        var cpRows = [];
-        try {
-          var cpResult = await pool.query(
-            `SELECT cp.id AS cp_id, cp.alias_sku, cp.price_cny, cp.price_usd, cp.moq, cp.lead_time_days, cp.notes AS cp_notes,
-                    p.sku, p.name_cn, p.name_en, p.brand, p.size, p.unit, p.cbm, p.gross_weight, p.net_weight,
-                    p.inner_qty, p.inner_unit, p.hs_code
-             FROM company_products cp
-             JOIN customers cust ON cust.id = cp.company_id
-             JOIN products p ON p.id = cp.product_id
-             WHERE cust.company_code = $1 AND cp.active = true
-             ORDER BY p.name_en`,
-            [code]
-          );
-          cpRows = cpResult.rows || [];
-        } catch(cpErr) {
-          // table may not exist or product_id FK issue — fall through to order history
-        }
-
-        if (cpRows.length > 0) {
-          var cpProducts = cpRows.map(function(r) {
-            return {
-              name: r.name_en || r.name_cn || "",
-              code: r.alias_sku || r.sku || "",
-              brand: r.brand || "",
-              size: r.size || "",
-              unit: r.unit || "CTN",
-              unitPrice: parseFloat(r.price_usd) || 0,
-              price_usd: parseFloat(r.price_usd) || 0,
-              price_cny: parseFloat(r.price_cny) || 0,
-              cbm: parseFloat(r.cbm) || 0,
-              grossWeight: parseFloat(r.gross_weight) || 0,
-              netWeight: parseFloat(r.net_weight) || 0,
-              innerQty: r.inner_qty || 0,
-              innerUnit: r.inner_unit || "PCS",
-              hsCode: r.hs_code || "",
-              moq: r.moq || 0,
-              leadTimeDays: r.lead_time_days || 0,
-              notes: r.cp_notes || "",
-              isAuthorized: true,
-            };
-          });
-          return res.status(200).json({
-            success: true,
-            products: cpProducts,
-            orderCount: 0,
-            defaults: {},
-            source: "company_products",
-            authorizedCount: cpProducts.length,
-          });
-        }
-
-        // Get products from this customer's recent orders
-        var recentOrders = await pool.query(
-          "SELECT products, customer_po, order_no, created_at FROM orders WHERE company_code = $1 AND products IS NOT NULL ORDER BY created_at DESC LIMIT 10",
-          [code]
-        );
-        // Extract unique products with latest qty/price
-        var productMap = {};
-        (recentOrders.rows || []).forEach(function(ord) {
-          var prods = [];
-          try { prods = typeof ord.products === "string" ? JSON.parse(ord.products) : (ord.products || []); } catch(e) {}
-          prods.forEach(function(p) {
-            var key = p.code || p.name;
-            if (key && !productMap[key]) {
-              productMap[key] = {
-                name: p.name || "", code: p.code || "", brand: p.brand || "",
-                size: p.size || "", unit: p.unit || "CTN",
-                unitPrice: p.unitPrice || p.price || 0,
-                cbm: p.cbm || 0, grossWeight: p.grossWeight || 0, netWeight: p.netWeight || 0,
-                lastQty: p.qty || 0, lastOrderNo: ord.order_no,
-                lastDate: ord.created_at,
-                innerQty: p.innerQty || p.bagsPerBox || 0,
-                innerUnit: p.innerUnit || "PCS",
-                declareAmountPerBox: p.declareAmountPerBox || 0,
-                vatRate: p.vatRate || 0, taxRebateRate: p.taxRebateRate || 0,
-                hsCode: p.hsCode || "",
-              };
-            }
-          });
-        });
-
-        // Also get this customer's default info
-        var custInfo = await pool.query(
-          "SELECT country, destination_port, customer_address, consignee, currency FROM orders WHERE company_code = $1 ORDER BY created_at DESC LIMIT 1",
-          [code]
-        ).catch(function() { return { rows: [] }; });
-
+        var catalog = await getCustomerProductsCatalog(pool, code);
         return res.status(200).json({
           success: true,
-          products: Object.values(productMap),
-          orderCount: recentOrders.rows.length,
-          defaults: custInfo.rows[0] || {},
+          products: catalog.products,
+          orderCount: catalog.orderCount,
+          defaults: catalog.defaults,
+          source: catalog.source,
+          authorizedCount: catalog.authorizedCount,
+          publicSupplierCount: catalog.publicSupplierCount,
         });
       }
 
@@ -1020,6 +938,22 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
     if (_buy.err) return res.status(400).json({ error: _buy.err });
     var _tt = _sale.val;
 
+    // ── 五价硬闸(2026-09-17 Damon 定) ──────────────────────────────────────
+    // agent(阿丹/task-runner)建单缺客户成交价或工厂含税价 → 直接 400,一行都不许落库。
+    // 🔴 写在端点里不是写在提示词里:提示词模型能绕,端点绕不过去。
+    // ⛔ 不许 AI 估、不许用 customer_amount 反推 factory_amount。
+    // 位置必须在 nextOrderNo 之前 —— 400 不该消耗掉一个集团级订单号。
+    // admin 前台不拦(实测 2/3 的单本来就没真工厂价,拦了当场打瘫),但下面回落已杀,
+    // 缺价会写 NULL 并在响应 warnings 里明说,不静默。
+    var _fp = checkFivePrices(products);
+    if (isAgentCaller(req) && _fp.blocked.length) {
+      return res.status(400).json({
+        error: "五价不全，拒绝建单",
+        code: "FIVE_PRICE_MISSING",
+        findings: _fp.blocked,
+      });
+    }
+
     // Manufacturer name for the order_no factory prefix. Orders are split one-per
     // factory upstream, so all line items share a manufacturer; use the first.
     var _mfrName = (products && products[0] && (products[0].factory_name || products[0].factory)) || factory || "";
@@ -1157,6 +1091,8 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
     var totalQty = 0, totalAmount = 0, totalAmountFactory = 0;
     var totalCBM = 0, grossWeight = 0, netWeight = 0;
     var declareAmount = 0;
+    // 任一行缺工厂含税价 → 整单的 total_amount_factory / profit 都写 NULL(见下)。
+    var factoryPriceIncomplete = false;
 
     var cleanProducts = products.map(function(p) {
       // Enrich p with product master data before extracting fields (fail-open)
@@ -1166,9 +1102,16 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
       }
       var qty = parseInt(p.qty) || 0;
       var unitPrice = parseFloat(p.unitPrice) || parseFloat(p.price) || 0;
-      var factoryPrice = parseFloat(p.factoryPrice) || parseFloat(p.factory_price) || unitPrice;
+      // 🩸 2026-09-17: 这里原本是 `|| unitPrice` —— 缺工厂价就拿客户成交价顶上。
+      //    实测近半年 149 张单里 68 张 total_amount_factory == total_amount(利润恒为 0)。
+      //    这就是五价铁律禁止的「用 customer_amount 反推 factory_amount」。回落已删。
+      //    0 和「没填」是两件事:没填写 NULL,绝不写 0(写 0 会把毛利虚报成 100%)。
+      var factoryPrice = hasPositiveNumber(p.factoryPrice)
+        ? Number(p.factoryPrice)
+        : (hasPositiveNumber(p.factory_price) ? Number(p.factory_price) : null);
+      if (factoryPrice === null) factoryPriceIncomplete = true;
       var subtotal = parseFloat(p.subtotal) || (unitPrice * qty);
-      var factorySubtotal = factoryPrice * qty;
+      var factorySubtotal = factoryPrice === null ? null : factoryPrice * qty;
       var pCbm = (parseFloat(p.cbm) || 0) * qty;
       var pGW = (parseFloat(p.grossWeight) || parseFloat(p.gross_weight) || 0) * qty;
       var pNW = (parseFloat(p.netWeight) || parseFloat(p.net_weight) || 0) * qty;
@@ -1176,7 +1119,7 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
 
       totalQty += qty;
       totalAmount += subtotal;
-      totalAmountFactory += factorySubtotal;
+      if (factorySubtotal !== null) totalAmountFactory += factorySubtotal;
       totalCBM += pCbm;
       grossWeight += pGW;
       netWeight += pNW;
@@ -1225,7 +1168,8 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
     var taxRebateAmount = declareAmount > 0 ? (declareAmount / (1 + vatRate) * taxRebateRate) : 0;
 
     // Profit = sales - factory cost (simplified, not including logistics)
-    var profit = totalAmount - totalAmountFactory;
+    // 缺工厂价时利润不可知 → NULL。⛔ 不许按 0 成本算,那会把毛利虚报成 100%。
+    var profit = factoryPriceIncomplete ? null : (totalAmount - totalAmountFactory);
 
     var portalId = "order_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
 
@@ -1406,10 +1350,10 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
       /*$27*/ containerType,
       /*$28*/ containerQty,
       /*$29*/ parseFloat(totalAmount.toFixed(2)),
-      /*$30*/ parseFloat(totalAmountFactory.toFixed(2)),
+      /*$30*/ factoryPriceIncomplete ? null : parseFloat(totalAmountFactory.toFixed(2)),
       /*$31*/ currency || "CNY",
       /*$32*/ parseFloat(exchangeRate) || null,
-      /*$33*/ parseFloat(profit.toFixed(2)),
+      /*$33*/ profit === null ? null : parseFloat(profit.toFixed(2)),
       /*$34*/ parseFloat(declareAmount.toFixed(2)),
       /*$35*/ vatRate || null,
       /*$36*/ taxRebateRate || null,
@@ -1429,11 +1373,18 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
     // ORDER_ENTRY_P0_FIX_001 — append optional column values ($49+) built above.
     extraVals.forEach(function(v){ vals.push(v); });
 
-    var result = await pool.query(sql, vals);
-    var order = result.rows[0];
-
-    // ── Sync products to order_line_items (fail-open) ─────────────────────
+    // ── 单头 + 明细同事务(2026-09-17) ──────────────────────────────────────
+    // 🩸 原本明细插入包在 try/catch 里标注 non-fatal:43 行明细全失败仍返回 200,
+    //    调用方拿到「建单成功」,库里是个空壳单头。改成同事务,失败整单回滚。
+    // nextOrderNo 在事务外先发过号了 —— 回滚只是跳一个号,不会撞号。
+    var client = await pool.connect();
+    var result;
+    var order;
     try {
+      await client.query("BEGIN");
+      result = await client.query(sql, vals);
+      order = result.rows[0];
+
       if (Array.isArray(cleanProducts) && cleanProducts.length > 0) {
         var liVals = [];
         var liRows = cleanProducts.map(function(p, idx) {
@@ -1448,9 +1399,9 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
             parseFloat(p.qty)     || 0,
             p.unit           || 'CTN',
             parseFloat(p.unitPrice)           || 0,
-            parseFloat(p.factoryPrice)        || parseFloat(p.unitPrice) || 0,
+            hasPositiveNumber(p.factoryPrice) ? Number(p.factoryPrice) : null,
             parseFloat(p.subtotal)            || 0,
-            parseFloat(p.factorySubtotal)     || null,
+            hasPositiveNumber(p.factorySubtotal) ? Number(p.factorySubtotal) : null,
             parseFloat(p.netWeight)           || null,
             parseFloat(p.grossWeight)         || null,
             parseFloat(p.cbm)                 || null,
@@ -1467,7 +1418,7 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
           var n = base + 1;
           return '($' + [n,n+1,n+2,n+3,n+4,n+5,n+6,n+7,n+8,n+9,n+10,n+11,n+12,n+13,n+14,n+15,n+16,n+17,n+18,n+19,n+20,n+21,n+22,n+23].join(',$') + ')';
         });
-        await pool.query(
+        await client.query(
           `INSERT INTO order_line_items
             (order_id, sku, barcode, product_name, brand, bg_bx,
              qty_ctn, unit, unit_price, factory_price,
@@ -1478,8 +1429,30 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
           liVals
         );
       }
-    } catch (liErr) {
-      console.error('[order-create-v2] order_line_items batch insert failed (non-fatal):', liErr.message);
+
+      // 2026-08-05 双成交方式落库：销售侧+采购侧+模型版本一起写。
+      // ⚠️ 不吞异常,而且必须在 COMMIT 之前 —— 0805 教训:成交方式写不进去同样是废单
+      //    (出运资料/账单规则会静默走错)。2026-09-17 codex 回审 R-a:原本它在 COMMIT
+      //    之后跑,失败返回 500 而单头+明细已落库,等于留下半张单。折进同事务。
+      await client.query(
+        "UPDATE orders SET trade_terms=$1, purchase_trade_terms=$2, terms_model_version='dual_terms' WHERE id=$3",
+        [_sale.val, _buy.val, order.id]
+      );
+
+      await client.query("COMMIT");
+    } catch (txErr) {
+      // 🔴 必须 client.query 不是 pool.query —— pool.query 会另取一条连接,
+      //    ROLLBACK 打在别的连接上等于没打,事务泄漏。
+      try { await client.query("ROLLBACK"); }
+      catch (rbErr) { console.error("[order-create-v2] ROLLBACK failed:", rbErr.message); }
+      var _errRef = "oc2-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+      console.error("[order-create-v2] 建单事务失败 ref=" + _errRef, txErr);
+      // 非 admin(customer-portal)不回原始 DB 错误:约束名/表名会顺着 message 漏出去。
+      return res.status(500).json(isAdmin
+        ? { success: false, error: txErr.message, ref: _errRef }
+        : { success: false, error: "订单创建失败，请联系 Sanlyn 并提供错误编号。", ref: _errRef });
+    } finally {
+      client.release();
     }
 
     // ── 2026-08-04 Damon: 建单时把三个公司外键一起写进去 ──
@@ -1520,33 +1493,22 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
       console.error("[order-create-v2] 公司外键写入失败:", e.message);
     }
 
-    // 2026-08-05 双成交方式落库：销售侧+采购侧+模型版本一起写。
-    // ⚠️ 这里【不再吞异常】—— 0805 教训:order_line_items 的 non-fatal catch 让订单建成功但明细全空,
-    //    返回 200 却是废单。成交方式写不进去同样是废单(出运资料/账单规则会静默走错)。
+    // 双成交方式的 UPDATE 已折进上面的事务(2026-09-17),写不进去整单已回滚。
+    // 这里只剩「回写该客户常用成交方式」,是便利功能不是单据前提,继续 fail-open。
+    // ⛔ pinned=true 就不动 —— Damon:「除非点了固定，我们常用」。
+    // ⛔ 旧代码写的是 UPDATE customers SET trade_terms=...,但 customers 是视图且无此列,
+    //    一直静默报错 →「记住上次口径」从来没生效过。改写真表。
     try {
-      await pool.query(
-        "UPDATE orders SET trade_terms=$1, purchase_trade_terms=$2, terms_model_version='dual_terms' WHERE id=$3",
-        [_sale.val, _buy.val, order.id]
-      );
-      // 回写该客户常用成交方式,供下次录单自动带出。
-      // ⛔ pinned=true 就不动 —— Damon:「除非点了固定，我们常用」。
-      // ⛔ 旧代码写的是 UPDATE customers SET trade_terms=...,但 customers 是视图且无此列,
-      //    一直静默报错 →「记住上次口径」从来没生效过。改写真表。
-      try {
-        if (_sale.val !== "PENDING" && companyCode) {
-          await pool.query(
-            "UPDATE customers_legacy_20260803 SET" +
-            "   trade_terms = CASE WHEN trade_terms_pinned THEN trade_terms ELSE $1 END," +
-            "   purchase_trade_terms = CASE WHEN trade_terms_pinned THEN purchase_trade_terms ELSE $2 END," +
-            "   updated_at = now()" +
-            " WHERE company_code = $3",
-            [_sale.val, (_buy.val === "PENDING" ? null : _buy.val), companyCode]);
-        }
-      } catch (e) { console.warn("[order-create-v2] 回写客户常用成交方式失败:", e.message); }
-    } catch (e) {
-      console.error("[order-create-v2] 成交方式写入失败 order_no=" + (order.order_no || order.id) + ":", e.message);
-      return res.status(500).json({ success: false, error: "成交方式没写进去，这张单不完整：" + e.message });
-    }
+      if (_sale.val !== "PENDING" && companyCode) {
+        await pool.query(
+          "UPDATE customers_legacy_20260803 SET" +
+          "   trade_terms = CASE WHEN trade_terms_pinned THEN trade_terms ELSE $1 END," +
+          "   purchase_trade_terms = CASE WHEN trade_terms_pinned THEN purchase_trade_terms ELSE $2 END," +
+          "   updated_at = now()" +
+          " WHERE company_code = $3",
+          [_sale.val, (_buy.val === "PENDING" ? null : _buy.val), companyCode]);
+      }
+    } catch (e) { console.warn("[order-create-v2] 回写客户常用成交方式失败:", e.message); }
 
     // ─────────────────────────────────────────────────────────────────
     // AUTO-SEED partner_relationships (customer_factory)  · 2026-05-18
@@ -1675,7 +1637,7 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
       productCount: cleanProducts.length,
     };
     var summaryFull = Object.assign({}, summaryPublic, {
-      totalAmountFactory: totalAmountFactory,
+      totalAmountFactory: factoryPriceIncomplete ? null : totalAmountFactory,
       profit: profit,
     });
 
@@ -1693,6 +1655,8 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
       order: isAdmin ? order : orderPublic,
       summary: isAdmin ? summaryFull : summaryPublic,
       credit: creditInfo,   // S89: client may show "pending approval" banner
+      // 缺工厂价不拦 admin 前台,但必须说出来 —— 静默兜底就是上一个 bug 的病根。
+      warnings: (_fp && _fp.warnings && _fp.warnings.length) ? _fp.warnings : undefined,
       // 2026-08-04: 公司外键没对上要说出来,别只写日志(日志没人看=等于静默)
       company_link_warnings: (typeof _companyLinkWarn !== "undefined" && _companyLinkWarn.length) ? _companyLinkWarn : undefined,
     });

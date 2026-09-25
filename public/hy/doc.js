@@ -31,8 +31,11 @@ var state={
   type:"fob_invoice",
   token:"",
   iframe:null,
+  blobUrl:"",
   loading:false,
-  requestId:0
+  requestId:0,
+  internalRequestId:0,
+  docWarnings:[]
 };
 
 function qs(){
@@ -151,6 +154,73 @@ function docUrl(opts){
   return url;
 }
 
+function internalInfoUrl(){
+  return "/api/db/hy-doc-internal?bl="+encodeURIComponent(state.bl);
+}
+
+function noData(v){
+  if(Array.isArray(v))return v.length?v.join(", "):"无数据";
+  v=clean(v);
+  return v||"无数据";
+}
+
+function decodeWarnings(v){
+  v=clean(v);
+  if(!v)return [];
+  return v.split(";").map(function(x){
+    try{return decodeURIComponent(x)}catch(e){return x}
+  }).map(clean).filter(Boolean);
+}
+
+function appendWarnings(el){
+  if(!el||!state.docWarnings.length)return;
+  Array.prototype.slice.call(el.querySelectorAll(".doc-warning")).forEach(function(n){n.parentNode.removeChild(n)});
+  var warn=document.createElement("span");
+  warn.className="doc-warning";
+  warn.style.cssText="margin-left:12px;color:#b45309;font-size:12px;font-weight:600";
+  warn.textContent="提示: "+state.docWarnings.join("; ");
+  el.appendChild(warn);
+}
+
+function setDocWarnings(list){
+  state.docWarnings=Array.isArray(list)?list:[];
+  var el=$("#internalInfo");
+  if(el)Array.prototype.slice.call(el.querySelectorAll(".doc-warning")).forEach(function(n){n.parentNode.removeChild(n)});
+  appendWarnings($("#internalInfo"));
+}
+
+function setInternalInfo(data){
+  var el=$("#internalInfo");
+  if(!el)return;
+  data=data||{};
+  el.textContent="BL "+noData(data.bl_no)+" · CY "+noData(data.shipment_no)+" · 订单 "+noData(data.order_nos)+" · 出单公司 "+noData(data.issuing_companies);
+  appendWarnings(el);
+}
+
+function loadInternalInfo(){
+  var reqId,headers;
+  if(!state.bl){
+    setInternalInfo(null);
+    return;
+  }
+  reqId=++state.internalRequestId;
+  setInternalInfo(null);
+  headers=state.token?{Authorization:"Bearer "+state.token}:{};
+  fetch(internalInfoUrl(),{credentials:"same-origin",headers:headers})
+    .then(function(res){
+      if(reqId!==state.internalRequestId)return null;
+      if(!res.ok)return null;
+      return res.json();
+    })
+    .then(function(json){
+      if(reqId!==state.internalRequestId)return;
+      setInternalInfo(json&&json.success?json.data:null);
+    })
+    .catch(function(){
+      if(reqId===state.internalRequestId)setInternalInfo(null);
+    });
+}
+
 function setStatus(html,cls){
   var el=ensureRoot().status;
   el.className="doc-status"+(cls?" "+cls:"");
@@ -159,8 +229,16 @@ function setStatus(html,cls){
 
 function clearViewer(){
   var viewer=ensureRoot().viewer;
+  releaseBlobUrl();
   viewer.innerHTML="";
   state.iframe=null;
+}
+
+function releaseBlobUrl(){
+  if(state.blobUrl){
+    URL.revokeObjectURL(state.blobUrl);
+    state.blobUrl="";
+  }
 }
 
 function setEmpty(){
@@ -180,6 +258,7 @@ function setError(code,fallbackUrl){
 
 function setFrame(html){
   var viewer=ensureRoot().viewer;
+  releaseBlobUrl();
   viewer.innerHTML="";
   var frame=document.createElement("iframe");
   frame.className="doc-frame";
@@ -187,9 +266,32 @@ function setFrame(html){
   frame.style.width="100%";
   frame.style.minHeight="calc(100vh - 120px)";
   frame.style.border="0";
+  frame.addEventListener("load",function(){
+    try{
+      var meta=frame.contentDocument&&frame.contentDocument.querySelector('meta[name="doc-warnings"]');
+      setDocWarnings(decodeWarnings(meta&&meta.getAttribute("content")));
+    }catch(e){}
+  });
   frame.srcdoc=html;
   viewer.appendChild(frame);
   state.iframe=frame;
+  setStatus("", "");
+}
+
+function setPdfFrame(blobUrl){
+  var viewer=ensureRoot().viewer;
+  releaseBlobUrl();
+  viewer.innerHTML="";
+  var frame=document.createElement("iframe");
+  frame.className="doc-frame";
+  frame.setAttribute("title",TYPES[state.type]||"单据");
+  frame.style.width="100%";
+  frame.style.minHeight="calc(100vh - 120px)";
+  frame.style.border="0";
+  frame.src=blobUrl;
+  viewer.appendChild(frame);
+  state.iframe=frame;
+  state.blobUrl=blobUrl;
   setStatus("", "");
 }
 
@@ -206,6 +308,7 @@ function loadDoc(){
   reqId=++state.requestId;
   setBusy(true);
   setStatus('<div class="loading">加载中...</div>',"loading");
+  releaseBlobUrl();
 
   headers=state.token?{Authorization:"Bearer "+state.token}:{};
   url=docUrl();
@@ -214,14 +317,27 @@ function loadDoc(){
     .then(function(res){
       if(reqId!==state.requestId)return null;
       if(!res.ok){
+        setDocWarnings([]);
         setError(res.status,docUrl({token:true}));
         return null;
       }
-      return res.text();
+      setDocWarnings(decodeWarnings(res.headers.get("X-Doc-Warnings")));
+      if((res.headers.get("Content-Type")||"").toLowerCase().indexOf("application/pdf")!==-1){
+        return res.blob().then(function(blob){
+          return {pdf:true,blobUrl:URL.createObjectURL(blob)};
+        });
+      }
+      return res.text().then(function(html){
+        return {html:html};
+      });
     })
-    .then(function(html){
-      if(reqId!==state.requestId||html==null)return;
-      setFrame(html);
+    .then(function(doc){
+      if(reqId!==state.requestId||doc==null){
+        if(doc&&doc.blobUrl)URL.revokeObjectURL(doc.blobUrl);
+        return;
+      }
+      if(doc.pdf)setPdfFrame(doc.blobUrl);
+      else setFrame(doc.html);
     })
     .catch(function(){
       if(reqId!==state.requestId)return;
@@ -286,6 +402,7 @@ function init(){
 
   bind();
   updateActiveType();
+  loadInternalInfo();
   loadDoc();
 }
 

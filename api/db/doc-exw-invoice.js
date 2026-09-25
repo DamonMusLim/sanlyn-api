@@ -4,21 +4,19 @@
 // 无真实账单则显"待录入账单",绝不落费率卡估算(区别于 fob_portcharge 的兜底卡)。
 // 版式复用 fob_portcharge 的洋宝宝 INVOICE + 集装箱明细;字段级 data-field/data-row 供前端绑定。
 // 渲染逻辑独立于 shipping-plan-pdf.js(单文件≤500行铁律)。
+import { docIssueDate } from "./lib/portcharge-close-loop.js";
 
 function esc(s){ if(s===null||s===undefined)return""; return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function fmtNum(v){ var n=Number(v); if(!isFinite(n))return"0.00"; return n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtDate(v){ if(!v)return"—"; try{return new Date(v).toISOString().slice(0,10);}catch(e){return String(v);} }
 function num(v){ var n=Number(v); return isFinite(n)?n:0; }
-
-// 客户名缩写(对外发票号用;通用后缀剔除;CN- 防伪码绝不外泄):
-// "JJ PET GROUP SDN BHD"→JJ / "HARMONIOUS HAPPY VENTURES"→HHV / "PETSOME"→PETS
-function custAbbr(name){
-  const stop=new Set(["GROUP","SDN","BHD","CO","LTD","PTE","LIMITED","INTERNATIONAL","TRADING","ENTERPRISE","COMPANY","CORP","CORPORATION","INC","THE","AND"]);
-  const words=String(name||"").toUpperCase().replace(/[^A-Z0-9 ]/g," ").split(/\s+/).filter(w=>w&&!stop.has(w));
-  if(!words.length) return "CUST";
-  if(words.length===1) return words[0].slice(0,4);
-  if(words[0].length<=3) return words[0];
-  return words.map(w=>w[0]).join("").slice(0,4);
+function cleanBlNo(v){ return String(v||"").split("#")[0].trim(); }
+function isPendingBl(v){ v=cleanBlNo(v); return !v || /待补/.test(v); }
+function feeBasisLabel(v){
+  v=String(v||"").trim();
+  if(v==="per_container")return"Per Container / 每柜";
+  if(v==="per_bl")return"Per B/L / 每票";
+  return v;
 }
 
 // 费目中英对照(仅展示美化,取不到时原样显示 cost_category)
@@ -31,48 +29,50 @@ const FEE_EN = {
   "FE产地证代办费":"Form E Cert","fe_cert":"Form E Cert"
 };
 
-export async function renderExwInvoice(pool, p, orders, cust, query){
+export async function renderExwInvoice(pool, p, orders, cust, query, res){
   query = query || {};
-  const genDate = new Date().toISOString().slice(0,10);
+  const genDate = docIssueDate(p);
   const isQuote = String((query&&query.quote)||"")==="1"; // 报价表模式(发货前):英文QUOTATION,只客户+航线,无柜无银行
-  const blNo    = p.bl_no || p.shipment_no || String(p.id||"");
+  const rawBlNo = cleanBlNo(p.bl_no);
+  const blNo    = rawBlNo || "待补提单号";
   const vessel  = [p.vessel, p.voyage].filter(Boolean).join(" / ") || "—";
   const ctnType = p.container_type || "40HQ";
-  const freightTerm = String(p.freight_term || "EXW").trim().toUpperCase() || "EXW";
+  const serviceScope = "Ocean Freight + Local Charges / 海运费+港杂";
   const ap = String(query.autoprint||"")==="1" ? "<scr"+"ipt>window.onload=function(){window.print()}</scr"+"ipt>" : "";
+  const docWarnings = [];
 
   // ── 收货人/客户(TO) ──
   const toName = p.customer_en || p.customer || p.customer_cn || (cust && (cust.name_en||cust.name_cn)) || "—";
   const toAddr = (cust && (cust.address||"")) || (p.raw && (p.raw.consigneeAddress||p.raw.customerAddress)) || "";
 
-  // ── 对外发票号(客户缩写+开票日)· 锁版:一票一号存库,重出同号 ──
-  // 首次生成写 raw.exw_invoice_no+issued_at;之后读库不重生成(日期变也不改号)。
-  // CY 号退居第二防伪(单据角落小字),不做主号→不暴露累计单量。
+  // ── 对外发票号 · 锁版:老号不动;新号=EXW-提单号-出单日 ──
   const _rawObj = (p.raw && typeof p.raw==="object") ? p.raw : {};
   let invNo = _rawObj.exw_invoice_no || p.exw_invoice_no || "";
   if(!invNo){
-    const abbr = custAbbr(toName);
-    const prefix = abbr + "-" + genDate.replace(/-/g,""); // 客户缩写-开票日,不带我方前缀
-    let seq = 1;
-    try{
-      const c = await pool.query(`SELECT count(*)::int AS n FROM shipping_plans WHERE raw->>'exw_invoice_no' LIKE $1`, [prefix+"%"]);
-      seq = (c.rows[0] && c.rows[0].n || 0) + 1;
-    }catch(e){}
-    invNo = seq>1 ? (prefix + "-" + String(seq)) : prefix; // 同客户同日多票 -2/-3
-    try{ // 幂等锁定:仅当为空时写,避免并发重号
-      await pool.query(
-        `UPDATE shipping_plans SET raw = COALESCE(raw,'{}'::jsonb) || jsonb_build_object('exw_invoice_no',$2::text,'exw_invoice_issued_at',$3::text) WHERE id=$1 AND (raw->>'exw_invoice_no') IS NULL`,
-        [p.id, invNo, genDate]
-      );
-    }catch(e){}
+    if(isPendingBl(rawBlNo)){
+      invNo = "待补提单号";
+      docWarnings.push("提单号为空或待补，未生成EXW全费用单号");
+    }else{
+      invNo = "EXW-" + rawBlNo + "-" + genDate.replace(/-/g,"");
+      try{ // 幂等锁定:仅当为空时写,避免并发改老号
+        await pool.query(
+          `UPDATE shipping_plans SET raw = COALESCE(raw,'{}'::jsonb) || jsonb_build_object('exw_invoice_no',$2::text,'exw_invoice_issued_at',$3::text) WHERE id=$1 AND (raw->>'exw_invoice_no') IS NULL`,
+          [p.id, invNo, genDate]
+        );
+      }catch(e){}
+    }
   }
-  const refNo = p.shipment_no || ""; // CY 号 = 第二防伪核验号
 
   // ── 当日参考汇率(USD_CNY)· 客户参考,各币种仍按币种分付 ──
   let fxRate = 0;
   try{
-    const fr = await pool.query(`SELECT rate FROM exchange_rates WHERE currency_pair='USD_CNY' ORDER BY fetched_at DESC LIMIT 1`);
-    if(fr.rows.length) fxRate = parseFloat(fr.rows[0].rate);
+    const fr = await pool.query(
+      `SELECT rate FROM exchange_rates
+        WHERE currency_pair='USD_CNY' AND fetched_at::date <= $1::date
+        ORDER BY fetched_at DESC LIMIT 1`,
+      [genDate]
+    );
+    if(fr.rows.length) fxRate = parseFloat(fr.rows[0].rate) + 0.1;
   }catch(e){}
 
   // ── 集装箱明细:优先 container_bookings(每柜真实毛重/封号,复用 fob_invoice 数据源),退回 containers_detail ──
@@ -103,13 +103,13 @@ export async function renderExwInvoice(pool, p, orders, cust, query){
     const ctns= num(c.cartons||c.ctn||c.total_cartons);
     footGW+=gw; footCBM+=cbm; footCTN+=ctns;
     return `<tr class="ctn-row" data-field="container" data-row="${i}">
-      <td class="ctn-idx" data-field="container_idx">Container ${i+1}</td>
+      <td class="ctn-idx" data-field="container_idx">Cntr ${i+1}</td>
       <td class="ctn-no" data-field="container_no">${esc(no)}</td>
       <td class="ctn-seal" data-field="seal_no">${esc(seal)}</td>
       <td data-field="po">${esc(po)}</td>
       <td class="ctn-ctn" data-field="ctn">${ctns?ctns.toLocaleString('en'):'—'}</td>
-      <td class="ctn-gw" data-field="gw">${gw?fmtNum(gw)+' KGS':'—'}</td>
-      <td class="ctn-cbm" data-field="cbm">${cbm?cbm.toFixed(3)+' CBM':'—'}</td>
+      <td class="ctn-gw" data-field="gw">${gw?fmtNum(gw)+'&nbsp;KGS':'—'}</td>
+      <td class="ctn-cbm" data-field="cbm">${cbm?cbm.toFixed(3)+'&nbsp;CBM':'—'}</td>
     </tr>`;
   }).join("");
 
@@ -123,7 +123,7 @@ export async function renderExwInvoice(pool, p, orders, cust, query){
           AND COALESCE(sale_amount,0) > 0
           AND COALESCE(rebill_status,'') NOT IN ('voided','absorbed')
         ORDER BY (CASE WHEN UPPER(COALESCE(currency,'CNY'))='USD' THEN 0 ELSE 1 END), sale_amount DESC`,
-      [blNo, String(p.id)]
+      [rawBlNo || p.bl_no || "", String(p.id)]
     );
     feeRows = r.rows||[];
   }catch(e){ feeRows=[]; }
@@ -139,7 +139,11 @@ export async function renderExwInvoice(pool, p, orders, cust, query){
     if(cur==="USD")totUSD+=amt; else totCNY+=amt;
     const qty=num(r.qty)||1;
     const up=qty?amt/qty:amt; // 单价=卖价÷数量,保证 qty×单价=金额 对齐(不用成本 unit_price)
-    const basis=r.charge_basis||(qty>1?"每柜":"整票");
+    const rawBasis=r.charge_basis||(qty>1?"每柜":"整票");
+    const basis=feeBasisLabel(rawBasis);
+    if(rawBasis==="per_container" && actualCtnQty>0 && qty!==actualCtnQty){
+      docWarnings.push(`${cat}费用数量与柜数不一致: Qty=${qty}, 柜数=${actualCtnQty}`);
+    }
     return `<tr data-field="fee" data-row="${esc(cat)}" data-cur="${cur}">
       <td class="label" data-field="fee_name">${esc(cat)}${en?` <span style="color:#999;font-size:8.5px">${esc(en)}</span>`:""}</td>
       <td data-field="fee_basis">${esc(basis)}</td>
@@ -153,38 +157,46 @@ export async function renderExwInvoice(pool, p, orders, cust, query){
   const cnyHtml = cnyRows.map(feeRowHtml).join("");
   // 汇总版(?summary=1):海运/港杂各收成一行总额(详情看报价表);totUSD/totCNY 已由上方 map 累加
   const _sum = String(query.summary||"")==="1";
-  const usdShow = (_sum && totUSD>0) ? `<tr data-field="fee" data-cur="USD"><td class="label" data-field="fee_name">海运费总额 Ocean Freight (Total)</td><td>整票</td><td class="c">USD</td><td class="c">1</td><td class="r">${fmtNum(totUSD)}</td><td class="r" data-field="fee_amt">${fmtNum(totUSD)}</td></tr>` : usdHtml;
-  const cnyShow = (_sum && totCNY>0) ? `<tr data-field="fee" data-cur="CNY"><td class="label" data-field="fee_name">港杂及其他总额 Local &amp; Other Charges (Total)</td><td>整票</td><td class="c">CNY</td><td class="c">1</td><td class="r">${fmtNum(totCNY)}</td><td class="r" data-field="fee_amt">${fmtNum(totCNY)}</td></tr>` : cnyHtml;
+  const usdShow = (_sum && totUSD>0) ? `<tr data-field="fee" data-cur="USD"><td class="label" data-field="fee_name">海运费总额 Ocean Freight (Total)</td><td>Per B/L / 每票</td><td class="c">USD</td><td class="c">1</td><td class="r">${fmtNum(totUSD)}</td><td class="r" data-field="fee_amt">${fmtNum(totUSD)}</td></tr>` : usdHtml;
+  const cnyShow = (_sum && totCNY>0) ? `<tr data-field="fee" data-cur="CNY"><td class="label" data-field="fee_name">港杂及其他总额 Local &amp; Other Charges (Total)</td><td>Per B/L / 每票</td><td class="c">CNY</td><td class="c">1</td><td class="r">${fmtNum(totCNY)}</td><td class="r" data-field="fee_amt">${fmtNum(totCNY)}</td></tr>` : cnyHtml;
   const noBill  = feeRows.length===0;
+  const warningHeader = docWarnings.map(w=>encodeURIComponent(w)).join(";");
+  try{
+    const outRes = res || (query && (query.res || query._res || query.response));
+    if(outRes && typeof outRes.setHeader==="function" && warningHeader)outRes.setHeader("X-Doc-Warnings", warningHeader);
+  }catch(e){}
 
   return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
-<title>EXW Full-Charge Invoice — ${esc(p.shipment_no||blNo)}</title>
+<title>EXW Full-Charge Invoice — ${esc(invNo||blNo)}</title>
+<meta name="doc-warnings" content="${esc(warningHeader)}">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;font-size:11px;color:#111;background:#e5e7eb;padding:0}
 .page{max-width:200mm;margin:14px auto;padding:11mm 13mm;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.1)}
-.hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #111;padding-bottom:10px;margin-bottom:14px}
-.hdr-l .co-en{font-size:15px;font-weight:900;color:#111;line-height:1.2}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;border-bottom:3px solid #111;padding-bottom:10px;margin-bottom:14px}
+.hdr-l{min-width:0}
+.hdr-l .co-en{font-size:15px;font-weight:900;color:#111;line-height:1.2;white-space:nowrap}
 .hdr-l .co-cn{font-size:10px;color:#555;margin-top:3px}
 .hdr-l .tag{font-size:8.5px;color:#888;margin-top:4px}
-.hdr-r{text-align:right}
+.hdr-r{flex:0 0 auto;min-width:190px;text-align:right}
 .hdr-r .doc-en{font-size:18px;font-weight:900;color:#111;letter-spacing:.05em}
 .hdr-r .doc-cn{font-size:10px;color:#555;margin-top:1px}
-.hdr-r .inv-no{display:inline-block;font-size:11px;font-weight:800;color:#111;font-family:monospace;border:2px solid #111;border-radius:3px;padding:2px 9px;margin-top:4px}
-.info-grid{display:grid;grid-template-columns:1.05fr 1fr;gap:0 12px;margin-bottom:12px;border:1px solid #e0e0e0;border-radius:4px;overflow:hidden}
-.info-box{font-size:10px}
-.info-box .row{display:grid;grid-template-columns:120px 1fr;border-bottom:1px solid #efefef;min-height:22px}
-.info-box .row:last-child{border-bottom:none}
-.info-box .lbl{background:#f7f7f7;color:#666;font-weight:700;padding:4px 8px;border-right:1px solid #efefef;display:flex;align-items:center}
-.info-box .val{color:#111;font-weight:600;padding:4px 8px;display:flex;align-items:center}
-.info-box .val.big{font-size:12px;font-weight:900}
+.hdr-r .inv-no{display:inline-block;font-size:10px;font-weight:800;color:#111;font-family:monospace;border:2px solid #111;border-radius:3px;padding:2px 8px;margin-top:4px;white-space:nowrap;word-break:keep-all}
+.info-grid{display:grid;grid-template-columns:112px 1fr 112px 1fr;margin-bottom:12px;border:1px solid #e0e0e0;border-radius:4px;overflow:hidden;font-size:10px}
+.info-grid .lbl,.info-grid .val{min-height:22px;padding:4px 8px;border-right:1px solid #efefef;border-bottom:1px solid #efefef;display:flex;align-items:center}
+.info-grid .lbl{background:#f7f7f7;color:#666;font-weight:700}
+.info-grid .val{color:#111;font-weight:600;min-width:0}
+.info-grid .val:nth-child(4n){border-right:none}
+.info-grid .to-val{grid-column:2/5;display:block;font-size:12px;font-weight:900}
+.info-grid .to-addr{font-size:9px;font-weight:400;color:#555;margin-top:2px;line-height:1.35}
 table.charges{width:100%;border-collapse:collapse;font-size:10px;border:1px solid #ccc}
-table.charges thead th{background:#111;color:#fff;padding:7px 9px;text-align:left;font-weight:700;font-size:9.5px}
+table.charges thead th{background:#111;color:#fff;padding:7px 8px;text-align:left;font-weight:700;font-size:9px;white-space:nowrap}
 table.charges thead th.r{text-align:right}
 table.charges thead th.c{text-align:center}
 table.charges tr.section td{background:#333;color:#fff;font-weight:800;font-size:9.5px;text-transform:uppercase;padding:5px 9px}
 table.charges tbody td{padding:7px 9px;border-bottom:1px solid #efefef;font-family:monospace;color:#111}
 table.charges tbody td.label{font-family:inherit;color:#222}
+table.charges tbody td:nth-child(2),table.charges tbody td:nth-child(3),table.charges tbody td:nth-child(4),table.charges tbody td:nth-child(5),table.charges tbody td:nth-child(6){white-space:nowrap}
 table.charges tbody td.r{text-align:right}
 table.charges tbody td.c{text-align:center}
 table.charges tfoot tr td{padding:7px 9px;font-weight:800;font-family:monospace;color:#111;background:#f7f7f7;border-top:2px solid #111}
@@ -202,7 +214,10 @@ table.charges tfoot tr td:last-child{text-align:right}
 .box-tt,.box-bk{padding:9px 11px;background:#f9f9f9;border:1px solid #ddd;border-radius:4px;font-size:9px;line-height:1.8;color:#444}
 .box-tt strong,.box-bk strong{color:#111}
 .box-tt .title,.box-bk .title{font-size:9.5px;font-weight:900;color:#111;margin-bottom:4px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px}
-tr.ctn-row td{padding:5px 10px;border-bottom:1px solid #efefef;color:#111;font-size:9.5px}
+table.cntr{width:100%;border-collapse:collapse;table-layout:fixed}
+table.cntr th{padding:5px 7px;text-align:left;white-space:nowrap;background:#333;color:#fff;font-size:9px;font-weight:700}
+table.cntr th.r{text-align:right}
+tr.ctn-row td{padding:5px 7px;border-bottom:1px solid #efefef;color:#111;font-size:9.5px;white-space:nowrap}
 tr.ctn-row td.ctn-idx{color:#888;font-size:9px}
 tr.ctn-row td.ctn-no{font-family:monospace;font-weight:800}
 tr.ctn-row td.ctn-seal{font-family:monospace;color:#555}
@@ -212,7 +227,7 @@ tr.ctn-row td.ctn-seal{font-family:monospace;color:#555}
 <div class="page">
   <div class="hdr">
     <div class="hdr-l">
-      <div class="co-en">SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.</div>
+      <div class="co-en">SHANGHAI OCEAN BABY INT'L LOGISTICS CO., LTD.</div>
       <div class="co-cn">上海洋宝宝国际物流有限公司</div>
       <div class="tag">Ocean Freight · Air Freight · Express · Integrated Logistics Solutions</div>
     </div>
@@ -234,51 +249,46 @@ tr.ctn-row td.ctn-seal{font-family:monospace;color:#555}
       <span data-field="vessel"><b>Vessel 船名航次:</b> ${esc(vessel)}</span>
     </div>
   </div>`:`<div class="info-grid">
-    <div class="info-box">
-      <div class="row"><div class="lbl">TO (客户名称):</div><div class="val big" data-field="to">${esc(toName)}<div style="font-size:9px;font-weight:400;color:${toAddr?'#555':'#bbb'};margin-top:2px" data-field="to_addr">${toAddr?esc(toAddr):'地址 Address: _______________________________'}</div></div></div>
-      <div class="row"><div class="lbl">SHPT MODE:</div><div class="val">Sea Export</div></div>
-      <div class="row"><div class="lbl">INV/BL NO.:</div><div class="val" data-field="bl_no">${esc(blNo)}</div></div>
-      <div class="row"><div class="lbl">P.O.L (起运港):</div><div class="val" data-field="pol">${esc(p.pol||"—")}</div></div>
-    </div>
-    <div class="info-box">
-      <div class="row"><div class="lbl">DATE (出单日期):</div><div class="val" data-field="date">${genDate}</div></div>
-      <div class="row"><div class="lbl">Vessel/Voyage (船名航次):</div><div class="val" data-field="vessel">${esc(vessel)}</div></div>
-      <div class="row"><div class="lbl">ETD (离港日):</div><div class="val" data-field="etd">${fmtDate(p.etd)}</div></div>
-      <div class="row"><div class="lbl">P.O.D (目的港):</div><div class="val" data-field="pod">${esc(p.pod||"—")}</div></div>
-    </div>
+    <div class="lbl">TO (客户名称):</div><div class="val to-val" data-field="to">${esc(toName)}<div class="to-addr" style="color:${toAddr?'#555':'#bbb'}" data-field="to_addr">${toAddr?esc(toAddr):'地址 Address: _______________________________'}</div></div>
+    <div class="lbl">DATE (出单日期):</div><div class="val" data-field="date">${genDate}</div><div class="lbl">INV/BL NO.:</div><div class="val" data-field="bl_no">${esc(blNo)}</div>
+    <div class="lbl">Vessel/Voyage:</div><div class="val" data-field="vessel">${esc(vessel)}</div><div class="lbl">ETD (离港日):</div><div class="val" data-field="etd">${fmtDate(p.etd)}</div>
+    <div class="lbl">P.O.L (起运港):</div><div class="val" data-field="pol">${esc(p.pol||"—")}</div><div class="lbl">P.O.D (目的港):</div><div class="val" data-field="pod">${esc(p.pod||"—")}</div>
+    <div class="lbl">SHPT MODE:</div><div class="val">Sea Export</div><div class="lbl">Service:</div><div class="val" data-field="service">${esc(serviceScope)}</div>
   </div>`}
 
   ${!isQuote?`<div style="margin-bottom:12px;border:1px solid #ddd;border-radius:4px;overflow:hidden;font-size:10px">
     <div style="background:#111;color:#fff;font-weight:800;font-size:9.5px;padding:6px 10px;display:flex;justify-content:space-between;align-items:center">
       <span data-field="cntr_summary">Containers / 集装箱明细 (${actualCtnQty} × ${esc(ctnType)})</span>
-      <span style="font-weight:700" data-field="freight_term">Freight Term: ${esc(freightTerm)}</span>
+      <span style="font-weight:700" data-field="service">Service: ${esc(serviceScope)}</span>
     </div>
-    <table style="width:100%;border-collapse:collapse">
-      <thead><tr style="background:#333;color:#fff;font-size:9px;font-weight:700">
-        <th style="padding:5px 8px;text-align:left;width:70px">Container #</th>
-        <th style="padding:5px 8px;text-align:left;width:120px">Container No.</th>
-        <th style="padding:5px 8px;text-align:left;width:100px">Seal No.</th>
-        <th style="padding:5px 8px;text-align:left;width:90px">PO / 合同号</th>
-        <th style="padding:5px 8px;text-align:right;width:70px">CTN</th>
-        <th style="padding:5px 8px;text-align:right;width:95px">Gross Weight</th>
-        <th style="padding:5px 8px;text-align:right;width:75px">Volume</th>
+    <table class="cntr">
+      <colgroup><col style="width:54px"><col style="width:112px"><col style="width:88px"><col style="width:112px"><col style="width:48px"><col style="width:116px"><col style="width:78px"></colgroup>
+      <thead><tr>
+        <th>Cntr #</th>
+        <th>Container No.</th>
+        <th>Seal No.</th>
+        <th>PO / 合同号</th>
+        <th class="r">CTN</th>
+        <th class="r">Gross Weight</th>
+        <th class="r">Volume</th>
       </tr></thead>
       <tbody>${ctnRows||`<tr><td colspan="7" style="padding:8px;text-align:center;color:#999">— 待绑定柜信息 —</td></tr>`}</tbody>
       <tfoot><tr style="background:#f7f7f7;font-weight:900;border-top:2px solid #111;font-size:9.5px">
         <td style="padding:6px 8px;color:#666;font-size:9px" data-field="cntr_total">${actualCtnQty} × ${esc(ctnType)}</td>
         <td style="padding:6px 8px" colspan="3"></td>
         <td style="padding:6px 8px;text-align:right;font-family:monospace">${footCTN?footCTN.toLocaleString('en'):'—'}</td>
-        <td style="padding:6px 8px;text-align:right;font-family:monospace">${footGW?fmtNum(footGW)+' KGS':'—'}</td>
-        <td style="padding:6px 8px;text-align:right;font-family:monospace">${footCBM?footCBM.toFixed(3)+' CBM':'—'}</td>
+        <td style="padding:6px 8px;text-align:right;font-family:monospace;white-space:nowrap">${footGW?fmtNum(footGW)+'&nbsp;KGS':'—'}</td>
+        <td style="padding:6px 8px;text-align:right;font-family:monospace;white-space:nowrap">${footCBM?footCBM.toFixed(3)+'&nbsp;CBM':'—'}</td>
       </tr></tfoot>
     </table>
   </div>`:""}
 
   <table class="charges">
+    <colgroup><col style="width:30%"><col style="width:18%"><col style="width:11%"><col style="width:8%"><col style="width:15%"><col style="width:18%"></colgroup>
     <thead><tr>
-      <th>Charge Item (费用明细)</th><th>Charge Unit / 计费单位</th>
-      <th class="c">Currency / 币种</th><th class="c">Qty / 数量</th>
-      <th class="r">Price / 单价</th><th class="r">Amount / 合计</th>
+      <th>Charge Item / 费用明细</th><th>Unit / 计费单位</th>
+      <th class="c">Curr. / 币种</th><th class="c">Qty / 数量</th>
+      <th class="r">Unit Price / 单价</th><th class="r">Amount / 合计</th>
     </tr></thead>
     <tbody>
       ${usdShow?`<tr class="section"><td colspan="6">Ocean Freight | 海运费</td></tr>${usdShow}`:""}
@@ -290,7 +300,7 @@ tr.ctn-row td.ctn-seal{font-family:monospace;color:#555}
     </tfoot>
   </table>
 
-  ${fxRate>0?`<div class="fx-note">* 可任选一种币种全额支付 / Pay the full amount in EITHER currency.</div>
+  ${fxRate>0?`<div class="fx-note">* 任选一种方式: 分币种支付(海运费付USD账户、港杂付CNY账户),或按出单日汇率整张折成一种币种全额支付。Either payment method is acceptable: pay each currency separately (ocean freight to USD A/C and local charges to CNY A/C), or pay the whole invoice in one currency converted at the invoice-date rate.</div>
   <div class="fx-note">开票日期汇率 Invoice Date Rate (<strong>${genDate}</strong>): <strong>1 USD = ${fxRate.toFixed(4)} CNY</strong></div>`:""}
   <div class="pay-grid">
     <div class="pay-box usd">
@@ -312,7 +322,7 @@ tr.ctn-row td.ctn-seal{font-family:monospace;color:#555}
       2. CURRENCY: Ocean freight quoted in USD; local charges in CNY.<br>
       3. This is a QUOTATION for reference only, NOT an invoice for payment.<br>
       <span style="color:#c00;font-weight:700">* 以上报价如遇市场波动、船期变更或改单等特殊情况,将实时更新,以我司最终确认为准。The above rates are subject to real-time update in the event of market fluctuation, schedule change or order amendment; our final confirmation shall prevail.</span>`:`1. PAYMENT DUE: Please arrange payment strictly within the agreed credit term. Late payment may delay release of the Bill of Lading or cargo.<br>
-      2. CURRENCY: Ocean freight settled in USD; local charges settled in CNY, each remitted to the corresponding account.<br>
+      2. PAYMENT OPTION: Pay USD/CNY items separately to the corresponding accounts, or pay the whole invoice in either USD or CNY using the invoice-date exchange rate shown above. 付款方式: 可按币种分别支付至对应账户,也可按上方出单日汇率整张折美金或人民币全额支付。<br>
       3. LIABILITY: All business is transacted under our Standard Trading Conditions.`}
     </div>
     ${!isQuote?`<div class="box-bk">
@@ -326,6 +336,5 @@ tr.ctn-row td.ctn-seal{font-family:monospace;color:#555}
       <span style="color:#c00;font-size:8px">* Please check the account number carefully before remittance.</span>
     </div>`:""}
   </div>
-  ${refNo?`<div style="text-align:right;margin-top:8px;font-size:8px;color:#bbb;font-family:monospace" data-field="ref_no">Ref: ${esc(refNo)}</div>`:""}
 </div>${ap}</body></html>`;
 }

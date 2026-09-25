@@ -33,9 +33,10 @@ async function sendWecom(text) {
 async function resolveToken(pool, token) {
   const tr = await pool.query(
     `SELECT it.company_code, it.purpose, it.expires_at,
-            c.name_cn AS factory_name, c.raw AS factory_raw
+            it.order_no,
+            co.name_cn AS factory_name
        FROM _idx_tokens it
-       LEFT JOIN customers c ON c.company_code = it.company_code
+       LEFT JOIN companies co ON co.code = it.company_code
       WHERE it.token = $1`,
     [token]
   );
@@ -43,24 +44,45 @@ async function resolveToken(pool, token) {
   const row = tr.rows[0];
   if (new Date(row.expires_at) < new Date()) return { status: "expired", row };
 
-  // Find the token record inside customers.raw.activeTokens to get order_no
-  const activeTokens = row.factory_raw?.activeTokens || [];
-  const trec = activeTokens.find((t) => t.token === token) || null;
-  const orderNo = trec?.orderNo || null;
+  const orderNo = (row.order_no || "").trim() || null;
+  if (!orderNo) return { status: "invalid", reason: "token_no_order", row };
 
-  return { status: "ok", row, trec, orderNo };
+  return { status: "ok", row, orderNo };
 }
 
 // Fields the factory is allowed to see — no cost/margin/factory pricing
-function cropOrder(o) {
+async function cropOrder(pool, o) {
   if (!o) return null;
   const raw = o.raw || {};
-  const products = (raw.products || o.products || []).map((p, idx) => ({
-    idx,
-    name: p.productName || p.name || p.desc || `产品${idx + 1}`,
-    qty:  p.qty ?? p.quantity ?? p.boxes ?? null,
-    unit: p.unit || "箱",
-  }));
+  let products = [];
+
+  if (o.id) {
+    const lr = await pool.query(
+      `SELECT id, sort_order, sku, product_name, qty_ctn, unit
+         FROM order_line_items
+        WHERE order_id = $1
+        ORDER BY sort_order NULLS LAST, id`,
+      [o.id]
+    );
+    products = lr.rows.map((li, idx) => ({
+      idx: li.sort_order ?? li.id ?? idx,
+      sku: li.sku || "",
+      name: li.product_name || li.sku || `产品${idx + 1}`,
+      qty: li.qty_ctn != null ? Number(li.qty_ctn) : null,
+      unit: li.unit || "箱",
+    }));
+  }
+
+  if (!products.length) {
+    products = (raw.products || o.products || []).map((p, idx) => ({
+      idx,
+      sku: p.sku || "",
+      name: p.productName || p.name || p.desc || `产品${idx + 1}`,
+      qty: p.qty ?? p.quantity ?? p.boxes ?? null,
+      unit: p.unit || "箱",
+    }));
+  }
+
   return {
     order_no:      o.order_no,
     buyer_name:    o.company_name_cn || o.company_name_en || o.company_code || "",
@@ -84,7 +106,11 @@ export default async function handler(req, res) {
     if (!token) return res.status(400).json({ ok: false, error: "token required" });
 
     const ctx = await resolveToken(pool, token);
-    if (ctx.status === "invalid") return res.status(404).json({ ok: false, status: "invalid", error: "token_not_found" });
+    if (ctx.status === "invalid") {
+      const reason = ctx.reason || "token_not_found";
+      const code = reason === "token_no_order" ? 400 : 404;
+      return res.status(code).json({ ok: false, status: "invalid", reason, error: reason });
+    }
     if (ctx.status === "expired") return res.status(410).json({ ok: false, status: "expired", error: "token_expired" });
 
     let order = null;
@@ -92,7 +118,7 @@ export default async function handler(req, res) {
 
     if (ctx.orderNo) {
       const or = await pool.query(
-        `SELECT order_no, company_code, company_name_cn, company_name_en,
+        `SELECT id, order_no, company_code, company_name_cn, company_name_en,
                 total_qty, etd, delivery_date, status,
                 confirmed_ship_date, confirmed_qty, factory_confirmed_at,
                 factory_confirmed_by, factory_confirmation_id,
@@ -102,7 +128,7 @@ export default async function handler(req, res) {
       );
       if (or.rows.length) {
         const o = or.rows[0];
-        order = cropOrder(o);
+        order = await cropOrder(pool, o);
 
         // Return existing confirmation if present
         if (o.factory_confirmed_at) {
@@ -143,7 +169,11 @@ export default async function handler(req, res) {
     if (!token) return res.status(400).json({ ok: false, error: "token required" });
 
     const ctx = await resolveToken(pool, token);
-    if (ctx.status === "invalid") return res.status(404).json({ ok: false, error: "token_not_found" });
+    if (ctx.status === "invalid") {
+      const reason = ctx.reason || "token_not_found";
+      const code = reason === "token_no_order" ? 400 : 404;
+      return res.status(code).json({ ok: false, status: "invalid", reason, error: reason });
+    }
     if (ctx.status === "expired") return res.status(410).json({ ok: false, error: "token_expired" });
     if (!ctx.orderNo)             return res.status(400).json({ ok: false, error: "token has no associated order" });
 

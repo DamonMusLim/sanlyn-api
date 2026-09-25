@@ -292,6 +292,7 @@ export async function buildShippingPlanDocData(pool, id, page, actor = null, que
     data.doc_no = await issueDocNo(pool, {
       prefix: "PC", seed: docSeed, blNo: p.bl_no, noDate: true, noSeq: true, docDate,
       docType: "fob_portcharge", totalCny, generatedBy: actor,
+      templateCode: "fob_portcharge",  // 注册表 fob_portcharge.renderer = shipping-plan-pdf.js#isFobPortcharge
       snapshot: { shipment: common, factory_code: pc.factoryCode, charges: pc.rows, used_fallback_card: pc.usedFallbackCard, warnings: pc.warnings || [] },
     });
     return data;
@@ -324,6 +325,7 @@ export async function buildShippingPlanDocData(pool, id, page, actor = null, que
   data.doc_no = await issueDocNo(pool, {
     prefix: "FI", seed: docSeed, blNo: p.bl_no, noDate: true, noSeq: true, docDate,
     docType: "fob_invoice", totalUsd, totalCny: data.totals.cny, generatedBy: actor,
+    templateCode: "fob_invoice",  // 注册表 fob_invoice.renderer = shipping-plan-pdf.js#isFobInvoice
     snapshot: { shipment: common, containers, charges: data.charges, warnings },
   });
   return data;

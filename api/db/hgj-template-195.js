@@ -5,7 +5,7 @@ import { requireAuth } from "../auth.js";
 const TEMPLATE = {
   code: "hgj-195",
   name: "海管家195模板",
-  version: "v2026.08.29-1",
+  version: "v2026.09.05-1",
 };
 
 const MAP = [
@@ -45,7 +45,7 @@ const MAP = [
   ["fee", "rate_source", "费率来源", "service_rates", "source"],
   ["invoice", "invoice_no", "发票号", "invoice_records", "invoice_no"],
   ["invoice", "invoice_amount", "发票金额", "invoice_records", "amount"],
-  ["invoice", "payment_status", "回款状态", "payments", "status"],
+  ["invoice", "payment_status", "回款状态", "finance_payments", "status"],
 ];
 
 const TABLES = Array.from(new Set(MAP.map(row => row[3])));
@@ -115,7 +115,7 @@ async function loadCoverage(pool, columns, rows) {
       const col = quoteIdent(field.source_column);
       return `count(*) FILTER (WHERE ${col} IS NOT NULL AND NULLIF(btrim(${col}::text), '') IS NOT NULL) AS c${idx}`;
     }).join(", ");
-    const result = await pool.query(`SELECT count(*) AS total, ${selectSql} FROM ${tableSql}`);
+    const result = await pool.query(`SELECT count(*) AS total, ${selectSql} FROM public.${tableSql}`);
     const data = result.rows[0] || {};
     const total = Number(data.total || 0);
     fields.forEach((field, idx) => {
@@ -143,10 +143,10 @@ async function sampleForTable(pool, columns, table, recordKey) {
   if (recordKey && keyColumns.length) {
     const clauses = keyColumns.map((key, idx) => `${quoteIdent(key)}::text = $${idx + 1}`);
     const params = keyColumns.map(() => recordKey);
-    const hit = await pool.query(`SELECT * FROM ${tableSql} WHERE ${clauses.join(" OR ")} LIMIT 1`, params);
+    const hit = await pool.query(`SELECT * FROM public.${tableSql} WHERE ${clauses.join(" OR ")} LIMIT 1`, params);
     if (hit.rows[0]) return hit.rows[0];
   }
-  const fallback = await pool.query(`SELECT * FROM ${tableSql} ORDER BY ${orderSql} LIMIT 1`);
+  const fallback = await pool.query(`SELECT * FROM public.${tableSql} ORDER BY ${orderSql} LIMIT 1`);
   return fallback.rows[0] || null;
 }
 
@@ -163,16 +163,26 @@ async function loadValues(pool, columns, rows, recordKey) {
   return values;
 }
 
+function missingReason(row) {
+  if (!row) return "缺映射";
+  return row.reason || `缺字段 ${row.source_table}.${row.source_column}`;
+}
+
 function renderText(templateText, values, rows) {
   const missing = [];
   const rendered = clean(templateText).replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, (_m, key) => {
     const value = values[key];
     if (!isBlank(value)) return value;
     const row = rows.find(item => item.placeholder === key);
-    missing.push(key);
-    return row ? `未接入(${row.source_table}.${row.source_column})` : "未接入(缺映射)";
+    missing.push({ placeholder: key, reason: missingReason(row), fill_rate: row?.fill_rate ?? null });
+    return row ? `未接入(${missingReason(row)})` : "未接入(缺映射)";
   });
-  return { rendered, missing_placeholders: Array.from(new Set(missing)) };
+  const seen = new Set();
+  return { rendered, missing_placeholders: missing.filter(item => {
+    if (seen.has(item.placeholder)) return false;
+    seen.add(item.placeholder);
+    return true;
+  }) };
 }
 
 export default async function handler(req, res) {
@@ -190,7 +200,7 @@ export default async function handler(req, res) {
     const recordKey = clean(req.method === "POST" ? req.body?.record_key : req.query?.record_key);
     const values = await loadValues(pool, columns, rows, recordKey);
     const templateText = req.method === "POST" ? clean(req.body?.template_text) : clean(req.query?.template_text);
-    const preview = templateText ? renderText(templateText, values, rows) : { rendered: "", missing_placeholders: [] };
+    const preview = templateText ? renderText(templateText, values, mapped) : { rendered: "", missing_placeholders: [] };
     const ready = mapped.filter(row => row.state === "ready").length;
     return res.json({
       success: true,

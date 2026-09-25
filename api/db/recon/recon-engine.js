@@ -31,6 +31,14 @@ function resolveStatus({ expectedAmount, uploadedAmount, diffAmount, invoiceCoun
 
 function buildActualMap(actualRows, matchKey, actualField) {
   const map = new Map();
+  const invoiceStats = new Map();
+
+  for (const row of actualRows) {
+    const key = keyOf(row, matchKey);
+    const invoiceId = key && row?.invoice_id !== null && row?.invoice_id !== undefined ? String(row.invoice_id) : "";
+    if (!invoiceId) continue;
+    invoiceStats.set(invoiceId, { count: (invoiceStats.get(invoiceId)?.count || 0) + 1, seen: 0 });
+  }
 
   for (const row of actualRows) {
     const key = keyOf(row, matchKey);
@@ -41,8 +49,18 @@ function buildActualMap(actualRows, matchKey, actualField) {
       invoice_count: 0,
       invoices: [],
     };
+    const invoiceId = row?.invoice_id !== null && row?.invoice_id !== undefined ? String(row.invoice_id) : "";
+    const stat = invoiceId ? invoiceStats.get(invoiceId) : null;
+    const fullAmount = amount(row, actualField) || 0;
+    let rowAmount = fullAmount;
 
-    cur.actual_amount = sumMoney(cur.actual_amount, amount(row, actualField) || 0);
+    if (stat?.count > 1) {
+      stat.seen += 1;
+      const share = money(fullAmount / stat.count) || 0;
+      rowAmount = stat.seen === stat.count ? money(fullAmount - share * (stat.count - 1)) || 0 : share;
+    }
+
+    cur.actual_amount = sumMoney(cur.actual_amount, rowAmount);
     cur.invoice_count += 1;
     cur.invoices.push(row);
     map.set(key, cur);

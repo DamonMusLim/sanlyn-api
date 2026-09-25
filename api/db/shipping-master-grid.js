@@ -9,6 +9,7 @@ export async function loadShippingMasterGrid(pool, q = {}) {
   const from = String(q.from || "2026-01-01").trim();
   const sql = `
 SELECT s._id AS id, s.shipment_no, s.bl_no, s.mbl_no, s.hbl_no, s.so_no,
+  p.process_cn, p.process_order,
   s.vessel, s.voyage,
   -- ⚖️ 2026-07-23 铁律:港口一律走 port_id -> ports.name_en,绝不直接读自由文本
   --    (pol/pod 文本有 20 种写法,历史裸名故意不强改——改了就是制造错误事实)
@@ -21,6 +22,7 @@ SELECT s._id AS id, s.shipment_no, s.bl_no, s.mbl_no, s.hbl_no, s.so_no,
   s.container_no, s.container_qty, s.container_type,
   s.forwarder_cn, s.customs_cn, s.customer, s.issuing_company, s.source_system,
   COALESCE(s.current_status_cn, s.current_status, s.flow_status, s.status) AS status,
+  s.business_type, s.exception_flag, s.exception_type, s.exception_note,
   s.freight_cost, s.freight_sale_usd,
   to_char(s.created_at,'YYYY-MM-DD') AS created,
   -- 子行:这票带了哪些订单。⚖️ order_nos / contract_nos 是数组,一票多单是常态(BL才是钥匙)
@@ -56,6 +58,7 @@ SELECT s._id AS id, s.shipment_no, s.bl_no, s.mbl_no, s.hbl_no, s.so_no,
     ELSE 'missing'        -- 是自家客户却没挂上单 → 真缺,要补
   END AS kind
 FROM shipping_plans s
+LEFT JOIN v_shipping_plan_process p ON p.id = s.id
 LEFT JOIN ports pol_p ON pol_p.id = s.pol_port_id
 LEFT JOIN ports pod_p ON pod_p.id = s.pod_port_id
 WHERE s.deleted_at IS NULL   -- 🩸0812审计:漏了这句,7张已软删的重复/作废票混进了"今年88票"(含测试数据 __TEST_CXLDEL__)

@@ -257,8 +257,26 @@ function paySelect(name, cols) {
   if (name === "amount") return `${payAmountExpr(cols)} AS amount`;
   return cols.has(name) ? `p.${sqlIdent(name)} AS ${sqlIdent(name)}` : `NULL AS ${sqlIdent(name)}`;
 }
-function activeLinkWhere(cols, alias = "") {
-  return cols.has("status") ? ` WHERE COALESCE(${alias}status,'applied') <> 'voided'` : "";
+function linkMatchParts(payCols, linkCols) {
+  const parts = [];
+  const targetScope = linkCols.has("target_type") ? " AND COALESCE(l.target_type,'') IN ('ar','contract','order','payment')" : "";
+  if (linkCols.has("payment_id") && payCols.has("id")) parts.push("l.payment_id::text = p.id::text");
+  if (linkCols.has("target_id") && payCols.has("contract_no")) parts.push(`(NULLIF(l.target_id::text,'') = NULLIF(p.contract_no::text,'')${targetScope})`);
+  if (linkCols.has("target_id") && payCols.has("order_no")) parts.push(`(NULLIF(l.target_id::text,'') = NULLIF(p.order_no::text,'')${targetScope})`);
+  return parts;
+}
+function linkJoinClause(payCols, linkCols) {
+  const parts = linkMatchParts(payCols, linkCols);
+  if (!parts.length) return "";
+  const status = linkCols.has("status") ? " AND COALESCE(l.status,'applied') <> 'voided'" : "";
+  return `LEFT JOIN ${TABLE} l ON (${parts.join(" OR ")})${status}`;
+}
+function linkMatchBasis(payCols, linkCols) {
+  const basis = [];
+  if (linkCols.has("payment_id") && payCols.has("id")) basis.push(`${TABLE}.payment_id=${PAY_TABLE}.id`);
+  if (linkCols.has("target_id") && payCols.has("contract_no")) basis.push(`${TABLE}.target_id=${PAY_TABLE}.contract_no`);
+  if (linkCols.has("target_id") && payCols.has("order_no")) basis.push(`${TABLE}.target_id=${PAY_TABLE}.order_no`);
+  return basis;
 }
 function paymentTenantWhere(cols, params, req) {
   if (req.user?.role === "admin" || req.user?.role === "superadmin") return null;
@@ -290,10 +308,9 @@ async function paymentRows(pool, payCols, linkCols, query, req) {
     }
   }
   params.push(limit);
-  const linkAmount = linkCols.has("amount_applied") ? "SUM(l.amount_applied)" : "NULL";
-  const linkCount = linkCols.has("id") ? "COUNT(l.id)::int" : "NULL";
-  const linkStatus = linkCols.has("status") ? " AND COALESCE(l.status,'applied') <> 'voided'" : "";
-  const linkJoin = linkCols.has("payment_id") ? `LEFT JOIN ${TABLE} l ON l.payment_id::text = p.id::text${linkStatus}` : "";
+  const linkJoin = linkJoinClause(payCols, linkCols);
+  const linkAmount = linkJoin && linkCols.has("amount_applied") ? "SUM(l.amount_applied)" : "NULL";
+  const linkCount = linkJoin && linkCols.has("id") ? "COUNT(DISTINCT l.id)::int" : "NULL";
   const selected = PAY_FIELDS.map(([name]) => paySelect(name, payCols)).join(", ");
   const order = [
     payCols.has("payment_date") ? "p.payment_date DESC NULLS LAST" : "",
@@ -314,7 +331,7 @@ async function paymentRows(pool, payCols, linkCols, query, req) {
       ORDER BY ${order} LIMIT $${params.length}`,
     params
   );
-  return { rows: r.rows.map((x) => ({ ...x, amount: has(x.amount) ? Number(x.amount) : null, settled_amount: has(x.settled_amount) ? Number(x.settled_amount) : null })) };
+  return { rows: r.rows.map((x) => ({ ...x, amount: has(x.amount) ? Number(x.amount) : null, settled_amount: has(x.settled_amount) ? Number(x.settled_amount) : null, settlement_match_basis: linkMatchBasis(payCols, linkCols) })) };
 }
 function alertsFor(row) {
   const out = [];
@@ -367,12 +384,12 @@ async function paymentStats(pool, payCols, linkCols, query, req) {
     const parts = names.filter((n) => payCols.has(n)).map((n) => `p.${sqlIdent(n)}::text ILIKE $${params.length + 1}`);
     if (parts.length) { params.push(`%${keyword}%`); where.push(`(${parts.join(" OR ")})`); }
   }
-  const agg = linkCols.has("payment_id")
-    ? `(SELECT payment_id::text, COUNT(*)::int AS n FROM ${TABLE}${activeLinkWhere(linkCols)} GROUP BY payment_id::text)`
-    : "(SELECT NULL::text AS payment_id, NULL::int AS n WHERE false)";
+  const linkJoin = linkJoinClause(payCols, linkCols);
+  if (!linkJoin) return { total_receipts: null, linked_receipts: null, unlinked_receipts: null };
   const r = await pool.query(
-    `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE COALESCE(a.n,0)>0)::int AS linked
-       FROM ${PAY_TABLE} p LEFT JOIN ${agg} a ON a.payment_id=p.id::text
+    `SELECT COUNT(DISTINCT p.id)::int AS total,
+            COUNT(DISTINCT p.id) FILTER (WHERE l.id IS NOT NULL)::int AS linked
+       FROM ${PAY_TABLE} p ${linkJoin}
       ${where.length ? "WHERE " + where.join(" AND ") : ""}`,
     params
   );

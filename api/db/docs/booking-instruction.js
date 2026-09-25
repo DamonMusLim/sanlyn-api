@@ -8,11 +8,22 @@
 // 由 so-sq-freight.js 在 type==="so" 时前置转发调用。DB 调用 try/catch，失败用 ctx 兜底，绝不抛。
 import { getPool } from "../db.js";
 
-const TEMPLATE_VERSION = "v3";
-
 function num(x) { const n = Number(x); return isFinite(n) ? n : 0; }
 function fmtNum(x, d) { const n = num(x); return d != null ? n.toFixed(d) : String(n); }
 const nz = v => v != null && String(v).trim() !== "";
+const uniq = arr => Array.from(new Set(arr.map(v => String(v == null ? "" : v).trim()).filter(Boolean)));
+const commonPrefix = arr => {
+  const vals = uniq(arr);
+  if (!vals.length) return "";
+  let prefix = vals[0];
+  for (const v of vals.slice(1)) {
+    let i = 0;
+    while (i < prefix.length && i < v.length && prefix[i] === v[i]) i++;
+    prefix = prefix.slice(0, i);
+    if (!prefix) break;
+  }
+  return prefix;
+};
 
 export async function renderBookingInstruction(ctx) {
   let { sp, spraw, soNo, ap, esc, pick, fmtD } = ctx;
@@ -68,21 +79,21 @@ export async function renderBookingInstruction(ctx) {
   const compById = new Map();
   if (compIds.length) {
     const crows = await q(
-      `select id, code, name_cn, name_en, address, contact_name, contact_phone, einvoice_email, country
+      `select id, code, name_cn, name_en, address, contact_name, contact_phone, contact_email, country
          from companies where id = any($1)`, [compIds]);
     crows.forEach(c => compById.set(Number(c.id), c));
   }
   const asParty = c => c ? {
     nameEN: c.name_en || "", nameCN: c.name_cn || "", address: c.address || "",
-    phone: c.contact_phone || "", contactName: c.contact_name || "", email: c.einvoice_email || "",
+    phone: c.contact_phone || "", contactName: c.contact_name || "", email: c.contact_email || "",
   } : null;
   const _shipperById = asParty(compById.get(_cid(orow0.issuing_company_id)));
   if (_shipperById) {
     shipper = _shipperById;
     if (!nz(shipper.nameCN) && !nz(shipper.nameEN)) shipper.nameCN = issuing;
   } else if (issuing) { // 兜底：没 ID 才按名字撞
-    const crows = await q(`select name_en, name_cn, address, contact_phone, contact_name, einvoice_email from companies where name_cn = $1 or name_en = $1 limit 1`, [issuing]);
-    if (crows[0]) shipper = { nameEN: crows[0].name_en || "", nameCN: crows[0].name_cn || issuing, address: crows[0].address || "", phone: crows[0].contact_phone || "", contactName: crows[0].contact_name || "", email: crows[0].einvoice_email || "" };
+    const crows = await q(`select name_en, name_cn, address, contact_phone, contact_name, contact_email from companies where name_cn = $1 or name_en = $1 limit 1`, [issuing]);
+    if (crows[0]) shipper = { nameEN: crows[0].name_en || "", nameCN: crows[0].name_cn || issuing, address: crows[0].address || "", phone: crows[0].contact_phone || "", contactName: crows[0].contact_name || "", email: crows[0].contact_email || "" };
     else shipper.nameCN = issuing;
   }
   const buyerCo = asParty(compById.get(_cid(orow0.customer_company_id)) || compById.get(_cid(sp.customer_company_id)));
@@ -103,7 +114,7 @@ export async function renderBookingInstruction(ctx) {
     cnFirst ? shipper.nameEN : "",
     shipper.address,
     shipper.phone ? "电话 Tel: " + shipper.phone : "",
-    "邮箱 Email: " + (shipper.email || ""),
+    shipper.email ? "邮箱 Email: " + shipper.email : "",
     "联系人 Attn: " + (shipper.contactName || "")
   ].filter(x => x != null && x !== "").join("\n");
 
@@ -131,11 +142,7 @@ export async function renderBookingInstruction(ctx) {
   let totQty = 0, totGw = 0, totCbm = 0;
   cargo.forEach(c => { totQty += num(c.qty); totGw += num(c.gw); totCbm += num(c.cbm); });
 
-  // 3) 集装箱：托书只需柜型/柜量（无箱号/车牌——那是装船后执行数据）
-  const ctrs = await q(
-    `select container_type from container_bookings where (bl_no = $1 and $1 <> '') or (shipping_plan_id = $2) order by id`, [blNo, planId]);
-
-  // 4) 委托方式（自理/代办）——托书上只是"要不要委托我们"的意向勾选，不带车牌/车队执行数据
+  // 3) 委托方式（自理/代办）——托书上只是"要不要委托我们"的意向勾选，不带车牌/车队执行数据
   let svc = {};
   if (planId) {
     const srows = await q(`select customs_arrange, trucking_arrange from shipping_plans where id = $1`, [planId]);
@@ -161,10 +168,8 @@ export async function renderBookingInstruction(ctx) {
   //   港口优先 ports 表 ID，其次才是各处的文本列
   const pol = pick(portText(sp.pol_port_id), portText(orow0.pol_port_id), sp.pol, _raw.pol, orow0.pol, _oraw.pol, "");
   const pod = pick(portText(sp.pod_port_id), portText(orow0.pod_port_id), sp.pod, _raw.pod, orow0.destination_port, _oraw.destinationPort, _oraw.pod, "");
-  // ⚠️2026-07-24：原来兜底写死 "40HC"——全库真值分布 40HQ 107 / 20GP 20 / 40HC 11，
-  //   写死等于给每张没录柜型的托书编一个柜型（CY00406 实际是 20GP，被印成 40HC）。空就留空让人选。
-  const ctnType = pick(sp.container_type, _raw.containerType, (ctrs[0] && ctrs[0].container_type), sp.factory_container_type, "");
-  const ctnQty = ctrs.length || num(sp.container_qty) || 1;
+  const ctnType = pick(sp.container_type, "");
+  const ctnQty = nz(sp.container_qty) ? fmtNum(sp.container_qty) : "";
   // 🔑 提单两方（Damon 0724 定）：**收货人=实际收货那家**（订单上的第三方收货抬头，如沙特 PAWS AND TAILS），
   //   **通知人=客户主体公司**（customer_company_id → companies，ID 带出抬头+注册地址+Attn，如新加坡 Eversparkles）。
   //   订单没有第三方收货抬头时，两方都是客户主体公司——通知人**照样把公司信息写全，不再硬编 "SAME AS CONSIGNEE" 这种死字符串**。
@@ -181,35 +186,42 @@ export async function renderBookingInstruction(ctx) {
     ? (nz(buyerText) ? buyerText : [buyerName, [pick(_raw.consignee_contact, ""), pick(_raw.consignee_phone, ""), pick(_raw.consignee_country, "")].filter(Boolean).join(" · ")].filter(Boolean).join("\n"))
     : _thirdParty;
   const notify = pick(_raw.notify, buyerText, buyerName, "");
-  const terms = String(pick(_raw.tradeTerms, _raw.incoterm, sp.freight_term, orow0.trade_terms, orow0.freight_term, _oraw.tradeTerms, "FOB")).toUpperCase();
-  const releaseRaw = String(pick(sp.release_type, _raw.release_type, "")).toLowerCase();
-  // ⚠️2026-07-24：原来 SWB 被正则并进"电放"，托书上没有 SWB 这一档。
-  //   全库 release_type：SWB 211 / 电放 11 / telex 3 / 空 34 —— **我方基本盘是 SWB**，故空值默认 SWB。
-  const isOriginal = /正本|original/.test(releaseRaw);
-  const isSwb = !isOriginal && (/swb|sea ?way/.test(releaseRaw) || !nz(releaseRaw));
-  const isTelex = !isOriginal && !isSwb && /电放|telex/.test(releaseRaw);
+  const termsRaw = String(pick(sp.freight_term, "")).trim();
+  const terms = termsRaw.toUpperCase();
+  const isKnownTerm = ["FOB", "EXW", "FCA"].includes(terms);
+  const releaseRaw = String(pick(sp.release_type, "")).trim();
+  const releaseNorm = releaseRaw.toLowerCase();
+  const isOriginal = nz(releaseRaw) && /正本|original/.test(releaseNorm);
+  const isSwb = nz(releaseRaw) && /^(swb|海运单)$/i.test(releaseRaw);
+  const isTelex = nz(releaseRaw) && !isOriginal && !isSwb && /电放|telex/.test(releaseNorm);
+  const isOtherRelease = nz(releaseRaw) && !isOriginal && !isSwb && !isTelex;
   // R1: mutually exclusive on pre-fill (syncChk2 only fires on user change, not load)
   const showOrig = isOriginal, showSwb = isSwb, showTelex = isTelex;
-  const cargoReady = dt(pick(sp.cargo_ready_date, _raw.cargo_ready, ""));
-  // 备注：系统派生的内部记账备注（"[从订单确认发货派生] 36-LL-1 …"）不上对外托书——那会把内部订单号漏给货代/船司
-  const _rmk = String(pick(sp.remarks, _raw.remarks, ""));
+  const cargoReady = dt(pick(sp.cargo_ready_date, ""));
+  // 备注：只取外发备注字段；sp.remarks 是内部备注，不能上对外托书。
+  const _rmk = String(pick(sp.booking_remarks, sp.book_remark, ""));
   // 系统内部标记：[从…派生] [反查补全…] [自动同步] [导入…] 之类，一律不上对外单
   const remarkText = /^\s*\[[^\]]*(从|系统|自动|反查|补全|待补|同步|迁移|导入|派生)/.test(_rmk) ? "" : _rmk;
   const docNo = "SBI-" + (blNo || cyNo || soNo || "DRAFT");
 
-  // 货物表行（textarea/input 预填，原生可编辑）
-  const cargoRowsHtml = (cargo.length ? cargo : [{}]).map(c => {
-    // declaration_name(中文报关品名) 原来查了却没用 → 只有中文品名的行会退化成光秃秃一行 HS
-    const nameLine = [c.bl_description || c.declaration_name || "", c.declaration_name_en || ""].filter(Boolean).join(" ");
-    const descLines = [nameLine, c.hs_code ? "HS: " + c.hs_code : ""].filter(Boolean).join("\n");
-    return `<tr>
+  // 货物表行：展示层只输出一行，数量/毛重/体积使用上方现有合计逻辑。
+  const blDescriptions = uniq((cargo || []).map(c => c.bl_description));
+  const cargoDescName = pick(
+    blDescriptions.length === 1 ? blDescriptions[0] : "",
+    ...(cargo || []).map(c => pick(c.declaration_name_en, "")),
+    ...(cargo || []).map(c => pick(c.declaration_name, "")),
+    ""
+  );
+  const hsCodes = uniq((cargo || []).map(c => c.hs_code));
+  const hsText = hsCodes.length === 1 ? hsCodes[0] : commonPrefix(hsCodes);
+  const cargoDescLines = [cargoDescName, hsText.length >= 4 ? "HS: " + hsText : ""].filter(Boolean).join("\n");
+  const cargoRowsHtml = `<tr>
       <td><input type="text" value="${a(cargo.length ? "N/M" : "")}" /></td>
-      <td><input type="text" value="${a(c.qty != null ? fmtNum(c.qty) + " ctns" : "")}" /></td>
-      <td><textarea rows="2">${esc(descLines)}</textarea></td>
-      <td><input type="text" value="${a(c.gw != null ? fmtNum(c.gw, 0) + " kgs" : "")}" /></td>
-      <td><input type="text" value="${a(c.cbm != null ? fmtNum(c.cbm, 3) + " cbm" : "")}" /></td>
+      <td><input type="text" value="${a(totQty ? fmtNum(totQty) + " ctns" : "")}" /></td>
+      <td><textarea rows="2">${esc(cargoDescLines)}</textarea></td>
+      <td><input type="text" value="${a(totGw ? fmtNum(totGw, 0) + " kgs" : "")}" /></td>
+      <td><input type="text" value="${a(totCbm ? fmtNum(totCbm, 3) + " cbm" : "")}" /></td>
     </tr>`;
-  }).join("") + (cargo.length ? `<tr class="total-row"><td></td><td><input type="text" value="${a(totQty ? fmtNum(totQty) + " ctns" : "")}" /></td><td style="text-align:right;font-weight:700">合计 TOTAL</td><td><input type="text" value="${a(totGw ? fmtNum(totGw, 0) + " kgs" : "")}" /></td><td><input type="text" value="${a(totCbm ? fmtNum(totCbm, 3) + " cbm" : "")}" /></td></tr>` : "");
 
   // 选项按全库真值补齐（原表缺 40HQ——恰恰是最常见的 107 票）；柜型未录时首项空白且被选中，不代填
   const CTN_TYPES = ["40HQ", "40HC", "40GP", "20GP", "20ST", "45HQ", "LCL"];
@@ -276,7 +288,6 @@ input:focus, textarea:focus, select:focus { background: #fffde7 !important; }
 .btn-clear { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
 .btn-ver { background: #1f3a5f; color: #fff; }
 .btn-ver.on { background: #e0a800; color: #111; }
-.foot { text-align:center; font-size:8.5px; color:#8a94a0; font-style:italic; margin:3px 0 8px; }
 body.mode-carrier .vfull { display: none !important; }
 @media print { body { background: #fff; padding: 0; } .page { box-shadow: none; margin: 0; padding: 5mm 8mm; } .no-print { display: none !important; } input:focus, textarea:focus { background: transparent !important; } }
 </style></head>
@@ -325,20 +336,20 @@ body.mode-carrier .vfull { display: none !important; }
         <label class="term-item"><input type="checkbox" id="t_fob" ${ck(terms === "FOB")} /> FOB</label>
         <label class="term-item"><input type="checkbox" id="t_exw" ${ck(terms === "EXW")} /> EXW</label>
         <label class="term-item"><input type="checkbox" id="t_fca" ${ck(terms === "FCA")} /> FCA</label>
-        <span class="other-label">其他：<input class="other-input" type="text" id="t_other" placeholder="______" /></span>
+        <label class="term-item"><input type="checkbox" id="t_other_chk" ${ck(nz(termsRaw) && !isKnownTerm)} /> 其他：<input class="other-input" type="text" id="t_other" value="${a(nz(termsRaw) && !isKnownTerm ? termsRaw : "")}" placeholder="______" /></label>
       </div>
       <div class="check-row"><span class="q">是否有电池/液体货物？Product with Battery：</span><span class="yn">
         <label><input type="checkbox" id="battery_yes" onchange="syncChk(this,'battery_no')" /> YES</label>
-        <label><input type="checkbox" id="battery_no" onchange="syncChk(this,'battery_yes')" checked /> NO</label></span></div>
+        <label><input type="checkbox" id="battery_no" onchange="syncChk(this,'battery_yes')" /> NO</label></span></div>
       <div class="msds-note">如果是，请提供MSDS<br><em>If YES, Pls provide the MSDS Test report of Batteries</em></div>
       <div class="check-row"><span class="q">是否有实木包装 / 木架 / 托盘？</span><span class="yn">
         <label><input type="checkbox" id="wood_yes" onchange="syncChk(this,'wood_no')" /> YES</label>
-        <label><input type="checkbox" id="wood_no" onchange="syncChk(this,'wood_yes')" checked /> NO</label></span></div>
+        <label><input type="checkbox" id="wood_no" onchange="syncChk(this,'wood_yes')" /> NO</label></span></div>
       <div class="check-row"><span class="q">如有实木包装，是否已做熏蒸？</span><span class="yn">
         <label><input type="checkbox" id="fumig_yes" onchange="syncChk(this,'fumig_no')" /> YES</label>
-        <label><input type="checkbox" id="fumig_no" onchange="syncChk(this,'fumig_yes')" checked /> NO</label></span></div>
+        <label><input type="checkbox" id="fumig_no" onchange="syncChk(this,'fumig_yes')" /> NO</label></span></div>
       <div class="container-row"><span>箱型箱量 (CONTAINER)：</span><div class="ct-inputs" style="display:flex;align-items:center;gap:6px;font-weight:400">
-        <input class="ct-qty" type="text" id="ct_qty" value="${a(ctnQty)}" placeholder="1" /><span>×</span>
+        <input class="ct-qty" type="text" id="ct_qty" value="${a(ctnQty)}" /><span>×</span>
         <select class="ct-type" id="ct_type">${ctnOptions}</select></div></div>
       <div class="tow-row vfull">
         <label><input type="checkbox" id="self_tow" onchange="syncChk(this,'agent_tow')" ${ck(isSelfTow)} /> 自拖自报</label>
@@ -350,8 +361,8 @@ body.mode-carrier .vfull { display: none !important; }
         <label><input type="checkbox" id="bl_orig" onchange="syncChk2(this,['bl_swb','bl_telex','bl_other_chk'])" ${ck(showOrig)} /> 正本</label>
         <label><input type="checkbox" id="bl_swb" onchange="syncChk2(this,['bl_orig','bl_telex','bl_other_chk'])" ${ck(showSwb)} /> 海运单 SWB</label>
         <label><input type="checkbox" id="bl_telex" onchange="syncChk2(this,['bl_orig','bl_swb','bl_other_chk'])" ${ck(showTelex)} /> 电放</label>
-        <label><input type="checkbox" id="bl_other_chk" onchange="syncChk2(this,['bl_orig','bl_swb','bl_telex'])" /> 其他：</label>
-        <input type="text" id="bl_other_txt" placeholder="___________" style="width:80px;border-bottom:1px solid #999;" /></div>
+        <label><input type="checkbox" id="bl_other_chk" onchange="syncChk2(this,['bl_orig','bl_swb','bl_telex'])" ${ck(isOtherRelease)} /> 其他：</label>
+        <input type="text" id="bl_other_txt" value="${a(isOtherRelease ? releaseRaw : "")}" placeholder="___________" style="width:80px;border-bottom:1px solid #999;" /></div>
       <div style="margin-top:10px;"><div style="font-size:9px;color:#555;margin-bottom:3px;">备注 Remarks</div>
         <textarea rows="6" id="remarks" placeholder="特殊要求 / 换单 / 报检等" style="border:1px solid #ddd;border-radius:2px;padding:3px;background:#fff;width:100%;">${esc(remarkText)}</textarea></div>
     </div>
@@ -359,7 +370,6 @@ body.mode-carrier .vfull { display: none !important; }
   <div style="border:1px solid #999;border-top:none;padding:3px 10px;background:#f9f9f9;"><p style="font-size:7.5px;color:#666;line-height:1.4;">本托书为格式条款，委托方签字/盖章即视为已充分阅读并接受全部内容；如有与本托书冲突之特别约定，须以双方授权代表签字盖章的书面文件为准；本托书传真件、扫描件与原件具有同等法律效力；因本托书引起或与之相关的任何争议，适用中华人民共和国法律，由厦门海事法院管辖。</p></div>
   <div style="border:1px solid #999;border-top:none;padding:4px 10px;"><div style="font-size:9px;color:#555;">委托方签署 / Principal's Signature &amp; Seal（请盖公章，须与Shipper抬头一致）<span style="float:right;color:#aaa;font-size:8px;">签字 / 公章 / 日期</span></div><div style="border-bottom:1px solid #ccc;margin-top:16px;"></div></div>
 </div>
-<div class="foot">托书模板 ${TEMPLATE_VERSION}（复用公司标准委托单） · ${esc(cyNo || docNo)} · Sanlyn OS</div>
 <script>
 function syncChk(el,o){ if(el.checked) document.getElementById(o).checked=false; }
 function syncChk2(el,os){ if(el.checked) os.forEach(function(id){document.getElementById(id).checked=false;}); }
