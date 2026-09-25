@@ -36,11 +36,14 @@ const ORDER_COLUMNS = `
 
 const ITEM_COLUMNS = `
   l.order_id,
+  l.product_code,
   l.product_name,
   l.spec,
   l.price_fen,
   l.qty,
-  l.amount_fen
+  l.amount_fen,
+  NULLIF(TRIM(sk.supplier), '') AS supplier,
+  pc.stock_num AS store_stock
 `;
 
 const ALLOWED_TABLES = new Set([
@@ -48,6 +51,8 @@ const ALLOWED_TABLES = new Set([
   "petstore_shop_order_line",
   "petstore_shop_order_event",
   "petstore_shop_member",
+  "petstore_skus",
+  "petstore_product_status_current",
   "filtered",
   "list_rows",
   "item_rows",
@@ -217,6 +222,11 @@ item_rows AS (
   FROM petstore_shop_order_line l
   JOIN list_rows r
     ON r.id = l.order_id
+  LEFT JOIN petstore_skus sk
+    ON sk.product_code = l.product_code
+  LEFT JOIN petstore_product_status_current pc
+    ON pc.product_code = l.product_code
+   AND pc.store_code = r.store_code
 )
 SELECT
   COALESCE(json_agg(
@@ -245,11 +255,14 @@ SELECT
       'done_at', r.done_at,
       'items', COALESCE((
         SELECT json_agg(json_build_object(
+          'product_code', i.product_code,
           'product_name', i.product_name,
           'spec', i.spec,
           'price_fen', i.price_fen,
           'qty', i.qty,
-          'amount_fen', i.amount_fen
+          'amount_fen', i.amount_fen,
+          'supplier', i.supplier,
+          'store_stock', i.store_stock
         ) ORDER BY i.order_id)
         FROM item_rows i
         WHERE i.order_id = r.id
