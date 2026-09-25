@@ -56,6 +56,26 @@ function collectRunningFiles(repoRoot = process.cwd()) {
   return running;
 }
 
+function collectProdRouteFiles(prodRoutesPath) {
+  const rows = readFileSync(prodRoutesPath, "utf8").split(/\r?\n/);
+  const running = new Set();
+
+  for (const row of rows) {
+    if (!row.trim()) continue;
+    running.add(normalizeManifestPath(row));
+  }
+
+  return running;
+}
+
+function runningSourceLine(runningSource) {
+  if (runningSource.type === "prod-routes") {
+    return `running 判据来源: 生产路由清单(${path.basename(runningSource.path)}, ${runningSource.count} 条)`;
+  }
+
+  return "running 判据来源: 本仓库 routes-*.js";
+}
+
 function classifyManifests(prodManifest, gitManifest, runningFiles) {
   const identical = [];
   const differs = [];
@@ -99,9 +119,11 @@ function renderRows(rows, columns) {
   return [header, separator, ...lines, ""].join("\n");
 }
 
-function renderReport(classified) {
+function renderReport(classified, runningSource) {
   const lines = [
     "# prod drift report",
+    "",
+    runningSourceLine(runningSource),
     "",
     `## identical (${classified.identical.length})`,
     "",
@@ -125,24 +147,39 @@ export function prodDriftReport(prodManifestPath, gitManifestPath, options = {})
   const repoRoot = options.repoRoot || process.cwd();
   const prodManifest = parseManifest(prodManifestPath);
   const gitManifest = parseManifest(gitManifestPath);
-  const runningFiles = collectRunningFiles(repoRoot);
-  return renderReport(classifyManifests(prodManifest, gitManifest, runningFiles));
+  const runningFiles = options.prodRoutesPath
+    ? collectProdRouteFiles(options.prodRoutesPath)
+    : collectRunningFiles(repoRoot);
+  const runningSource = options.prodRoutesPath
+    ? { type: "prod-routes", path: options.prodRoutesPath, count: runningFiles.size }
+    : { type: "repo-routes" };
+
+  return renderReport(classifyManifests(prodManifest, gitManifest, runningFiles), runningSource);
 }
 
 function main() {
-  const [, scriptPath, prodManifestPath, gitManifestPath] = process.argv;
+  const [, scriptPath, prodManifestPath, gitManifestPath, ...args] = process.argv;
 
   if (!prodManifestPath || !gitManifestPath) {
     console.log([
       "# prod drift report",
       "",
-      "Usage: node scripts/prod-drift-report.mjs <prod-manifest.tsv> <git-manifest.tsv>",
+      "Usage: node scripts/prod-drift-report.mjs <prod-manifest.tsv> <git-manifest.tsv> [--prod-routes <file>]",
     ].join("\n"));
     return;
   }
 
   try {
-    console.log(prodDriftReport(prodManifestPath, gitManifestPath));
+    const options = {};
+
+    for (let index = 0; index < args.length; index += 1) {
+      if (args[index] === "--prod-routes") {
+        options.prodRoutesPath = args[index + 1];
+        index += 1;
+      }
+    }
+
+    console.log(prodDriftReport(prodManifestPath, gitManifestPath, options));
   } catch (err) {
     console.log([
       "# prod drift report",
