@@ -45,3 +45,6 @@ query_orders.mjs
 .codex-backups/
 BRIEF-*.md
 forge_brief_*.md
+
+# CodeGraph 本地索引(每台机器自己建,不进版本库)——不忽略会让 revert-gate 判工作区脏
+.codegraph/
