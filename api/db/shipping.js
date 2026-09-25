@@ -26,6 +26,14 @@ const WRITABLE = [
   "bl_no","shipment_no","mbl_no","hbl_no","so_no","booking_no","forwarder_booking_no",
   "vessel","voyage","carrier_code","route_type","transit","schedule","call_port",
   "etd","eta","atd","ata","cutoff_date","si_cutoff_date","port_open_date","doc_cutoff",
+  // 2026-08-31 实测:从入货通知建票,carrier_agent 和三个 _at 死线被 WRITABLE 静默丢掉,
+  // 而 API 仍返回 success:true —— 与 0831 早上"采用运价"那个 bug 同一个模子。
+  // 这四个正是 P0 要的字段(船代 0/273、截港/截单/截VGM 只有 10/11/3)。
+  "carrier_agent","doc_cutoff_at","close_harbor_at","vgm_cutoff_at","port_cutoff_at",
+  "cargo_cutoff","customs_cutoff","ams_cutoff","vgm_cutoff",
+  "actual_pkgs","actual_pkg_unit","actual_cbm","marks","place_of_receipt","place_of_delivery",
+  "vessel_name_cn","issue_place","payment_place","destination_place","shipper_owned_container_mark",
+  "mbl_count","hbl_count","transport_terms","freight_payment","cargo_property",
   "container_no","container_type","container_qty","seal_no","release_type","freight_term",
   "customer","customer_en","customer_cn","issuing_company","shipper","notify_party",
   "pol","pod","pol_country","pod_country",
@@ -33,6 +41,7 @@ const WRITABLE = [
   "forwarder_cn","forwarder_en","forwarder_partner","trucking_cn","customs_cn","insurance_cn",
   "customs_broker_id","customs_broker_cn","trucking_company_id","trucking_company_cn",
   "factory_company_id","trucking_arrange","forwarder_company_id",
+  "freight_rate_id","freight_quote_snapshot",
   "freight_cost","freight_sale_usd","freight_sale_cny","freight_total_usd","freight_total_cny",
   "port_surcharge_total","trucking_cost_total","customs_cost_total","insurance_cost",
   "doc_fee","tlx_fee","bkg_fee","thc_fee","eir_fee","seal_fee","vgm_fee","customs_declare_fee","info_trans_fee",
@@ -46,9 +55,13 @@ const WRITABLE = [
   "factory_dispatch_confirmed_at",
   "oceanbaby_price_confirmed",
 ];
-const JSONB_COLS = new Set(["containers_detail","trucking_detail","driver_info","raw",
+const JSONB_COLS = new Set(["freight_quote_snapshot","containers_detail","trucking_detail","driver_info","raw",
   "order_contract_nos","contract_nos","order_nos","container_bookings"]);
+// TODO: quote_ref and orders.freight_rate_id are not covered by editor payload; handle separately later.
 const ARRAY_COLS = new Set(["order_nos","contract_nos"]);
+// 2026-09-15 客户端字段泄露堵漏: role=customer 只可见白名单字段(船名/航次/提单/成本/利润/货代/司机全隐藏)
+// Local whitelist is the only effective /api/db/shipping customer response whitelist; keep aligned with api/lib/customer-safe-fields.js SHIPPING_CUSTOMER_SAFE; never allow company_code/contract_no/freight_cost.
+const CUSTOMER_SHIPPING_FIELDS = new Set(["id","_id","bl_no","order_nos","customer_po","customer_reference_no","customer_biz_no","sub_order_no","primary_contract_no","customer","customer_cn","customer_en","pol","pod","pol_country","pod_country","place_of_delivery","place_of_receipt","destination_place","discharge_port","transit","trading_country","etd","eta","atd","ata","cargo_ready_date","cargo_cutoff","si_cutoff_date","doc_cutoff","port_open_date","actual_handover_date","shipment_date","so_date","status","flow_status","shipping_status","current_status","current_status_cn","status_updated_at","tracking_updated_at","portun_status_cn","portun_ata","portun_atd","booking_stage","container_type","container_qty","teu","feu","cargo_description","cargo_property","total_cartons","total_cbm","gross_weight_kg","actual_pkgs","actual_pkg_unit","actual_gross_weight_kg","actual_cbm","marks","packing_group","un_no","class_no","customer_selected_sailing","customer_remarks","customer_submitted","customer_submitted_at","customer_confirmed_at","customer_consignee_confirmed_at","freight_sale_usd","freight_sale_cny","freight_sale_currency","created_at","updated_at"]);
 function buildSet(body, params) {
   const sets = [];
   for (const col of WRITABLE) {
@@ -488,6 +501,7 @@ export default async function handler(req, res) {
 
     } catch (e) { /* enrichment is best-effort; never fail the listing on it */ }
 
+    if (u.role === "customer") rows = rows.map(r => { const o = {}; for (const k of CUSTOMER_SHIPPING_FIELDS) if (k in r) o[k] = r[k]; return o; });
     return res.status(200).json({ success: true, data: rows, count: rows.length });
   } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
 }

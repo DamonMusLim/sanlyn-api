@@ -131,11 +131,10 @@ export default async function handler(req, res) {
     }
   } catch (_dqErr) { console.error("[documents] dq-gate 查询失败(放行):", _dqErr.message); }
 
-  // 2026-07-01 type=pack 浏览器视图 → 正版可编辑模版(export-docs-template)：海关单行(产品汇总真值)+PORT+可编辑+盖章。
-  // PDF/xlsx 导出仍走下方服务端渲染,不受影响。&mode=detail 走逐SKU明细。
+  // 2026-07-01 type=pack 浏览器视图 → 正版可编辑模版;PDF/xlsx/rows 仍走下方服务端渲染。
   if (type === "pack") {
     var _pf = (Array.isArray(format) ? format : [format]).map(function(f){ return String(f||"").toLowerCase(); });
-    if (_pf.indexOf("pdf") === -1 && _pf.indexOf("xlsx") === -1) {
+    if (_pf.indexOf("pdf") === -1 && _pf.indexOf("xlsx") === -1 && _pf.indexOf("rows") === -1) {
       var _ptok = req.query.token || reqToken || "";
       var _pmode = (req.query.customs === "1" || req.query.mode === "customs") ? "" : "&mode=detail";
       var _ppage = /^(pl|sc|iv)$/.test(String(req.query.page||"").toLowerCase()) ? String(req.query.page).toLowerCase() : "";
@@ -145,6 +144,38 @@ export default async function handler(req, res) {
         + "&ids=" + encodeURIComponent(ids||id||"") + _pmode + _plang + _pctn
         + (_ppage ? "&page=" + encodeURIComponent(_ppage) : "")
         + "&token=" + encodeURIComponent(_ptok));
+    }
+  }
+
+  // 🔒 毛重闸（Damon 0918「oli 错误太多次了…必须删除了」；GPT+DeepSeek 同判：切断出单路径兜底）
+  //    报关资料是要发给报关行/船司的正式件 —— 没有真实毛重就不许出，⛔ 绝不用 OLI 经验值顶。
+  //    真值 = shipping_plans.actual_gross_weight_kg（工厂箱单 / 场站磅单）。
+  //    ⚠️ 只拦 pack 的正式件；预览、format=rows、别的单据类型都不受影响。
+  if (type === "pack" && (req.query.customs === "1" || req.query.mode === "customs")) {
+    var _gf = (Array.isArray(format) ? format : [format]).map(function (f) { return String(f || "").toLowerCase(); });
+    if (_gf.indexOf("pdf") >= 0 || _gf.indexOf("xlsx") >= 0) {
+      try {
+        var _gwq = await getPool().query(
+          "SELECT MAX(sp.actual_gross_weight_kg) AS gw FROM orders o " +
+          " LEFT JOIN shipping_plans sp ON sp.bl_no = o.bl_no " +
+          " WHERE o.order_no = ANY($1::text[]) OR o.contract_no = ANY($1::text[])",
+          [String(ids || id || "").split(/[,;\s]+/).filter(Boolean)]
+        );
+        var _gwVal = Number(_gwq.rows[0] && _gwq.rows[0].gw) || 0;
+        if (_gwVal <= 0) {
+          console.warn("[documents] OLI_GROSS_BLOCKED id=" + (id || "") + " ids=" + (ids || ""));
+          return res.status(409).json({
+            error: "NO_AUTHORITATIVE_GROSS_WEIGHT",
+            message: "这票没有真实毛重（shipping_plans.actual_gross_weight_kg 为空）——" +
+                     "系统只能退回 OLI 的经验值，那正是报关行退单的根源（78-WP-1 虚高 857kg、WP-52 虚高 62%）。" +
+                     "请先把工厂箱单/场站磅单的实测毛重补进去，再出正式件。",
+            id: id || "", ids: ids || "",
+            hint: "这是护栏主动拦截，不是系统故障。预览和 format=rows 不受影响。"
+          });
+        }
+      } catch (e) {
+        console.warn("[documents] 毛重闸查库失败，放行以免误伤:", e.message);
+      }
     }
   }
 
@@ -337,7 +368,7 @@ export default async function handler(req, res) {
       var ctel=raw.phone||"";
       var ordNo=customerDocNo(raw,o,pick(o.contract_no,id));
       var cno=pick(o.contract_no,o.order_no,id);
-      var date=fmtD(new Date()); // 单据日期 = 今日（出单当天）
+      var _docDate=pick(o.order_date,raw.order_date,raw.orderDate,""); var date=_docDate?fmtD(_docDate):""; if(date>fmtD(new Date()))date=""; // 单据日期锚定下单日
       var curr=pick(raw.currency,o.currency,"USD");
       // POL = 工厂带过来的港口：取该单工厂在 factories.ports 的首个港口。
       // 取生产工厂名（产品的 factory_name），NOT raw.factory（那是出单主体 BABI）。
@@ -353,17 +384,33 @@ export default async function handler(req, res) {
       }
       // POL/POD/BL 从关联的 SO(托书/海运计划) + BL 带（实际订舱港口优先于工厂默认港）。
       var _spPol="", _spPod="", _spBl="";
-      var _primaryContractNo="";
+      var _primaryContractNo="", _spActualGW=0, _spActualCBM=0;
       var _v2_vessel="", _v2_voyage="", _v2_carrier="", _v2_etd="";
       try{
         var _spR=await pool.query(
-          "SELECT pol,pod,bl_no,vessel,voyage,shipping_line,carrier_code,etd,primary_contract_no FROM shipping_plans WHERE NULLIF($1,'') IS NOT NULL AND (bl_no=$1 OR contract_no=$1 OR order_contract_nos ILIKE '%'||$1||'%') OR (NULLIF($2,'') IS NOT NULL AND (contract_no=$2 OR order_contract_nos ILIKE '%'||$2||'%')) ORDER BY tracking_updated_at DESC NULLS LAST, eta DESC NULLS LAST LIMIT 1",
+          "SELECT pol,pod,bl_no,vessel,voyage,shipping_line,carrier_code,etd,primary_contract_no,actual_gross_weight_kg,actual_cbm FROM shipping_plans WHERE NULLIF($1,'') IS NOT NULL AND (bl_no=$1 OR contract_no=$1 OR order_contract_nos ILIKE '%'||$1||'%') OR (NULLIF($2,'') IS NOT NULL AND (contract_no=$2 OR order_contract_nos ILIKE '%'||$2||'%')) ORDER BY tracking_updated_at DESC NULLS LAST, eta DESC NULLS LAST LIMIT 1",
           [o.contract_no||"", o.order_no||""]
         );
+        // 🩸 兜底：orders.contract_no(CP…) 与 shipping_plans.contract_no(FS…) 是两套号，
+        //    上面那条按合同号匹配会全空。按提单号 / fs_no 再找一次（提单号是 A 级硬证据）。
+        if(!_spR.rows[0] && (o.bl_no || o.fs_no)){
+          try{
+            _spR=await pool.query(
+              "SELECT pol,pod,bl_no,vessel,voyage,shipping_line,carrier_code,etd,primary_contract_no,"+
+              "actual_gross_weight_kg,actual_cbm FROM shipping_plans "+
+              "WHERE (NULLIF($1,'') IS NOT NULL AND bl_no=$1) "+
+              "   OR (NULLIF($2,'') IS NOT NULL AND (contract_no=$2 OR order_contract_nos ILIKE '%'||$2||'%')) "+
+              "ORDER BY (bl_no=$1) DESC NULLS LAST, tracking_updated_at DESC NULLS LAST LIMIT 1",
+              [o.bl_no||"", o.fs_no||""]
+            );
+          }catch(e){ console.warn("[documents] plan fallback lookup fail:", e.message); }
+        }
         if(_spR.rows[0]){
           var _spRow0=_spR.rows[0];
           _spPol=_spRow0.pol||""; _spPod=_spRow0.pod||""; _spBl=_spRow0.bl_no||"";
           _primaryContractNo=_spRow0.primary_contract_no||"";
+          _spActualGW=Number(_spRow0.actual_gross_weight_kg)||0;   // 已核定的真实毛重（工厂箱单/场站磅单），⛔ 不是 OLI 算的
+          _spActualCBM=Number(_spRow0.actual_cbm)||0;
           _v2_vessel=_spRow0.vessel||""; _v2_voyage=_spRow0.voyage||"";
           _v2_carrier=_spRow0.shipping_line||_spRow0.carrier_code||"";
           _v2_etd=_spRow0.etd?fmtD(_spRow0.etd):"";
@@ -440,7 +487,7 @@ export default async function handler(req, res) {
       var _cbTypeMap={}; // contract_no → container_type (for v2)
       try {
         var cbR=await pool.query(
-          "SELECT contract_no, container_no, container_type FROM container_bookings WHERE contract_no = ANY($1::text[])",
+          "SELECT contract_no, container_no, container_type, cargo_weight_kg FROM container_bookings WHERE contract_no = ANY($1::text[])",
           [[pick(o.contract_no,o.order_no,id)].concat(_splitIds(ids))]
         );
         cbR.rows.forEach(function(row){ if(row.contract_no){ _cbMap[row.contract_no]=row.container_no; _cbTypeMap[row.contract_no]=row.container_type||""; } });
@@ -680,6 +727,65 @@ export default async function handler(req, res) {
           });
           return order.map(function(k){ var g=groups[k]; return {cp:_uniqJoin(g.cp),name:g.name,qty:g.qty,nw:g.nw,gw:g.gw,cbm:g.cbm,price:g.qty?g.amt/g.qty:0,amt:g.amt}; });
         }
+        function _ciqSku(v){ return String(v||"").trim().toUpperCase(); }
+        function _ciqNum(v){ var n=Number(v); return Number.isFinite(n)?n:0; }
+        function _ciqWarn(kind,detail){ console.warn("[documents] ciq_lines_"+kind+": "+detail); }
+        function _ciqRows(lines,orders){
+          var ciqOrders=[];
+          (orders||[]).forEach(function(orow){
+            var raw=_orderRaw(orow), ciq=raw&&raw.ciq, ciqLines=ciq&&Array.isArray(ciq.lines)?ciq.lines:[];
+            if(ciqLines.length)ciqOrders.push({orderId:String(orow.id||orow._id||""),orderNo:orow.order_no||orow.contract_no,lines:ciqLines});
+          });
+          if(!ciqOrders.length)return null;
+          var byOrder={};
+          (lines||[]).forEach(function(li){ var k=String(li.order_id||""); (byOrder[k]||(byOrder[k]=[])).push(li); });
+          var covered={},out=[];
+          ciqOrders.forEach(function(group){
+            var items=byOrder[group.orderId]||[];
+            group.lines.slice().sort(function(a,b){return Number(a.no||0)-Number(b.no||0);}).forEach(function(line){
+              var list=Array.isArray(line.skus)?line.skus.map(_ciqSku).filter(Boolean):null, set={};
+              (list||[]).forEach(function(s){set[s]=1;});
+              var hs=String(line.hs||"").trim();
+              var matched=items.filter(function(li){
+                var sku=_ciqSku(_cp(li));
+                if(list)return !!set[sku];
+                if(line.sku_rule&&hs)return String(li.hs_code||li.hsCode||"").trim()===hs;
+                return false;
+              });
+              matched.forEach(function(li){ var sku=_ciqSku(_cp(li)); if(sku)covered[group.orderId+"|"+sku]=1; });
+              if(list){
+                list.forEach(function(sku){
+                  if(!items.some(function(li){return _ciqSku(_cp(li))===sku;})){
+                    _ciqWarn("missing_sku","order "+(group.orderNo||group.orderId)+" line "+String(line.no||"")+" sku "+sku);
+                  }
+                });
+              }
+              var qty=_ciqNum(line.qty_ctn);
+              var gw=matched.reduce(function(s,li){return s+_n(li._packCustomsGrossTotal!=null?li._packCustomsGrossTotal:_lineGrossTotal(li));},0);
+              var cbm=matched.reduce(function(s,li){return s+_n(li.cbm_ctn||li.cbm)*_n(li.qty_ctn||li.qty);},0);
+              var ciqAmt=Number(line.value_cny),
+                  declareOk=matched.length>0&&matched.every(function(li){ var n=Number(li.declare_amount_per_box); return Number.isFinite(n)&&n>0; }),
+                  declareAmt=matched.reduce(function(s,li){ var q=_n(li.qty_ctn||li.qty), d=Number(li.declare_amount_per_box); return s+(q*d); },0),
+                  fallbackAmt=matched.reduce(function(s,li){ var q=_n(li.qty_ctn||li.qty), up=_n(li.unit_price||li.unitPrice), a=_n(li.subtotal); return s+(a||q*up); },0),
+                  amt=(Number.isFinite(ciqAmt)&&ciqAmt>0)?ciqAmt:(declareOk?declareAmt:fallbackAmt);
+              out.push({
+                cp:_uniqJoin(matched.map(_cp)),
+                name:String(line.decl_name||""),
+                qty:_ciqNum(line.qty_ctn),
+                nw:_ciqNum(line.nw_kg),
+                gw:gw,
+                cbm:cbm,
+                price:qty?amt/qty:0,
+                amt:amt
+              });
+            });
+          });
+          (lines||[]).forEach(function(li){
+            var sku=_ciqSku(_cp(li));
+            if(sku&&!covered[String(li.order_id||"")+"|"+sku])_ciqWarn("uncovered_sku","order_id "+String(li.order_id||"")+" sku "+sku);
+          });
+          return out;
+        }
         function _ctnBits(rows,k){ return _uniqJoin((rows||[]).map(function(r){return r&&r[k];})); }
         function _groupLabel(orders,ctns,terms){
           orders=Array.isArray(orders)?orders:[orders];
@@ -737,7 +843,7 @@ export default async function handler(req, res) {
           order.forEach(function(k){
             var g=groups[k];
             if(!g.items.length)return;
-            out.push({isHeader:true,label:_groupLabel(g.orders.concat(g.emptyOrders),g.ctns,g.terms)});
+            out.push({isHeader:true,ctns:g.ctns,label:_groupLabel(g.orders.concat(g.emptyOrders),g.ctns,g.terms)});
             g.items.forEach(function(r){out.push(r);});
           });
           return out;
@@ -779,7 +885,7 @@ export default async function handler(req, res) {
           });
           if(fallbackContracts.length){
             try{
-              var cr=await pool.query("SELECT contract_no, container_no, container_type, seal_no FROM container_bookings WHERE contract_no = ANY($1::text[]) ORDER BY contract_no, id",[fallbackContracts]);
+              var cr=await pool.query("SELECT contract_no, container_no, container_type, seal_no, cargo_weight_kg FROM container_bookings WHERE contract_no = ANY($1::text[]) ORDER BY contract_no, id",[fallbackContracts]);
               (cr.rows||[]).forEach(function(r){ (ctnMap[r.contract_no]||(ctnMap[r.contract_no]=[])).push(r); });
             }catch(e){ console.warn("[documents] pack xlsx container_bookings fallback lookup failed:",e.message); }
           }
@@ -790,7 +896,68 @@ export default async function handler(req, res) {
           lines=(lines||[]).filter(function(li){return keepIds[String(li.order_id||"")];});
         }
         _applyCustomsGrossScale(lines,orderById);
-        var rows=_customsMode?_aggregate(lines):_detailRows(orderRows,lines,ctnMap);
+        var ciqRows=_customsMode?_ciqRows(lines,orderRows):null;
+        var rows=_customsMode?(ciqRows||_aggregate(lines)):_detailRows(orderRows,lines,ctnMap);
+        // 🔒 正式件闸：报关资料要发给报关行/船司，没有真值毛重就【拒绝出正式件】。
+        //    预览(preview) / 结构化(rows) 仍放行，但调用方看得到 estimated 标记。
+        //    Damon 0918「oli 错误太多次了…必须删除了」→ GPT+DeepSeek 同判：切断出单路径的兜底。
+        if(_customsMode && _spActualGW<=0){
+          var _rawFmt=req.query.format;   // ⛔ 不能用 format —— 到这层已被改成 rows
+          var _fmtList=(Array.isArray(_rawFmt)?_rawFmt:[_rawFmt]).map(function(f){return String(f||"").toLowerCase();});
+          var _isFormal=_fmtList.indexOf("pdf")>=0||_fmtList.indexOf("xlsx")>=0;
+          if(_isFormal){
+            console.warn("[documents] OLI_GROSS_BLOCKED order="+(ordNo||id)+" 无 actual_gross_weight_kg");
+            return res.status(409).json({
+              error:"NO_AUTHORITATIVE_GROSS_WEIGHT",
+              message:"这票没有真实毛重（shipping_plans.actual_gross_weight_kg 为空）——"
+                     +"系统只能用 OLI 的经验值，那是报关行退单的根源。"
+                     +"请先把工厂箱单/场站磅单的实测毛重补进去，再出正式件。",
+              id:ordNo||id,
+              hint:"这是护栏主动拦截，不是系统故障。预览(preview)和 format=rows 不受影响。"
+            });
+          }
+        }
+        // 🔴 毛重/CBM 锚真值，不用 OLI 的 Σgw_ctn×qty（Damon 0706/0807/0918 三次定的规矩）
+        // 毛重和 CBM 各判各的 —— 有的票有真实毛重但没有真实 CBM。
+        // 🔒 逐柜缩放（Damon 0921 定 B：按柜，客户要知道哪个柜装什么货），
+        //    跟前端模板页(PDF)同一口径 —— ⛔ 两个格式绝不能两套数字。
+        //    柜级目标值 = container_bookings.cargo_weight_kg（本票已核过 BL）。
+        //    ⚠️ 那张表数据质量差(48/100 无货重、最小值 3700=40HQ空柜皮重误录)，两道护栏：
+        //       目标值必须 > 该段净重；任一段不可信 → 整体退回整票比例。
+        function _segs(rs){
+          var out=[],cur=null;
+          (rs||[]).forEach(function(r){
+            if(r&&r.isHeader){ cur={hdr:r,rows:[]}; out.push(cur); return; }
+            if(r&&cur) cur.rows.push(r);
+          });
+          if(!out.length) out=[{hdr:null,rows:(rs||[]).filter(function(r){return r&&!r.isHeader;})}];
+          return out;
+        }
+        function _scaleSeg(rs,key,target,digits){
+          var base=rs.reduce(function(a,r){return a+_n(r[key]);},0);
+          if(base<=0||target<=0) return;
+          var out=scaleGrossWeightsToContainer(rs.map(function(r){return _n(r[key]);}),target,base,{digits:digits});
+          rs.forEach(function(r,i){ r[key]=out[i]; });
+        }
+        function _ctnTargetFor(hdr){
+          var list=(hdr&&hdr.ctns)||[]; var seen={},tot=0;
+          list.forEach(function(c){
+            var no=String((c&&c.container_no)||"").trim(); if(!no||seen[no])return;
+            var w=Number(c&&c.cargo_weight_kg)||0; if(w>0){ seen[no]=1; tot+=w; }
+          });
+          return tot;
+        }
+        if(_spActualGW>0 || _spActualCBM>0){
+          var _sg=_segs(rows);
+          var _perOK=_sg.length>0 && _sg.every(function(g){
+            var t=_ctnTargetFor(g.hdr);
+            var nw=g.rows.reduce(function(a,r){return a+_n(r.nw);},0);
+            g._t=t; return t>0 && t>nw;
+          });
+          if(_perOK){ _sg.forEach(function(g){ _scaleSeg(g.rows,"gw",g._t,2); }); }
+          else if(_spActualGW>0){ _scaleSeg(rows.filter(function(r){return r&&!r.isHeader;}),"gw",_spActualGW,2); }
+          if(_spActualCBM>0){ _scaleSeg(rows.filter(function(r){return r&&!r.isHeader;}),"cbm",_spActualCBM,3); }
+        }
         var total=_tot(rows), baseNo=(ordNo||cno||id||"PACK");
         var fsNo=_uniqJoin(orderRows.map(_fsFromOrder)) || _fsFromOrder(o) || baseNo;
         if(_primaryContractNo) fsNo=_primaryContractNo;
@@ -799,15 +966,15 @@ export default async function handler(req, res) {
         function _money(v){ return parseFloat((_n(v)).toFixed(2))||0; }
         function _qty(v){ return parseFloat((_n(v)).toFixed(0))||0; }
         function _cbm(v){ return parseFloat((_n(v)).toFixed(3))||0; }
-        var common={buyer:cust,buyerAddr:caddr,date:date,cno:cno,curr:packCurr,pol:pol,pod:pod,incoterm:inco,poNo:(orderNoText||ordNo),seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email}};
-        var pricedKeys=[{k:"cp"},{k:"name"},{k:"qty",fn:function(p){return _qty(p.qty);}},{k:"price",fn:function(p){return _money(p.price);}},{k:"amt",fn:function(p){return _money(p.amt);}}];
-        var plHeaders=_customsMode?["NO.","CP Code","Description & Size","QTY","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"]:["NO.","BARCODE","Description & Size","QTY","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"];
-        var plColKeys=_customsMode?[{k:"cp"},{k:"name"},{k:"qty",fn:function(p){return _qtyUnit(p.qty,"CTN");}},{k:"nw",fn:function(p){return _money(p.nw);}},{k:"gw",fn:function(p){return _money(p.gw);}},{k:"cbm",fn:function(p){return _cbm(p.cbm);}}]:[{k:"barcode"},{k:"name"},{k:"qty",fn:function(p){return _qtyUnit(p.qty,p.unit||"CTN");}},{k:"nw",fn:function(p){return _money(p.nw);}},{k:"gw",fn:function(p){return _money(p.gw);}},{k:"cbm",fn:function(p){return _cbm(p.cbm);}}];
-        var plTotals=_customsMode?["","","GRAND TOTAL:",_qtyUnit(total.qty,"CTN"),_money(total.nw),_money(total.gw),_cbm(total.cbm)]:["","","GRAND TOTAL:",_qtyUnit(total.qty,"CTN"),_money(total.nw),_money(total.gw),_cbm(total.cbm)];
+        function _normPort(v){v=String(v||"").trim();if(!v)return "";var m=v.match(/[A-Za-z][A-Za-z .()/-]*/);if(m)v=m[0].trim();return /[\u4e00-\u9fa5]/.test(v)?v:v.toUpperCase();} var common={buyer:cust,buyerAddr:caddr,date:date,cno:cno,curr:packCurr,pol:pol,pod:pod,incoterm:inco,poNo:(orderNoText||ordNo),seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email}},plPort={pol:_normPort(pick(o.pol,_spPol,raw.sp_pol,_facPol,"")),pod:_normPort(pick(o.destination_port,o.pod,_spPod,raw.destination_port,raw.pod,raw.sp_pod,""))}; // PL follows page portLine priority; Damon 2026-07-09: POL is actual cargo origin, not customs place.
+        var pricedKeys=[{k:"barcode"},{k:"name"},{k:"qty",fn:function(p){return _qty(p.qty);}},{k:"price",fn:function(p){return _money(p.price);}},{k:"amt",fn:function(p){return _money(p.amt);}}];
+        var plHeaders=_customsMode?["NO.","DESCRIPTION & SIZE","QTY (CTN)","N.W. (KG)","G.W. (KG)","CBM (M³)"]:["NO.","BARCODE","Description & Size","QTY","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"];
+        var plColKeys=_customsMode?[{k:"name"},{k:"qty",fn:function(p){return _qtyUnit(p.qty,"CTN");}},{k:"nw",fn:function(p){return _money(p.nw);}},{k:"gw",fn:function(p){return _money(p.gw);}},{k:"cbm",fn:function(p){return _cbm(p.cbm);}}]:[{k:"barcode"},{k:"name"},{k:"qty",fn:function(p){return _qtyUnit(p.qty,p.unit||"CTN");}},{k:"nw",fn:function(p){return _money(p.nw);}},{k:"gw",fn:function(p){return _money(p.gw);}},{k:"cbm",fn:function(p){return _cbm(p.cbm);}}];
+        var plTotals=_customsMode?["","GRAND TOTAL:",_qtyUnit(total.qty,"CTN"),_money(total.nw),_money(total.gw),_cbm(total.cbm)]:["","","GRAND TOTAL:",_qtyUnit(total.qty,"CTN"),_money(total.nw),_money(total.gw),_cbm(total.cbm)];
         return {docNo:(fsNo||baseNo)+"_PACK",sheets:[
-          Object.assign({},common,{sheetName:"Packing List",docNo:fsNo,noLabel:"No.:",hideCurrency:true,incoterm:"",headers:plHeaders,colKeys:plColKeys,rows:rows,totals:plTotals}),
-          Object.assign({},common,{sheetName:"Sales Contract",docNo:fsNo,noLabel:"No.:",terms:cfg.terms.sc,bank:cfg.bank,headers:["NO.","CP Code","Description & Size","CTN","Unit Price ("+packCurr+")","Amount ("+packCurr+")"],colKeys:pricedKeys,rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),"",_money(total.amt)]}),
-          Object.assign({},common,{sheetName:"Invoice",docNo:fsNo,noLabel:"No.:",terms:cfg.terms.iv,bank:cfg.bank,headers:["NO.","CP Code","Description & Size","CTN","Unit Price ("+packCurr+")","Amount ("+packCurr+")"],colKeys:pricedKeys,rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),"",_money(total.amt)]})
+          Object.assign({},common,plPort,{sheetName:"Packing List",docNo:fsNo,noLabel:"No.:",hideCurrency:true,showPortLine:_customsMode,incoterm:"",headers:plHeaders,colKeys:plColKeys,rows:rows,totals:plTotals}),
+          Object.assign({},common,{sheetName:"Sales Contract",docNo:fsNo,noLabel:"No.:",terms:cfg.terms.sc,bank:cfg.bank,headers:["NO.","BARCODE","Description & Size","CTN","Unit Price ("+packCurr+")","Amount ("+packCurr+")"],colKeys:pricedKeys,rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),"",_money(total.amt)]}),
+          Object.assign({},common,{sheetName:"Invoice",docNo:fsNo,noLabel:"No.:",terms:cfg.terms.iv,bank:cfg.bank,headers:["NO.","BARCODE","Description & Size","CTN","Unit Price ("+packCurr+")","Amount ("+packCurr+")"],colKeys:pricedKeys,rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),"",_money(total.amt)]})
         ]};
       }
       var tot=getTotal(prods,o);
@@ -1039,7 +1206,12 @@ export default async function handler(req, res) {
                     amt:{fn:function(p){return fmtM(v2AmtMetrics(p).amt);},defaultAlign:"right",defaultWidth:"110px"}
                   };
 
+                  // v2 HTML 路径取不到 _plMaster(定义在 1585 行,作用域不同),所以 OLI 行上没条码时
+                  // 直接回退货号,【不查产品主表】。xlsx 路径(970/716/695)有主表回退,两者不等价。
+                  function v2BarcodeOf(p){ var sku=p.sku||p.code||p.item_code||p.product_code||"-";
+                    return pick(p.barcode,p.bar_code,p.factory_code,sku,""); }
                   var _v2AmtFnMap = {
+                    barcode:{fn:v2BarcodeOf,defaultAlign:"center",defaultWidth:"120px"},
                     sku:_v2PLFnMap.sku,
                     name:_v2PLFnMap.name,
                     qty:_v2PLFnMap.qty,
@@ -1062,7 +1234,7 @@ export default async function handler(req, res) {
                   ];
 
                   var _v2FallbackColsAmt = [
-                    {k:"sku",al:"center",w:"70px",fn:_v2AmtFnMap.sku.fn,lbl:"CP Code"},
+                    {k:"barcode",al:"center",w:"120px",fn:_v2AmtFnMap.barcode.fn,lbl:"BARCODE"},
                     {k:"name",al:"",fn:_v2AmtFnMap.name.fn,lbl:"Description & Size"},
                     {k:"qty",al:"center",w:"70px",fn:_v2AmtFnMap.qty.fn,lbl:"QTY (CTN)"},
                     {k:"unit",al:"center",w:"50px",fn:_v2AmtFnMap.unit.fn,lbl:"Unit"},
@@ -1488,8 +1660,9 @@ export default async function handler(req, res) {
 	            return sz ? n + " (" + sz + ")" : n;
 	          }},{k:"qty",fn:function(p){return _plQtyUnit(p.qty,_plDetailXlsx?_plUnitOf(p):"CTN");}}]).concat(_plDetailXlsx?[]:[{k:"unit",fn:function(p){return p.unit||p.unitOfMeasure||"CTN";}}]).concat([{k:"nw",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return parseFloat((pn*q||pn).toFixed(2))||0;}},{k:"gw",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return parseFloat(((audience==='customs')?pg:(pg*q||pg)).toFixed(2))||0;}},{k:"cbm",fn:function(p){return parseFloat(cbmOf(p).toFixed(3))||0;}}]),
 	          rows:prods,totals:_plDetailXlsx?["","","GRAND TOTAL:",_plQtyUnit(tqty,"CTN"),parseFloat(tnw.toFixed(2)),parseFloat(tgw.toFixed(2)),parseFloat(tcbmPL.toFixed(3))]:["","","GRAND TOTAL:",_plQtyUnit(tqty,"CTN"),"",parseFloat(tnw.toFixed(2)),parseFloat(tgw.toFixed(2)),parseFloat(tcbmPL.toFixed(3))]};
-        if(_PACK && format==="xlsx"){
+        if(_PACK && (format==="xlsx"||format==="rows")){
           _xlsCapture=await _buildPackXlsCaptureFromOLI();
+          if(format==="rows"){res.setHeader("Cache-Control","no-store");return res.status(200).json({docNo:_xlsCapture.docNo,sheets:_xlsCapture.sheets||[]});}
         }
       }
 
@@ -1563,43 +1736,7 @@ export default async function handler(req, res) {
       }
     }
 
-    if(["so","debit","freight-quote","sq","tr","swb_loi","bl_sample","booking_note","hbl","hbl_copy","hbl_tr","hbl_overlay"].includes(type)){
-      if(type==="hbl" || type==="hbl_copy" || type==="hbl_tr" || type==="hbl_overlay"){
-        // HBL 提单打印：正本/副本/电放/套打 共用 docs/hbl.js，靠 type 区分水印与套打
-        const _blRes = await pool.query(
-          `SELECT id, shipping_plan_id, bl_kind, bl_no, mbl_no, hbl_no,
-                  shipper_name, shipper_address, consignee_name, consignee_address,
-                  notify_name, notify_address, marks, cargo_name_en, cargo_name_cn,
-                  hs_code, pkgs, pkg_unit, gross_weight_kg, cbm, net_weight_kg,
-                  payment_method, transport_terms, bl_form, payment_address,
-                  additional_terms, issue_date, issue_place, overseas_delivery_address,
-                  bl_remarks, created_at, updated_at
-             FROM bill_of_ladings
-            WHERE shipping_plan_id = $1 AND bl_kind = 'HBL'
-            ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
-            LIMIT 1`, [sp.id]);
-        const _cbRes = await pool.query(
-          `SELECT shipping_plan_id, bl_no, container_no, seal_no, container_type,
-                  cargo_weight_kg, vgm_weight_kg
-             FROM container_bookings
-            WHERE shipping_plan_id = $1
-            ORDER BY container_no NULLS LAST, seal_no NULLS LAST`, [sp.id]);
-        const _portRaw = [sp && sp.pol, sp && sp.discharge_port, sp && sp.pod, sp && sp.place_of_receipt, sp && sp.place_of_delivery]
-          .filter(function(x){ return x !== undefined && x !== null && String(x).trim() !== ""; });
-        const _portKeys = Array.from(new Set(_portRaw.map(function(x){ return String(x).trim().toUpperCase(); })));
-        const _portNames = {};
-        if(_portKeys.length){
-          const _pr = await pool.query("select code, unlocode, name_en from ports where upper(code) = any($1) or upper(unlocode) = any($1)", [_portKeys]);
-          for(const row of (_pr.rows || [])){
-            const dn = row.name_en || "";
-            if(!dn) continue;
-            if(row.code) _portNames[String(row.code).toUpperCase()] = dn;
-            if(row.unlocode) _portNames[String(row.unlocode).toUpperCase()] = dn;
-          }
-        }
-        const { renderHbl } = await import("./docs/hbl.js");
-        ({ html, _xlsCapture, totRow } = await renderHbl({ sp, spraw, cfg3, fwd, vessel, voyage, polSp, podSp, soNo, html, _xlsCapture, totRow, ap, esc, pick, fmtD, type, bl: _blRes.rows[0] || null, containers: _cbRes.rows || [], portNames: _portNames }));
-      }
+    if(["so","debit","freight-quote","sq","tr","swb_loi","bl_sample","booking_note"].includes(type)){
       // 2026-05-19: accept _id / shipment_no / contract_no / bl_no
       var spR=await pool.query(
         "SELECT * FROM shipping_plans WHERE _id=$1 OR shipment_no=$1 OR contract_no=$1 OR bl_no=$1 OR id::text=$1 OR order_contract_nos ILIKE '%'||$1||'%' LIMIT 1",
@@ -1734,13 +1871,13 @@ export default async function handler(req, res) {
         var _blCneeAddr="";
         try{ var _bca=await pool.query("SELECT address FROM companies WHERE name_en=$1 OR name_cn=$1 LIMIT 1",[_blCnee]); if(_bca.rows[0]) _blCneeAddr=_bca.rows[0].address||""; }catch(e){}
         var _blA={};
-        try{ var _blAgg=await pool.query("SELECT string_agg(DISTINCT oli.hs_code,',') AS hs, string_agg(DISTINCT NULLIF(oli.bl_description,''),' / ') AS descr, SUM(oli.qty_ctn) AS ctn, ROUND(SUM(COALESCE(oli.gw_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,2) AS gw, ROUND(SUM(COALESCE(oli.cbm_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,3) AS cbm FROM orders o JOIN order_line_items oli ON oli.order_id=o.id WHERE o.shipping_plan_id=$1",[sp.id]); _blA=_blAgg.rows[0]||{}; }catch(e){}
+        try{ var _blAgg=await pool.query("SELECT string_agg(DISTINCT NULLIF(oli.bl_description,''),' / ') AS descr, SUM(oli.qty_ctn) AS ctn, ROUND(SUM(COALESCE(oli.gw_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,2) AS gw, ROUND(SUM(COALESCE(oli.cbm_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,3) AS cbm FROM orders o JOIN order_line_items oli ON oli.order_id=o.id WHERE o.shipping_plan_id=$1",[sp.id]); _blA=_blAgg.rows[0]||{}; var _blOrders=(await pool.query("SELECT id FROM orders WHERE shipping_plan_id=$1 ORDER BY order_no",[sp.id])).rows; const { loadMainHsByNetWeight } = await import("./shipping-main-hs.js"); _blA.hs=await loadMainHsByNetWeight(pool,_blOrders); }catch(e){}
         var _blCtns=[];
         try{ var _blCtnR=await pool.query("SELECT container_no,seal_no,container_type,vgm_weight_kg,cargo_weight_kg FROM container_bookings WHERE shipping_plan_id=$1 ORDER BY container_no",[sp.id]); _blCtns=_blCtnR.rows.map(function(c){ return { no:c.container_no, seal:c.seal_no, type:c.container_type, vgm:c.vgm_weight_kg, pkgs:_blA.ctn, gw:c.cargo_weight_kg, cbm:_blA.cbm }; }); }catch(e){}
         // BL确认闸门(raw.bl_confirmation)：客户选的「显示HS」+ HS改单 + 确认状态——排载单/SO 跟着走
         var _blGate = (spraw && typeof spraw.bl_confirmation==="object" && spraw.bl_confirmation) ? spraw.bl_confirmation : {};
         var _blShowHs = _blGate.hs_show_on_bl !== false;   // 客户没设=默认显示
-        if(Array.isArray(_blGate.hs_lines) && _blGate.hs_lines.length){ var _hsOv=_blGate.hs_lines.map(function(x){return x&&x.code;}).filter(Boolean); if(_hsOv.length) _blA.hs=_hsOv.join(","); }
+        if(Array.isArray(_blGate.hs_lines) && _blGate.hs_lines.length){ var _hsOv=_blGate.hs_lines.map(function(x){return x&&x.code;}).filter(Boolean); if(_hsOv.length) _blA.hs=_hsOv[0]; }
         var _blCustomerConfirmed = _blGate.status==="customer_confirmed";
         var _blFactoryConfirmed = _blGate.factory_confirmed===true;
         var _blConfirmed = _blCustomerConfirmed && _blFactoryConfirmed;
@@ -1848,7 +1985,7 @@ export default async function handler(req, res) {
           ws.getCell(_RC2+"5").value=cap.hideCurrency
             ? {richText:[{text:"Date: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.date||""),font:{size:8.5,color:{argb:_DARK2}}}]}
             : {richText:[{text:"Date: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.date||""),font:{size:8.5,color:{argb:_DARK2}}},{text:"   Currency: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.curr||""),font:{size:8.5,color:{argb:_DARK2}}}]};
-          for(var _sc=1;_sc<=_LC;_sc++){ ws.getCell(5,_sc).border={bottom:{style:"thin",color:{argb:_DARK2}}}; }
+          if(cap.showPortLine){ var _pr=ws.addRow(["起运港 → 目的港 (POL → POD): "+[cap.pol||"",cap.pod||""].join(" → ")]); ws.mergeCells("A"+_pr.number+":"+_RC+_pr.number); _pr.getCell(1).font={bold:true,size:8.5,color:{argb:_DARK2}}; } for(var _sc=1;_sc<=_LC;_sc++){ ws.getCell(cap.showPortLine?6:5,_sc).border={bottom:{style:"thin",color:{argb:_DARK2}}}; }
 
           var hdrRow=ws.addRow(cap.headers);
           hdrRow.eachCell(function(c){c.font={bold:true,color:{argb:"FFFFFFFF"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF111111"}};c.alignment={horizontal:"center",vertical:"middle"};c.border={top:{style:"thin",color:{argb:"FF999999"}},bottom:{style:"thin",color:{argb:"FF999999"}},left:{style:"thin",color:{argb:"FFCCCCCC"}},right:{style:"thin",color:{argb:"FFCCCCCC"}}};});
@@ -2219,11 +2356,7 @@ export default async function handler(req, res) {
         var pdfBuf=await page.pdf({
           format:"A4",
           printBackground:true,
-          displayHeaderFooter:true,
-          headerTemplate:"<div></div>",
-          footerTemplate:"<div style=\"font-size:9px;color:#333;width:100%;padding:0 15mm;text-align:center;\">"
-            +"第 <span class=\"pageNumber\"></span> 页 / 共 <span class=\"totalPages\"></span> 页</div>",
-          margin:{top:"14mm",bottom:"16mm",left:"15mm",right:"15mm"},
+          margin:{top:"14mm",bottom:"14mm",left:"12mm",right:"12mm"},
         });
         await browser.close();
         // Infer a filename from the html (grab first <title> tag)
