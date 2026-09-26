@@ -275,7 +275,7 @@ function post(path,body){body=body||{};body.token=TOKEN;body.sheet=D.sheet.id;
 function sq(){return "?token="+encodeURIComponent(TOKEN)+"&sheet="+encodeURIComponent(D.sheet.id)}
 function openPdf(p,dl){var w=dl?null:window.open("","_blank");
   fetch(API+p,{headers:AH()}).then(function(r){if(!r.ok)return r.json().then(function(j){throw new Error(j.error||r.status)});return r.blob()})
-    .then(function(b){var u=URL.createObjectURL(b);if(dl){var a=document.createElement("a");a.href=u;a.download="PI-"+(D.sheet.display_no||D.sheet.id)+".pdf";document.body.appendChild(a);a.click();a.remove()}else w.location=u})
+    .then(function(b){var u=URL.createObjectURL(b);if(dl||!w){var a=document.createElement("a");a.href=u;a.download="PI-"+(D.sheet.display_no||D.sheet.id)+".pdf";document.body.appendChild(a);a.click();a.remove()}else w.location=u})
     .catch(function(e){if(w)w.close();toast(e.message,true)})}
 function readFile(f,cb){var fr=new FileReader();fr.onload=function(){cb(String(fr.result).split(",")[1])};fr.readAsDataURL(f)}
 
