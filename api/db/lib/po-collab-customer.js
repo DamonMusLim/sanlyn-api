@@ -17,6 +17,7 @@ import { APP_BASE, genRaw, rawToHash } from "./collab-shared.js";
 import { isInternal } from "./po-collab-handlers.js";
 import { sealStatus } from "./po-collab-seal.js";
 import { autoIssueCollabLinks } from "./collab-auto-links.js";
+import { notifyRecipients, piTerms, REPLY_DAYS } from "./po-collab-customer-notify.js";
 
 export const CROLE = "customer_order";
 const LINK_DAYS = 14;
@@ -48,8 +49,8 @@ export async function handleCustomerSendLink(req, res, pool) {
   await pool.query(`UPDATE collab.po_sheet SET status='void', updated_at=NOW()
                      WHERE order_no=$1 AND side='customer' AND status NOT IN ('void','adopted')`, [order_no]);
   const sheetId = (await pool.query(
-    `INSERT INTO collab.po_sheet (order_no, order_id, side, party_company_id, factory_name, status, sent_at, created_by)
-     VALUES ($1,$2,'customer',$3,$4,'sent',NOW(),$5) RETURNING id`,
+    `INSERT INTO collab.po_sheet (order_no, order_id, side, party_company_id, factory_name, status, sent_at, created_by, reply_due_at)
+     VALUES ($1,$2,'customer',$3,$4,'sent',NOW(),$5, NOW() + make_interval(days => ${REPLY_DAYS})) RETURNING id`,
     [o.order_no, o.id, o.cid, o.cname, req.user?.username || "system"])).rows[0].id;
   // 快照 ours：⛔ 只存客户价，工厂价根本不进这张表
   await pool.query(
@@ -166,6 +167,9 @@ export async function handleCustomerValidate(req, res, pool) {
       seal: await sealStatus(pool, sheet.party_company_id),
       seller: await comp(SELLER_CODE), buyer: await comp(o.company_code), payee,
       shipment: { available: !!o.shipping_plan_id },
+      reply_due_at: sheet.reply_due_at || null, deemed_at: sheet.deemed_at || null, reply_days: REPLY_DAYS,
+      terms: piTerms(o, sheet.reply_due_at),
+      notify: await notifyRecipients(pool, sheet.party_company_id),
       siblings,
     },
     lines, history: hist,

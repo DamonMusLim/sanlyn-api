@@ -233,6 +233,11 @@ import("./jobs/recurring-order-cron.js")
   .then(({ scheduleRecurringOrders }) => scheduleRecurringOrders())
   .catch(e => console.error("[server] recurring-order-cron schedule failed:", e.message));
 
+// ── 订单协同·客户版：自动邮件 + 3 天视同确认（默认只演练；LIVE + CUTOVER 两道闸）──────
+import("./jobs/order-collab-notify.js")
+  .then(({ scheduleOrderCollabNotify }) => scheduleOrderCollabNotify())
+  .catch(e => console.error("[server] order-collab-notify schedule failed:", e.message));
+
 // ── BL confirmation gate (customer deadline checkpoints) ─────────────────────
 import("./jobs/bl-confirmation-gate.js")
   .then(({ scheduleBlConfirmationGate }) => scheduleBlConfirmationGate())

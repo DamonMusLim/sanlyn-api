@@ -19,6 +19,7 @@ import { handleReview, handleAdopt, handleReturn, handleFile, handleSealApprove 
 import { handleCustomerSendLink, handleCustomerValidate, handleCustomerSubmit, handleCustomerUpload, handleCustomerShipmentLink,
          resolveCustomerToken, customerGate, isCustomerToken, maybeCustomerConfirm,
          CUSTOMER_SEAL_OPTS, CUSTOMER_SEAL_UPLOAD_OPTS, CUSTOMER_PDF_OPTS } from "./lib/po-collab-customer.js";
+import { handleCustomerNotifyEmails } from "./lib/po-collab-customer-notify.js";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
@@ -37,6 +38,7 @@ export default async function handler(req, res) {
       if (req.method === "POST" && sub === "submit")        return await handleCustomerSubmit(req, res, pool);
       if (req.method === "POST" && sub === "upload")        return await handleCustomerUpload(req, res, pool);
       if (req.method === "POST" && sub === "shipment-link") return await handleCustomerShipmentLink(req, res, pool);
+      if (req.method === "POST" && sub === "notify-emails") return await handleCustomerNotifyEmails(req, res, pool);
       if (["contract-pdf", "seal", "contract", "seal-upload"].includes(sub)) {
         const src = req.method === "GET" ? req.query : (req.body || {});
         const { sheet, err } = await resolveCustomerToken(pool, src.token, src.sheet);
