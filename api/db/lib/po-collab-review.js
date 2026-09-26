@@ -158,6 +158,7 @@ async function handleAdopt(req, res, pool) {
     // ③ 同一条任务改「待发 PI」
     await client.query(
       `UPDATE tasks SET progress_label = '已采纳 → 第3步：发正式PI',
+              title = left(regexp_replace(title, '→ 审核采纳后发PI$', '→ 已采纳·待发PI'), 100),
               next_action = $2, updated_at = NOW(),
               raw = COALESCE(raw,'{}'::jsonb) || $3::jsonb
         WHERE id = $1`,

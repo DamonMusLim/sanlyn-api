@@ -203,7 +203,7 @@ async function createReviewTask(pool, sheetId, rawToken) {
                         related_order_no, source, dedupe_key, due_at, reason, next_action, raw,
                         created_at, updated_at)
      VALUES ($1,$2,'采购单回签审核','L3','open','外贸','p1','WM-01',$3,'po-collab',$4,$5,$6,$7,$8::jsonb,NOW(),NOW())
-     ON CONFLICT (id) DO UPDATE SET status='open', progress_label='工厂已重新提交 · 待审核',
+     ON CONFLICT (id) DO UPDATE SET status='open', progress_label='工厂已重新提交 · 待审核', title=EXCLUDED.title,
        reason=EXCLUDED.reason, raw=COALESCE(tasks.raw,'{}'::jsonb) || EXCLUDED.raw, updated_at=NOW()`,
     [`po-confirm-${t.id}`, `${t.factory_name}回签 ${dno}（交货 ${dd}）→ 审核采纳后发PI`.slice(0, 100), t.order_no, raw.dedupe_key, due, facts,
      "①打开采购单看工厂改了什么和回签合同 ②采纳（回写确认交期/工厂确认时间）③第3步：给客户发正式 PI",

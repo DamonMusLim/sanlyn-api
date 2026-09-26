@@ -112,7 +112,8 @@ async function handleSeal(req, res, pool, sheet, maybeConfirm) {
     body: JSON.stringify({
       pdfUrl: srcUrl, companyCode: co.code, operator: `po-collab:${req.user?.username || "factory"}`,
       documentId: `po-sheet-${sheet.id}`, documentName: `采购合同 协同单#${sheet.id} · ${sheet.factory_name}`,
-      gaps: [], signature: { page: sig.page, x: sig.x, y: sig.y, withSignature: false },
+      // ⛔ DAS 的 page 从 1 数（传 0 起的下标会盖到前一页；0926 两页合同章盖进了第 1 页）
+      gaps: [], signature: { page: sig.page + 1, x: sig.x, y: sig.y, withSignature: false },
     }),
   });
   const j = await r.json().catch(() => ({}));
