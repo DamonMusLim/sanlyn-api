@@ -16,6 +16,9 @@ import { handleSendLink, handleValidate, handleSubmit, handleUpload, resolveToke
 import { handleContractPdf, handleSeal, handleContract, handleSealUpload } from "./lib/po-collab-seal.js";
 import { handleReview, handleAdopt, handleReturn, handleFile, handleSealApprove }
   from "./lib/po-collab-review.js";
+import { handleCustomerSendLink, handleCustomerValidate, handleCustomerSubmit, handleCustomerUpload, handleCustomerShipmentLink,
+         resolveCustomerToken, customerGate, isCustomerToken, maybeCustomerConfirm,
+         CUSTOMER_SEAL_OPTS, CUSTOMER_SEAL_UPLOAD_OPTS, CUSTOMER_PDF_OPTS } from "./lib/po-collab-customer.js";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
@@ -26,6 +29,26 @@ export default async function handler(req, res) {
   const sub = (m && m[1] ? m[1] : "").replace(/\/+$/, "");
 
   try {
+    // 订单协同·客户版（Damon 0926）：发链接看 body.side；其余看协同链接是哪一类 token
+    if (req.method === "POST" && sub === "send-link" && req.body?.side === "customer") return await handleCustomerSendLink(req, res, pool);
+    const tok = req.method === "GET" ? req.query?.token : req.body?.token;
+    if (tok && await isCustomerToken(pool, tok)) {
+      if (req.method === "GET"  && sub === "validate")      return await handleCustomerValidate(req, res, pool);
+      if (req.method === "POST" && sub === "submit")        return await handleCustomerSubmit(req, res, pool);
+      if (req.method === "POST" && sub === "upload")        return await handleCustomerUpload(req, res, pool);
+      if (req.method === "POST" && sub === "shipment-link") return await handleCustomerShipmentLink(req, res, pool);
+      if (["contract-pdf", "seal", "contract", "seal-upload"].includes(sub)) {
+        const src = req.method === "GET" ? req.query : (req.body || {});
+        const { sheet, err } = await resolveCustomerToken(pool, src.token, src.sheet);
+        if (err) return res.status(403).json({ ok: false, error: err });
+        if (!(await customerGate(req, res, pool, sheet))) return;
+        if (req.method === "GET"  && sub === "contract-pdf") return await handleContractPdf(req, res, pool, sheet, CUSTOMER_PDF_OPTS);
+        if (req.method === "POST" && sub === "seal")         return await handleSeal(req, res, pool, sheet, maybeCustomerConfirm, CUSTOMER_SEAL_OPTS(sheet));
+        if (req.method === "GET"  && sub === "contract")     return await handleContract(req, res, pool, sheet);
+        if (req.method === "POST" && sub === "seal-upload")  return await handleSealUpload(req, res, pool, sheet, CUSTOMER_SEAL_UPLOAD_OPTS(sheet));
+      }
+      return res.status(404).json({ ok: false, error: "unknown endpoint: " + sub });
+    }
     if (req.method === "POST" && sub === "send-link") return await handleSendLink(req, res, pool);
     if (req.method === "GET"  && sub === "validate")  return await handleValidate(req, res, pool);
     if (req.method === "POST" && sub === "submit")    return await handleSubmit(req, res, pool);
