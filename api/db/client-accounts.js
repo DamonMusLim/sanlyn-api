@@ -218,7 +218,7 @@ async function ensureRoleMenus(db, companyCode, role) {
   }
 }
 
-async function upsertProfile(db, account, companyCode, role) {
+async function upsertProfile(db, account, companyCode, role, storeScope) {
   const roleId = await ensureRoleId(db, companyCode, role);
   const columns = await getColumns(db, "petstore_account_profile");
   const companyCol = firstColumn(columns, PROFILE_COMPANY_COLUMNS);
@@ -241,6 +241,10 @@ async function upsertProfile(db, account, companyCode, role) {
   checks.push(`(${accountChecks.join(" OR ")})`);
   const setParts = [`role_id = $${params.length + 1}`];
   params.push(roleId);
+  if (storeScope !== undefined && columns.has("store_scope")) {
+    setParts.push(`store_scope = $${params.length + 1}`);
+    params.push(storeScope);
+  }
   if (columns.has("is_active")) setParts.push("is_active = true");
   if (columns.has("updated_at")) setParts.push("updated_at = NOW()");
   const updated = await db.query(`UPDATE petstore_account_profile SET ${setParts.join(", ")} WHERE ${checks.join(" AND ")}`, params);
@@ -249,6 +253,7 @@ async function upsertProfile(db, account, companyCode, role) {
   const insert = { [companyCol]: companyCode, role_id: roleId };
   if (accountCol) insert[accountCol] = account.id;
   if (usernameCol) insert[usernameCol] = account.username || account.email;
+  if (storeScope !== undefined && columns.has("store_scope")) insert.store_scope = storeScope;
   if (columns.has("is_active")) insert.is_active = true;
   if (columns.has("created_at")) insert.created_at = "NOW()";
   if (columns.has("updated_at")) insert.updated_at = "NOW()";
@@ -285,16 +290,30 @@ async function listAccounts(pool, actor) {
   const roles = await loadProfileRoles(pool, actor.companyCode);
   return r.rows.map((row) => {
     const raw = parseRaw(row.raw);
+    const profile = roles.get(String(row.id)) || roles.get(String(row.username)) || {};
     return {
       id: row.id,
       email: row.email || "",
       username: row.username || "",
       display_name: row.display_name || raw.display_name || "",
-      role: roles.get(String(row.id)) || roles.get(String(row.username)) || "",
+      role: profile.role || "",
+      store_scope: Array.isArray(profile.store_scope) ? profile.store_scope : [],
+      scope_all: profile.scope_all === true,
       status: row.is_active ? "active" : "disabled",
       password_set: !!row.password_set,
     };
   });
+}
+
+async function listStores(pool, actor) {
+  const r = await pool.query(
+    `SELECT store_code, store_name, am_name
+       FROM client_store_master
+      WHERE company_code = $1 AND is_active = true
+      ORDER BY store_code`,
+    [actor.companyCode]
+  );
+  return r.rows;
 }
 
 async function loadProfileRoles(pool, companyCode) {
@@ -308,6 +327,8 @@ async function loadProfileRoles(pool, companyCode) {
     accountCol ? `p.${ident(accountCol)}::text AS account_id` : "NULL AS account_id",
     usernameCol ? `p.${ident(usernameCol)}::text AS username` : "NULL AS username",
     "r.role_key",
+    columns.has("store_scope") ? "p.store_scope" : "NULL AS store_scope",
+    "COALESCE(r.scope_all, false) AS scope_all",
   ];
   const r = await pool.query(
     `SELECT ${selected.join(", ")}
@@ -317,8 +338,48 @@ async function loadProfileRoles(pool, companyCode) {
     [companyCode]
   );
   for (const row of r.rows) {
-    if (row.account_id) out.set(String(row.account_id), row.role_key);
-    if (row.username) out.set(String(row.username), row.role_key);
+    const profile = { role: row.role_key, store_scope: row.store_scope || [], scope_all: row.scope_all === true };
+    if (row.account_id) out.set(String(row.account_id), profile);
+    if (row.username) out.set(String(row.username), profile);
+  }
+  return out;
+}
+
+async function validateStoreScope(db, companyCode, stores) {
+  const input = stores == null ? [] : stores;
+  if (!Array.isArray(input)) {
+    const err = new Error("invalid_stores");
+    err.status = 400;
+    throw err;
+  }
+  const seen = new Set();
+  const out = [];
+  for (const item of input) {
+    const code = clean(item, 80);
+    if (!seen.has(code)) {
+      seen.add(code);
+      out.push(code);
+    }
+  }
+  if (out.length > 500) {
+    const err = new Error("too_many_stores");
+    err.status = 400;
+    throw err;
+  }
+  if (!out.length) return out;
+  const r = await db.query(
+    `SELECT store_code
+       FROM client_store_master
+      WHERE company_code = $1 AND is_active = true AND store_code = ANY($2::text[])`,
+    [companyCode, out]
+  );
+  const valid = new Set(r.rows.map((row) => row.store_code));
+  const unknown = out.find((code) => !valid.has(code));
+  if (unknown) {
+    const err = new Error("unknown_store");
+    err.status = 400;
+    err.store = unknown;
+    throw err;
   }
   return out;
 }
@@ -340,6 +401,8 @@ async function createAccount(pool, req, actor, body) {
   const role = clean(body.role, 60);
   if (!email || !validEmail(email)) return { status: 400, json: { error: "invalid_email" } };
   assertRole(role);
+  const hasStores = Object.prototype.hasOwnProperty.call(body, "stores");
+  const storeScope = hasStores ? await validateStoreScope(pool, actor.companyCode, body.stores) : undefined;
 
   const accountsCols = await getColumns(pool, "accounts");
   const db = await pool.connect();
@@ -378,14 +441,14 @@ async function createAccount(pool, req, actor, body) {
       vals
     );
     const account = created.rows[0];
-    await upsertProfile(db, account, actor.companyCode, role);
+    await upsertProfile(db, account, actor.companyCode, role, storeScope);
     const invite = await createInviteLink(db, req, actor, account);
     await db.query("COMMIT");
     writeAudit(pool, req, {
       action: "client_account.create",
       entity_type: "account",
       entity_id: account.id,
-      after: { email, role, company_code: actor.companyCode },
+      after: { email, role, company_code: actor.companyCode, ...(hasStores ? { stores: storeScope } : {}) },
     }).catch(() => {});
     return { status: 200, json: { ok: true, account: { id: account.id, email, display_name: displayName, role, status: "active", password_set: false }, invite_link: invite.url, expires_at: invite.expiresAt } };
   } catch (err) {
@@ -439,6 +502,20 @@ async function setRole(pool, req, actor, body) {
   return { status: 200, json: { ok: true } };
 }
 
+async function setStores(pool, req, actor, body) {
+  const account = await getTargetAccount(pool, actor, body.account_id || body.id);
+  if (!account) return { status: 404, json: { error: "account_not_found" } };
+  const stores = await validateStoreScope(pool, actor.companyCode, body.stores);
+  await pool.query(
+    `UPDATE petstore_account_profile
+        SET store_scope = $1, updated_at = NOW()
+      WHERE account_id::text = $2 AND company_code = $3`,
+    [stores, String(account.id), actor.companyCode]
+  );
+  writeAudit(pool, req, { action: "client_account.set_stores", entity_type: "account", entity_id: account.id, after: { stores } }).catch(() => {});
+  return { status: 200, json: { ok: true } };
+}
+
 async function setStatus(pool, req, actor, body) {
   const account = await getTargetAccount(pool, actor, body.account_id || body.id);
   if (!account) return { status: 404, json: { error: "account_not_found" } };
@@ -474,16 +551,17 @@ export default async function handler(req, res) {
     if (!actor) return;
     const body = req.body || {};
     const action = clean(body.action, 40);
-    if (action === "list") return res.status(200).json({ ok: true, accounts: await listAccounts(pool, actor) });
+    if (action === "list") return res.status(200).json({ ok: true, accounts: await listAccounts(pool, actor), stores: await listStores(pool, actor) });
     if (action === "create") return send(res, await createAccount(pool, req, actor, body));
     if (action === "set_role") return send(res, await setRole(pool, req, actor, body));
+    if (action === "set_stores") return send(res, await setStores(pool, req, actor, body));
     if (action === "set_status") return send(res, await setStatus(pool, req, actor, body));
     if (action === "invite_link") return send(res, await inviteLink(pool, req, actor, body));
     return res.status(400).json({ error: "invalid_action" });
   } catch (err) {
     const status = err.status || 500;
     if (status >= 500) console.error("[client-accounts]", err);
-    return res.status(status).json({ error: err.message || "server_error" });
+    return res.status(status).json({ error: err.message || "server_error", ...(err.store ? { store: err.store } : {}) });
   }
 }
 
