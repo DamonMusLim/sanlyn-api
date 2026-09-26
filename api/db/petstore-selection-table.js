@@ -16,13 +16,14 @@ SELECT product_code, shop, source, monthly_sales, price, orig_price, is_first_pr
 
 const COST_SQL = `
 WITH ops AS (
-  SELECT DISTINCT ON (product_code) product_code, cost_price::numeric AS cost_price
+  SELECT DISTINCT ON (product_code) product_code, cost_price::numeric AS cost_price, NULLIF(pic_url, '') AS pic_url
     FROM public.petstore_ops_row
    WHERE product_code = ANY($1::text[])
-   ORDER BY product_code
+   ORDER BY product_code, (NULLIF(pic_url, '') IS NULL), pic_url
 )
 SELECT c.product_code,
-       COALESCE(o.cost, ops.cost_price) AS cost
+       COALESCE(o.cost, ops.cost_price) AS cost,
+       ops.pic_url
   FROM unnest($1::text[]) AS c(product_code)
   LEFT JOIN ops ON ops.product_code = c.product_code
   LEFT JOIN public.petstore_cost_override o ON o.product_code = c.product_code`;
@@ -113,6 +114,7 @@ function build(rows, shops, costs) {
   }
 
   const costMap = new Map(costs.map((r) => [r.product_code, num(r.cost)]));
+  const picMap = new Map(costs.map((r) => [r.product_code, r.pic_url || null]));
   const counts = { grade1: 0, grade2: 0, grade3: 0, pending: 0 };
 
   const out = rows.map((r) => {
@@ -166,6 +168,7 @@ function build(rows, shops, costs) {
       qty_180: num(r.qty_180),
       cur_stock: num(r.cur_stock),
       monthly_demand: num(r.monthly_demand),
+      pic_url: picMap.get(r.product_code) || null,
       cost,
       unit_profit: unitProfit,
       unit_profit_mt: unitProfitMt,

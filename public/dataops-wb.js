@@ -573,6 +573,7 @@ var PAGES = {
     if(!$("sel-style")){
       var st=document.createElement("style"); st.id="sel-style";
       st.textContent=".sel-wrap{overflow-x:auto;max-width:100%}.sel-table{width:max-content !important;min-width:100%}.sel-table>tbody>tr>td:nth-child(2),.sel-table>thead>tr>th:nth-child(2){white-space:normal !important;min-width:260px;max-width:360px;word-break:break-word}.sel-detail table{width:max-content !important;min-width:100%}.sel-cards{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px;align-items:stretch}.sel-card{border:1px solid #d7dce3;background:#fff;border-radius:6px;padding:9px 12px;cursor:pointer;min-width:92px}.sel-card.on{border-color:#263241;background:#263241;color:#fff}.sel-card b{display:block;font-size:20px}.sel-actions{margin-left:auto;display:flex;gap:8px;align-items:center}.sel-dl,.sel-order{border:1px solid #263241;background:#263241;color:#fff;border-radius:5px;padding:7px 10px;cursor:pointer}.sel-order{padding:4px 8px;font-size:12px}.sel-done{color:#137333;font-size:12px;white-space:normal}.sel-no{color:#98a2b3;font-size:12px}.sel-table{width:100%;border-collapse:collapse;font-size:13px}.sel-table th,.sel-table td{border-bottom:1px solid #eceff3;padding:5px 8px;line-height:1.3;text-align:left;vertical-align:top;white-space:nowrap}.sel-table th{background:#fafafa;font-weight:600}.sel-table th.sel-sort{cursor:pointer}.sel-name{white-space:normal;min-width:240px;max-width:420px;word-break:break-word}.sel-spec{color:#777;font-size:12px;margin-top:3px}.sel-exp{border:1px solid #d7dce3;background:#fff;border-radius:5px;width:26px;height:24px;cursor:pointer}.sel-badge{display:inline-block;border-radius:5px;padding:2px 6px;font-size:12px}.sel-g1{background:#e7f6ec;color:#137333}.sel-g2{background:#eef1f5;color:#526070}.sel-g3{background:#fdeaea;color:#b42318}.sel-gp{background:#fff6d7;color:#8a5a00}.sel-kind{background:#f1f3f5;color:#3b4552}.sel-profit{background:#e7f6ec;color:#137333}.sel-traffic{background:#fff1e5;color:#a34700}.sel-detail{background:#f7f8fa;padding:10px 12px 12px !important}.sel-dt{background:#fff;border:1px solid #e6e9ee;border-radius:8px;border-collapse:separate !important;border-spacing:0;overflow:hidden}.sel-dt th{background:#f3f5f8 !important;color:#5b6573;font-weight:600;font-size:12px;padding:8px 12px !important}.sel-dt td{padding:9px 12px !important;border-bottom:1px solid #f0f2f5 !important;vertical-align:middle !important}.sel-dt tbody tr:hover td{background:#fafbfc}.sel-h{font-weight:400;color:#98a2b3;font-size:11px;margin-left:4px}.sel-p{display:flex;align-items:center;gap:6px}.sel-pp{font-size:15px;font-weight:600;color:#1d2530;font-variant-numeric:tabular-nums}.sel-ps{color:#7a8594;font-size:12px;margin-top:2px;white-space:nowrap}.sel-num{text-align:right;font-variant-numeric:tabular-nums}.sel-shop{min-width:150px}.sel-t{font-style:normal;font-size:11px;padding:1px 6px;border-radius:10px}.sel-tr{background:#fdeaea;color:#b42318}.sel-ty{background:#fff4d6;color:#8a5a00}.sel-ours td{background:#f1f8f3 !important}.sel-detail table{width:100%;border-collapse:collapse;margin:4px 0 6px}.sel-detail th,.sel-detail td{border-bottom:1px solid #eee;padding:6px 8px;text-align:left;white-space:nowrap}.sel-gap{color:#888;font-size:12px;margin:7px 0}.sel-na{color:#bbb}";
+      st.textContent += ".sel-check{width:30px;text-align:center}.sel-check input{width:16px;height:16px;cursor:pointer}.sel-check input:disabled{cursor:not-allowed}.sel-batch:disabled{opacity:.45;cursor:not-allowed}.sel-namebox{display:flex;gap:9px;align-items:flex-start}.sel-thumb{width:40px;height:40px;flex:0 0 40px;border-radius:6px;object-fit:cover;border:1px solid #e1e5ea;background:#f6f7f9}.sel-title{min-width:0}.sel-exp{border:0;background:transparent;color:#2f5d8c;width:auto;height:auto;padding:3px 0;margin-top:4px;font-size:12px;cursor:pointer}.sel-exp:hover{text-decoration:underline}.sel-modal-back{position:fixed;inset:0;background:rgba(29,37,48,.28);z-index:9998;display:flex;align-items:center;justify-content:center;padding:18px}.sel-modal{background:#fff;border:1px solid #dce2e8;border-radius:8px;box-shadow:0 14px 36px rgba(20,28,38,.18);width:min(760px,calc(100vw - 32px));max-height:calc(100vh - 44px);display:flex;flex-direction:column}.sel-modal-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #eef1f4}.sel-modal-head b{font-size:15px}.sel-x{border:0;background:#f1f3f5;border-radius:5px;padding:4px 8px;cursor:pointer}.sel-modal-body{overflow:auto;padding:10px 14px}.sel-batch-row{display:grid;grid-template-columns:minmax(220px,1fr) 90px 130px 60px;gap:8px;align-items:center;border-bottom:1px solid #f0f2f5;padding:8px 0}.sel-batch-name{white-space:normal;word-break:break-word}.sel-qty{width:76px;border:1px solid #cfd6df;border-radius:5px;padding:5px 7px}.sel-qty.bad{border-color:#d92d20;background:#fff5f5}.sel-remove{border:1px solid #d7dce3;background:#fff;border-radius:5px;padding:5px 8px;cursor:pointer}.sel-result{font-size:12px;color:#526070;white-space:normal}.sel-result.ok{color:#137333}.sel-result.bad{color:#b42318}.sel-modal-foot{display:flex;gap:8px;align-items:center;justify-content:flex-end;padding:12px 14px;border-top:1px solid #eef1f4}.sel-summary{margin-right:auto;color:#526070;font-size:12px}.sel-empty{color:#98a2b3;padding:12px 0}";
       document.head.appendChild(st);
     }
     function shortShop(v){
@@ -615,14 +616,174 @@ var PAGES = {
       if(code==="FORBIDDEN"||code==="403") return "无权限";
       return code || "下单失败";
     }
+    function validQty(q){
+      q = String(q==null?"":q).trim();
+      return /^[1-9]\d*$/.test(q) && Number(q) <= 200;
+    }
+    function orderable(r){
+      return !window.__selOrdered[String(r.product_code||"")] && (String(r.grade)==="1" || String(r.grade)==="2");
+    }
+    function selectedCount(){
+      var m = window.__selSelected || {};
+      return Object.keys(m).filter(function(k){ return m[k]; }).length;
+    }
+    function rowLabel(r){
+      return r.our_name || r.product_code || "";
+    }
+    async function postSelectionOrder(productCode, qty){
+      var res = await fetch(apiUrl("db/petstore-selection-order"), {
+        method:"POST",
+        credentials:"include",
+        headers:{"content-type":"application/json"},
+        body:JSON.stringify({product_code:productCode, qty:qty})
+      });
+      var j = await res.json().catch(function(){ return {}; });
+      if(res.ok && j.ok) return { ok:true, intent_id:j.intent_id };
+      return { ok:false, message:failMsg(j.code || String(res.status), j) };
+    }
+    function closeBatchModal(){
+      var old = document.querySelector(".sel-modal-back");
+      if(old) old.remove();
+    }
+    function refreshBatchButton(){
+      var b = document.querySelector("[data-sel-batch]");
+      if(!b) return;
+      var n = selectedCount();
+      b.textContent = "批量下单(已选 "+n+")";
+      b.disabled = n === 0;
+    }
+    function paintOrdered(code, intentId){
+      window.__selOrdered[String(code)] = intentId;
+      delete window.__selSelected[String(code)];
+      var doneText = "已下单 #"+intentId+" 待审批";
+      document.querySelectorAll(".sel-order[data-code]").forEach(function(btn){
+        if(String(btn.dataset.code) !== String(code)) return;
+        var span=document.createElement("span");
+        span.className="sel-done";
+        span.textContent=doneText;
+        btn.replaceWith(span);
+      });
+      document.querySelectorAll(".sel-pick[data-code]").forEach(function(cb){
+        if(String(cb.dataset.code) !== String(code)) return;
+        cb.checked = false;
+        cb.disabled = true;
+      });
+      refreshBatchButton();
+    }
+    function openBatchModal(){
+      var list = (window.__selRows || []).filter(function(r){ return window.__selSelected && window.__selSelected[String(r.product_code)] && orderable(r); });
+      if(!list.length) return;
+      closeBatchModal();
+      var back = document.createElement("div");
+      back.className = "sel-modal-back";
+      back.innerHTML = '<div class="sel-modal" role="dialog" aria-modal="true">'
+        +'<div class="sel-modal-head"><b>批量下单</b><button class="sel-x" data-sel-close>关闭</button></div>'
+        +'<div class="sel-modal-body">'
+        +list.map(function(r){
+          var code = rvEsc(r.product_code);
+          var q = qtyFromAdvice(r.advice);
+          return '<div class="sel-batch-row" data-code="'+code+'"><div class="sel-batch-name">'+rvEsc(rowLabel(r))+'<div class="sel-spec">'+rvEsc(r.spec_text||"")+'</div></div><input class="sel-qty" inputmode="numeric" data-code="'+code+'" value="'+rvEsc(q)+'" placeholder="数量"><div class="sel-result" data-code="'+code+'"></div><button class="sel-remove" data-sel-remove="'+code+'">移除</button></div>';
+        }).join("")
+        +'</div><div class="sel-modal-foot"><span class="sel-summary" data-sel-summary></span><button class="sel-dl" data-sel-confirm>确认下单</button></div></div>';
+      document.body.appendChild(back);
+    }
     window.__selDownload = window.__selDownload || {};
+    window.__selSelected = window.__selSelected || {};
+    window.__selOrdered = window.__selOrdered || {};
+    window.__selTest = { validQty: validQty, orderable: orderable };
     if(!window.__selBound){
       window.__selBound = 1;
       document.addEventListener("click", async function(e){
+        if(e.target.closest("[data-sel-close]")){ closeBatchModal(); return; }
+        var rem = e.target.closest("[data-sel-remove]");
+        if(rem){
+          var row = rem.closest(".sel-batch-row");
+          var remCode = String(rem.dataset.selRemove);
+          delete window.__selSelected[remCode];
+          document.querySelectorAll(".sel-pick[data-code]").forEach(function(cb){
+            if(String(cb.dataset.code) === remCode) cb.checked = false;
+          });
+          if(row) row.remove();
+          refreshBatchButton();
+          var summary = document.querySelector("[data-sel-summary]");
+          if(summary) summary.textContent = selectedCount() ? "" : "已清空";
+          return;
+        }
+        var confirm = e.target.closest("[data-sel-confirm]");
+        if(confirm){
+          var modal = confirm.closest(".sel-modal");
+          var batchRows = Array.prototype.slice.call(modal.querySelectorAll(".sel-batch-row"));
+          var jobs = [];
+          batchRows.forEach(function(row){
+            var code = row.dataset.code;
+            var input = row.querySelector(".sel-qty");
+            var result = row.querySelector(".sel-result");
+            input.classList.remove("bad");
+            result.className = "sel-result";
+            result.textContent = "";
+            if(!validQty(input.value)){
+              input.classList.add("bad");
+              result.className = "sel-result bad";
+              result.textContent = "数量不对";
+              return;
+            }
+            jobs.push({ code:code, qty:Number(String(input.value).trim()), result:result });
+          });
+          if(!jobs.length){
+            var badOnly = modal.querySelector("[data-sel-summary]");
+            if(badOnly) badOnly.textContent = "没有可提交的行";
+            return;
+          }
+          confirm.disabled = true;
+          var ok = 0, bad = batchRows.length - jobs.length;
+          for(var ji=0; ji<jobs.length; ji++){
+            var job = jobs[ji];
+            job.result.textContent = "提交中...";
+            try{
+              var out = await postSelectionOrder(job.code, job.qty);
+              if(out.ok){
+                ok++;
+                job.result.className = "sel-result ok";
+                job.result.textContent = "已下单 #"+out.intent_id+" 待审批";
+                paintOrdered(job.code, out.intent_id);
+              }else{
+                bad++;
+                job.result.className = "sel-result bad";
+                job.result.textContent = out.message;
+              }
+            }catch(_){
+              bad++;
+              job.result.className = "sel-result bad";
+              job.result.textContent = "下单失败";
+            }
+          }
+          var sum = modal.querySelector("[data-sel-summary]");
+          if(sum) sum.textContent = "成功 "+ok+" · 失败 "+bad;
+          confirm.disabled = false;
+          return;
+        }
+        var all = e.target.closest("[data-sel-all]");
+        if(all){
+          (window.__selRows || []).forEach(function(r){
+            var code = String(r.product_code || "");
+            if(orderable(r)) window.__selSelected[code] = all.checked;
+          });
+          document.querySelectorAll(".sel-pick:not(:disabled)").forEach(function(cb){ cb.checked = all.checked; });
+          refreshBatchButton();
+          return;
+        }
+        var pick = e.target.closest(".sel-pick[data-code]");
+        if(pick){
+          window.__selSelected[String(pick.dataset.code)] = pick.checked;
+          refreshBatchButton();
+          return;
+        }
+        var batch = e.target.closest("[data-sel-batch]");
+        if(batch){ openBatchModal(); return; }
         var ex = e.target.closest(".sel-exp[data-i]");
         if(ex){
           var tr = document.querySelector('.sel-detail-row[data-i="'+ex.dataset.i+'"]');
-          if(tr){ var hide = tr.style.display === "none"; tr.style.display = hide ? "" : "none"; ex.textContent = hide ? "▾" : "▸"; }
+          if(tr){ var hide = tr.style.display === "none"; tr.style.display = hide ? "" : "none"; ex.textContent = hide ? "收起 ▾" : "详情 ▸"; }
           return;
         }
         var card = e.target.closest(".sel-card[data-grade]");
@@ -659,10 +820,7 @@ var PAGES = {
             var j = await res.json().catch(function(){ return {}; });
             if(res.ok && j.ok){
               if(seq0!==NAV_SEQ){ alert("已下单 #"+j.intent_id+" 待审批"); return; }
-              var span=document.createElement("span");
-              span.className="sel-done";
-              span.textContent="已下单 #"+j.intent_id+" 待审批";
-              btn.replaceWith(span);
+              paintOrdered(btn.dataset.code, j.intent_id);
               verdict("✅ 已下单 #"+j.intent_id+" 待审批");
             }else{
               if(seq0!==NAV_SEQ){ alert(failMsg(j.code || String(res.status), j)); return; }
@@ -688,6 +846,12 @@ var PAGES = {
       if(!isFinite(av)) av = desc ? -Infinity : Infinity;
       if(!isFinite(bv)) bv = desc ? -Infinity : Infinity;
       return desc ? bv-av : av-bv;
+    });
+    window.__selRows = rows;
+    var visible = {};
+    rows.forEach(function(r){ visible[String(r.product_code || "")] = 1; });
+    Object.keys(window.__selSelected).forEach(function(code){
+      if(!visible[code]) delete window.__selSelected[code];
     });
     window.__selDownload.main = function(){
       var lines=[csvLine(["产品","规格","总月销","有效最低价","最低价店","最高月销","最高月销店","成本","每件赚线下","每件赚美团扣5%","利润率","评估","款型","我方线下价","我方美团价","我方饿了么价","库存","180天","建议","采集时间"])];
@@ -744,13 +908,21 @@ var PAGES = {
         +'</thead><tbody>'+shops+'</tbody></table><div class="sel-gap">数据缺口:'+(r.gaps&&r.gaps.length?rvEsc(r.gaps.join("、")):"无")+'</div></td></tr>';
     }
     var body = rows.map(function(r,i){
-      var can = String(r.grade)==="1" || String(r.grade)==="2";
+      var code = String(r.product_code || "");
+      var can = orderable(r);
       var q = qtyFromAdvice(r.advice);
-      var op = can ? '<button class="sel-order" data-code="'+rvEsc(r.product_code)+'" data-qty="'+rvEsc(q)+'">下单</button>' : '<span class="sel-no">不可下单</span>';
-      return '<tr><td><button class="sel-exp" data-i="'+i+'">▸</button></td><td class="sel-name">'+rvEsc(r.our_name||r.product_code)+'<div class="sel-spec">'+rvEsc(r.spec_text||"")+'</div></td><td>'+rvN(r.total_sales)+'</td><td>'+rvMoney(r.eff_min_price)+'<div class="sel-spec">'+'<span title="'+rvEsc(r.eff_min_shop||"")+'">'+rvEsc(shortShop(r.eff_min_shop))+'</span>'+'</div></td><td>'+rvN(r.max_sales)+'<div class="sel-spec">'+'<span title="'+rvEsc(r.max_shop||"")+'">'+rvEsc(shortShop(r.max_shop))+'</span>'+'</div></td><td>'+rvMoney(r.cost)+'</td><td>'+rvMoney(r.unit_profit)+' / '+rvMoney(r.unit_profit_mt)+'</td><td>'+pct01(r.margin)+'</td><td><span class="sel-badge '+gradeCls(r.grade)+'">'+rvEsc(r.grade)+'</span></td><td><span class="sel-badge '+kindCls(r.kind)+'">'+rvEsc(r.kind)+'</span></td><td>'+rvMoney(r.our_store_price)+' / '+rvMoney(r.our_mt_price)+'</td><td>'+rvN(r.cur_stock)+'</td><td>'+rvN(r.qty_180)+'</td><td>'+rvEsc(r.advice||"")+'</td><td>'+op+'</td></tr>'+detail(r,i);
+      var ordered = window.__selOrdered[code];
+      var op = ordered ? '<span class="sel-done">已下单 #'+rvEsc(ordered)+' 待审批</span>' : (can ? '<button class="sel-order" data-code="'+rvEsc(r.product_code)+'" data-qty="'+rvEsc(q)+'">下单</button>' : '<span class="sel-no">不可下单</span>');
+      var checked = window.__selSelected[code] && can ? ' checked' : '';
+      var disabled = can ? '' : ' disabled';
+      var img = r.pic_url ? '<a href="'+rvEsc(r.pic_url)+'" target="_blank" rel="noopener"><img class="sel-thumb" loading="lazy" src="'+rvEsc(r.pic_url)+'" onerror="this.style.display=\'none\'"></a>' : '';
+      var name = '<div class="sel-namebox">'+img+'<div class="sel-title">'+rvEsc(r.our_name||r.product_code)+'<div class="sel-spec">'+rvEsc(r.spec_text||"")+'</div><button class="sel-exp" data-i="'+i+'">详情 ▸</button></div></div>';
+      return '<tr><td class="sel-check"><input class="sel-pick" type="checkbox" data-code="'+rvEsc(r.product_code)+'"'+checked+disabled+'></td><td class="sel-name">'+name+'</td><td>'+rvN(r.total_sales)+'</td><td>'+rvMoney(r.eff_min_price)+'<div class="sel-spec">'+'<span title="'+rvEsc(r.eff_min_shop||"")+'">'+rvEsc(shortShop(r.eff_min_shop))+'</span>'+'</div></td><td>'+rvN(r.max_sales)+'<div class="sel-spec">'+'<span title="'+rvEsc(r.max_shop||"")+'">'+rvEsc(shortShop(r.max_shop))+'</span>'+'</div></td><td>'+rvMoney(r.cost)+'</td><td>'+rvMoney(r.unit_profit)+' / '+rvMoney(r.unit_profit_mt)+'</td><td>'+pct01(r.margin)+'</td><td><span class="sel-badge '+gradeCls(r.grade)+'">'+rvEsc(r.grade)+'</span></td><td><span class="sel-badge '+kindCls(r.kind)+'">'+rvEsc(r.kind)+'</span></td><td>'+rvMoney(r.our_store_price)+' / '+rvMoney(r.our_mt_price)+'</td><td>'+rvN(r.cur_stock)+'</td><td>'+rvN(r.qty_180)+'</td><td>'+rvEsc(r.advice||"")+'</td><td>'+op+'</td></tr>'+detail(r,i);
     }).join("");
     var c = data.counts || {};
-    return '<div class="sel-wrap"><div class="sel-cards">'+card("1","评估1",c.grade1||0)+card("2","评估2",c.grade2||0)+card("3","评估3",c.grade3||0)+card("待核","待核",c.pending||0)+'<span class="sel-ps" style="align-self:center;margin-left:6px">数据采集 '+rvEsc(allRange())+' · 对手快照不再更新</span><div class="sel-actions"><button class="sel-dl" data-dl="main">下载主表</button><button class="sel-dl" data-dl="detail">下载详情</button></div></div><table class="sel-table"><thead><tr><th></th><th>产品</th><th class="sel-sort" data-sort="total_sales">总月销</th><th>有效最低价(店)</th><th>最高月销(店)</th><th>成本</th><th>每件赚(线下/美团)</th><th class="sel-sort" data-sort="margin">利润率</th><th>评估</th><th>款型</th><th>我方价(线下/美团)</th><th>库存</th><th>180天</th><th>建议</th><th>操作</th></tr></thead><tbody>'+body+'</tbody></table></div>';
+    var selectable = rows.filter(orderable);
+    var allChecked = selectable.length && selectable.every(function(r){ return window.__selSelected[String(r.product_code || "")]; });
+    return '<div class="sel-wrap"><div class="sel-cards">'+card("1","评估1",c.grade1||0)+card("2","评估2",c.grade2||0)+card("3","评估3",c.grade3||0)+card("待核","待核",c.pending||0)+'<span class="sel-ps" style="align-self:center;margin-left:6px">数据采集 '+rvEsc(allRange())+' · 对手快照不再更新</span><div class="sel-actions"><button class="sel-dl" data-dl="main">下载主表</button><button class="sel-dl" data-dl="detail">下载详情</button><button class="sel-dl sel-batch" data-sel-batch '+(selectedCount()?'':'disabled')+'>批量下单(已选 '+rvEsc(selectedCount())+')</button></div></div><table class="sel-table"><thead><tr><th class="sel-check"><input type="checkbox" data-sel-all '+(allChecked?'checked':'')+(selectable.length?'':' disabled')+'></th><th>产品</th><th class="sel-sort" data-sort="total_sales">总月销</th><th>有效最低价(店)</th><th>最高月销(店)</th><th>成本</th><th>每件赚(线下/美团)</th><th class="sel-sort" data-sort="margin">利润率</th><th>评估</th><th>款型</th><th>我方价(线下/美团)</th><th>库存</th><th>180天</th><th>建议</th><th>操作</th></tr></thead><tbody>'+body+'</tbody></table></div>';
   },
   rivalOv: async function(){
     var d = await rvLive();
