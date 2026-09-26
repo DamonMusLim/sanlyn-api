@@ -5,6 +5,12 @@
 // 「点开有详情…以及建议,我可以补充」「要能闭环」(Damon 2026-08-12)
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { requireWritable } from "../moduleGate.js";
+
+// 🔴 0926 迁入 petstore-api 时补的闸(Damon 0828「所有降价都必须他同意」):
+//    原来 origin 缺省即 boss → pending → 执行器直接认领改价,任何有效 JWT 都能绕过审批。
+//    现在只有 Damon 本人账号(uid 1 damon_sl / 91 damon)才能落 pending,其余一律降为 proposed 走三段审。
+const BOSS_UIDS = new Set([1, 91]);
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS petstore_product_notes (
@@ -34,6 +40,9 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ success: false, error: "POST required" });
   if (!requireAuth(req, res)) return;
+  // 写口的模块闸(同 petstore-pets-create):改价/锁价/批注都算零售模块
+  const gate = await requireWritable(req, res, "retail");
+  if (!gate) return;
   const b = req.body || {};
   const code = String(b.product_code || "").trim();
   if (!code) return res.status(400).json({ success: false, error: "product_code 必填" });
@@ -60,7 +69,8 @@ export default async function handler(req, res) {
       // origin=system(Cora等自动管线) → proposed,必须走 店长审→Claude终审
       // origin=boss / 缺省(老板在详情页点的) → pending 直通,他自己就是终审
       const origin = String(b.origin || "boss");
-      const initStatus = origin === "system" ? "proposed" : "pending";
+      const isBoss = BOSS_UIDS.has(Number(req.user?.uid ?? req.user?.id));
+      const initStatus = origin !== "system" && isBoss ? "pending" : "proposed";
       // 同 SKU 同渠道已有未完成指令 → 拒绝,别排队打架
       const dup = await pool.query(
         `SELECT id, status, target_price FROM petstore_price_intents

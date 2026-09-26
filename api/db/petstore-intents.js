@@ -4,6 +4,13 @@ import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { reportFailure } from "./lib/report-failure.mjs";
 
+// 🔴 0926 迁入 petstore-api 时补的闸:
+//    ①认领(claim)只许执行器服务账号(uid 90 svc-agent,Studio run_pricing 经 mini 桥签发)
+//    ②本接口只做【执行回写】,不做审批 —— proposed→mgr_ok→approved/rejected 必须走
+//      petstore-pricing-decide(真人 person_id 留痕)。原来任何 JWT 都能在这里把 proposed 直接推到 approved。
+const EXECUTOR_UIDS = new Set([90]);
+const BOSS_UIDS = new Set([1, 91]);   // Damon 本人:可撤销自己的 pending
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -20,7 +27,10 @@ export default async function handler(req, res) {
        WHERE status='applying' AND claimed_at < now() - interval '15 minutes'`).catch(() => {});
 
     // 原子认领:执行器专用,一次拿走一批并置 applying,别的 worker 就抢不到了
+    const uid = Number(req.user?.uid ?? req.user?.id);
     if (req.method === "POST" && String(req.body?.action || "") === "claim") {
+      if (!EXECUTOR_UIDS.has(uid))
+        return res.status(403).json({ success: false, error: "claim 仅限执行器服务账号" });
       const worker = String(req.body?.worker || "unknown").slice(0, 40);
       const lim = Math.min(Number(req.body?.limit) || 50, 200);
       const r = await pool.query(
@@ -47,10 +57,12 @@ export default async function handler(req, res) {
       const b = req.body || {};
       const id = Number(b.id);
       const status = String(b.status || "").trim();
-      const FLOW = { proposed: ["mgr_ok", "rejected"], mgr_ok: ["approved", "rejected"],
-                     approved: ["applied", "failed", "applying"], pending: ["applied", "failed", "cancelled", "applying"],
+      if (!EXECUTOR_UIDS.has(uid) && !BOSS_UIDS.has(uid))
+        return res.status(403).json({ success: false, error: "回写仅限执行器或 Damon 本人;审批请走 petstore-pricing-decide" });
+      // 审批类流转(proposed→mgr_ok/rejected、mgr_ok→approved/rejected)已移出本接口
+      const FLOW = { approved: ["applied", "failed", "applying"], pending: ["applied", "failed", "cancelled", "applying"],
                      applying: ["applied", "failed", "approved"] };
-      const ALL = ["mgr_ok", "approved", "rejected", "applied", "failed", "cancelled", "applying", "stale"];
+      const ALL = ["approved", "applied", "failed", "cancelled", "applying"];
       if (!Number.isFinite(id) || !ALL.includes(status))
         return res.status(400).json({ success: false, error: "id 必填, status ∈ " + ALL.join("/") });
       const from = Object.entries(FLOW).filter(([, to]) => to.includes(status)).map(([f]) => f);
