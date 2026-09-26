@@ -215,7 +215,11 @@ body.pdfmode input,body.pdfmode textarea{border:0!important;background:transpare
 .histbox{margin-top:14px;font-size:11.5px}.histbox summary{cursor:pointer;color:var(--ink2)}
 .histbox li{color:var(--ink2)}
 .pdfval{font-size:12px;padding:2px 0;white-space:pre-wrap}
-table.items td:nth-child(2){min-width:230px}body.pdfmode table.items td:nth-child(2){min-width:0}
+#tb td:nth-child(2){min-width:230px}body.pdfmode #tb td:nth-child(2){min-width:0}
+/* 数字列按内容收窄、不换行；剩下的宽度全给品名 */
+table.items th.num,table.items td.num{width:1%;white-space:nowrap}
+table.items td.num input.cq{width:64px}
+table.items.noimg th.col-img,table.items.noimg td.col-img{display:none}body.pdfmode table.items td:nth-child(2){min-width:0}
 body.pdfmode .edited{background:transparent!important;box-shadow:none!important}
 body.pdfmode .col-note.empty{display:none}
 body.pdfmode table.items{table-layout:fixed}
@@ -281,10 +285,10 @@ body.pdfmode .reqnote.on{display:block}
 
     <table class="items">
       <thead><tr>
-        <th style="width:34px" data-t="no"></th><th data-t="item"></th><th style="width:38px" class="no-print"></th>
-        <th style="width:84px" data-t="qty"></th><th style="width:70px" data-t="pack"></th>
-        <th style="width:84px" id="thPrice"></th><th style="width:96px" id="thAmt"></th>
-        <th style="width:100px" data-t="barcode"></th><th style="width:150px" class="col-note" data-t="note"></th>
+        <th class="num" data-t="no"></th><th data-t="item"></th><th class="no-print col-img"></th>
+        <th class="num" data-t="qty"></th><th class="num" data-t="pack"></th>
+        <th class="num" id="thPrice"></th><th class="num" id="thAmt"></th>
+        <th class="num" data-t="barcode"></th><th style="width:150px" class="col-note" data-t="note"></th>
       </tr></thead>
       <tbody id="tb"></tbody>
       <tfoot><tr><td colspan="3" class="r" id="totLbl" data-t="total"></td><td class="c" id="totQty"></td><td></td><td></td><td class="r" id="totAmt"></td><td></td><td class="col-note"></td></tr></tfoot>

@@ -22,7 +22,7 @@ var I={
 en:{dl_pdf:"Download PI PDF",print:"Print",title:"PROFORMA INVOICE",subtitle:"ORDER COLLABORATION",submit:"Submit changes",
  s1:"Review the order",s1a:"Change quantity, requested delivery, shipping marks or notes directly in the table if needed.",s1b:"Changes are requests — they take effect after we confirm them.",
  s2:"Confirm the PI",s2b:"Or download the PI PDF, sign/stamp it and upload it here (PDF / image).",or:"or",view:"View",download:"Download",
- seller:"Seller",buyer:"Buyer",req_delivery:"Requested delivery date",marks:"Shipping marks",no:"No.",item:"Item description",qty:"Qty (CTN)",pack:"Pcs / CTN",
+ seller:"Seller",buyer:"Buyer",req_delivery:"Requested delivery date",marks:"Shipping marks",no:"No.",item:"Item description",qty:"Qty (CTN)",pack:"Pcs/CTN",
  price:"Unit price",amount:"Amount",barcode:"Barcode",note:"Your note",total:"TOTAL",payment:"Payment terms",payee:"Please remit to",remarks:"Remarks",
  seller_sign:"Seller",buyer_sign:"Buyer (company seal)",seal_here:"Company seal",history:"Change history",
  pi_no:"PI No.",date:"Date",currency:"Currency",terms:"Trade terms",port:"Port of destination",cf_delivery:"Confirmed delivery (by us)",
@@ -72,7 +72,7 @@ zh:{dl_pdf:"下载 PI PDF",print:"打印",title:"形 式 发 票",subtitle:"订�
 ms:{dl_pdf:"Muat turun PDF PI",print:"Cetak",title:"INVOIS PROFORMA",subtitle:"KERJASAMA PESANAN",submit:"Hantar perubahan",
  s1:"Semak pesanan",s1a:"Jika perlu, ubah kuantiti, tarikh penghantaran, tanda penghantaran atau nota terus dalam jadual.",s1b:"Perubahan ialah permohonan — berkuat kuasa selepas kami sahkan.",
  s2:"Sahkan PI",s2b:"Atau muat turun PDF PI, tandatangan/cop dan muat naik di sini (PDF / imej).",or:"atau",view:"Lihat",download:"Muat turun",
- seller:"Penjual",buyer:"Pembeli",req_delivery:"Tarikh penghantaran diminta",marks:"Tanda penghantaran",no:"No.",item:"Keterangan barang",qty:"Kuantiti (KTN)",pack:"Unit / KTN",
+ seller:"Penjual",buyer:"Pembeli",req_delivery:"Tarikh penghantaran diminta",marks:"Tanda penghantaran",no:"No.",item:"Keterangan barang",qty:"Kuantiti (KTN)",pack:"Unit/KTN",
  price:"Harga seunit",amount:"Jumlah",barcode:"Kod bar",note:"Nota anda",total:"JUMLAH",payment:"Terma bayaran",payee:"Sila bayar kepada",remarks:"Catatan",
  seller_sign:"Penjual",buyer_sign:"Pembeli (cop syarikat)",seal_here:"Cop syarikat",history:"Sejarah perubahan",
  pi_no:"No. PI",date:"Tarikh",currency:"Mata wang",terms:"Terma perdagangan",port:"Pelabuhan destinasi",cf_delivery:"Penghantaran disahkan (oleh kami)",
@@ -158,15 +158,17 @@ function render(){
   $("tb").innerHTML=D.lines.map(function(l){
     var q=num(eff(l,"qty")),p=num(l.ours.price),a=(q!=null&&p!=null)?q*p:num(l.ours.amount);
     tq+=q||0;ta+=a||0;var th=l.theirs||{};
-    return '<tr data-id="'+esc(l.id)+'"><td class="c">'+esc(l.seq)+"</td><td>"+esc(l.product_name)+"</td>"
-      +(PDF?"":'<td class="c no-print">'+(l.image_url?'<img src="'+esc(l.image_url)+'" style="width:28px;height:28px;object-fit:cover;border-radius:2px">':"")+"</td>")
-      +'<td class="c'+(th.qty!=null?" edited":"")+'">'+(fix?esc(q==null?"":q)+(PDF&&th.qty!=null?" *":""):'<input class="cq" data-k="qty" value="'+esc(q==null?"":q)+'" inputmode="numeric">')+"</td>"
-      +'<td class="c">'+esc(l.ours.pack||"")+'</td><td class="r">'+price(p)+'</td><td class="r">'+money(a)+"</td>"
-      +'<td class="c">'+esc(l.ours.barcode||"")+"</td>"
+    return '<tr data-id="'+esc(l.id)+'"><td class="c num">'+esc(l.seq)+"</td><td>"+esc(l.product_name)+"</td>"
+      +(PDF?"":'<td class="c no-print col-img">'+(l.image_url?'<img src="'+esc(l.image_url)+'" style="width:28px;height:28px;object-fit:cover;border-radius:2px">':"")+"</td>")
+      +'<td class="c num'+(th.qty!=null?" edited":"")+'">'+(fix?esc(q==null?"":q)+(PDF&&th.qty!=null?" *":""):'<input class="cq" data-k="qty" value="'+esc(q==null?"":q)+'" inputmode="numeric">')+"</td>"
+      +'<td class="c num">'+esc(l.ours.pack||"")+'</td><td class="r num">'+price(p)+'</td><td class="r num">'+money(a)+"</td>"
+      +'<td class="c num">'+esc(l.ours.barcode||"")+"</td>"
       +'<td class="col-note'+(th.note?" edited":"")+'">'+(fix?esc(th.note||""):'<input class="cn" data-k="note" value="'+esc(th.note||"")+'">')+"</td></tr>";
   }).join("");
   if(PDF)$("totLbl").colSpan=2;
   $("totQty").textContent=tq;$("totAmt").textContent=money(ta);
+  var noimg=!D.lines.some(function(l){return l.image_url});document.querySelector("table.items").classList.toggle("noimg",noimg);
+  $("totLbl").colSpan=(PDF||noimg)?2:3;
   var anyNote=D.lines.some(function(l){return (l.theirs||{}).note});
   [].forEach.call(document.querySelectorAll(".col-note"),function(el){el.classList.toggle("empty",!anyNote)});
   var anyReq=D.lines.some(function(l){return (l.theirs||{}).qty!=null})||!!(rq.delivery||rq.marks!=null||rq.remarks);
