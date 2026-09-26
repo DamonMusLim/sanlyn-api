@@ -219,4 +219,6 @@ export function registerTailRoutes(app, mount) {
     }
   });
   mount("/api/db/po-collab", () => import("./api/db/po-collab.js"));
+  // nginx auth_request 探针：只许管理员(+damon uid 91)，补货池用（0926）
+  mount("/api/db/auth-admin-check", () => import("./api/db/auth-admin-check.js"));
 }
