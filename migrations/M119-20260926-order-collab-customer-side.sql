@@ -13,3 +13,6 @@ END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS po_sheet_live_uniq_side ON collab.po_sheet (order_no, side) WHERE status <> 'void';
 DROP INDEX IF EXISTS collab.po_sheet_live_uniq;
 CREATE INDEX IF NOT EXISTS po_sheet_party_idx ON collab.po_sheet (party_company_id) WHERE party_company_id IS NOT NULL;
+-- ⚠️ 客户单（side='customer'）复用 factory_name 这一列存【客户公司名】（对方公司名），不是工厂。按工厂查请一律加 side='factory'。
+COMMENT ON COLUMN collab.po_sheet.factory_name IS '对方公司名：side=factory 时是工厂名；side=customer 时是客户公司名（订单协同客户版）';
+COMMENT ON COLUMN collab.po_sheet.side IS 'factory=采购单协同（巴匕买、工厂卖）；customer=订单协同客户版 PI（巴匕卖、客户买）';

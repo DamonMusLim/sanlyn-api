@@ -350,7 +350,9 @@ en:{dl_pdf:"Download PI PDF",print:"Print",title:"PROFORMA INVOICE",subtitle:"OR
  user:"Account",pass:"Password",login:"Log in",logout:"Log out",logged:"Logged in",
  ship_on:"Shipment collaboration →",ship_off:"Shipment collaboration opens after booking",returned:"We sent this order back for changes: ",
  inner:"You are logged in with an internal account (view only). Confirming and seal changes need the customer's account.",
- req_note:"* Changes requested by the buyer, subject to the seller's confirmation.",readonly:"This order has been confirmed by us and is read-only."},
+ req_note:"* Changes requested by the buyer, subject to the seller's confirmation.",
+ no_link:"Link is missing. Please open the full link we sent you.",bad_link:"Invalid link",err:"Error: ",unsaved:"Unsaved changes will be lost. Switch?",
+ max8:"The file must be 8 MB or smaller.",max2:"The seal image must be 2 MB or smaller.",login_fail:"Login failed",page_title:"Order Collaboration",readonly:"This order has been confirmed by us and is read-only."},
 zh:{dl_pdf:"下载 PI PDF",print:"打印",title:"形 式 发 票",subtitle:"订单协同 · PROFORMA INVOICE",submit:"提交修改",
  s1:"核对订单",s1a:"数量、要求交期、唛头、备注如需调整，直接在表格里改。",s1b:"修改是申请，我方确认后才生效。",
  s2:"确认 PI",s2b:"也可以下载 PI PDF，签字或盖章后在这里上传（PDF / 图片）。",or:"或",view:"预览",download:"下载",
@@ -373,7 +375,9 @@ zh:{dl_pdf:"下载 PI PDF",print:"打印",title:"形 式 发 票",subtitle:"订�
  user:"账号",pass:"密码",login:"登录",logout:"退出",logged:"已登录",
  ship_on:"发货协同 →",ship_off:"订舱后开放发货协同",returned:"我方已退回，请修改：",
  inner:"你现在是我方账号，只能查看；确认和换章要客户账号登录。",
- req_note:"* 为买方申请的修改，以卖方确认为准。",readonly:"这张单我方已确认，只读。"},
+ req_note:"* 为买方申请的修改，以卖方确认为准。",
+ no_link:"链接不完整，请用我们发给您的完整链接打开。",bad_link:"链接无效",err:"出错了：",unsaved:"还有修改没提交，切换会丢掉。确定切换？",
+ max8:"文件不能超过 8MB",max2:"公章图片不能超过 2MB",login_fail:"登录失败",page_title:"订单协同",readonly:"这张单我方已确认，只读。"},
 ms:{dl_pdf:"Muat turun PDF PI",print:"Cetak",title:"INVOIS PROFORMA",subtitle:"KERJASAMA PESANAN",submit:"Hantar perubahan",
  s1:"Semak pesanan",s1a:"Jika perlu, ubah kuantiti, tarikh penghantaran, tanda penghantaran atau nota terus dalam jadual.",s1b:"Perubahan ialah permohonan — berkuat kuasa selepas kami sahkan.",
  s2:"Sahkan PI",s2b:"Atau muat turun PDF PI, tandatangan/cop dan muat naik di sini (PDF / imej).",or:"atau",view:"Lihat",download:"Muat turun",
@@ -396,7 +400,9 @@ ms:{dl_pdf:"Muat turun PDF PI",print:"Cetak",title:"INVOIS PROFORMA",subtitle:"K
  user:"Akaun",pass:"Kata laluan",login:"Log masuk",logout:"Log keluar",logged:"Log masuk sebagai",
  ship_on:"Kerjasama penghantaran →",ship_off:"Kerjasama penghantaran dibuka selepas tempahan",returned:"Kami menghantar balik pesanan ini untuk diubah: ",
  inner:"Akaun dalaman (lihat sahaja).",
- req_note:"* Perubahan yang diminta oleh pembeli, tertakluk kepada pengesahan penjual.",readonly:"Pesanan ini telah disahkan oleh kami (baca sahaja)."}
+ req_note:"* Perubahan yang diminta oleh pembeli, tertakluk kepada pengesahan penjual.",
+ no_link:"Pautan tidak lengkap. Sila buka pautan penuh yang kami hantar.",bad_link:"Pautan tidak sah",err:"Ralat: ",unsaved:"Perubahan belum dihantar akan hilang. Tukar?",
+ max8:"Fail mesti 8 MB atau kurang.",max2:"Imej cop mesti 2 MB atau kurang.",login_fail:"Log masuk gagal",page_title:"Kerjasama Pesanan",readonly:"Pesanan ini telah disahkan oleh kami (baca sahaja)."}
 };
 var LANG=(function(){var l=Q.get("lang")||lsGet("order_collab_lang")||"en";return I[l]?l:"en"})();
 function t(k){return (I[LANG]&&I[LANG][k])||I.en[k]||k}
@@ -413,13 +419,13 @@ function readJwt(){IS_BUYER=false;WHO="";try{var p=JSON.parse(atob((JWT.split(".
 
 function load(){
   applyI18n();
-  if(!TOKEN){$("state").innerHTML="<b>Link is missing.</b>";return}
+  if(!TOKEN){$("state").innerHTML="<b>"+esc(t("no_link"))+"</b>";return}
   fetch(API+"/validate?token="+encodeURIComponent(TOKEN)+(SHEETQ?"&sheet="+encodeURIComponent(SHEETQ):""),{headers:AH()})
     .then(function(r){return r.json()}).then(function(j){
       if(j.need_login){showLogin(j.forbidden?j.error:"");return}
-      if(!j.valid){$("state").innerHTML="<b>"+esc(j.error||"Invalid link")+"</b>";return}
+      if(!j.valid){$("state").innerHTML="<b>"+esc(j.error||t("bad_link"))+"</b>";return}
       D=j;readJwt();$("state").style.display="none";$("wrap").style.display="";render();
-    }).catch(function(e){$("state").innerHTML="<b>Error: </b>"+esc(e.message)});
+    }).catch(function(e){$("state").innerHTML="<b>"+esc(t("err"))+"</b>"+esc(e.message)});
 }
 function showLogin(msg){
   $("wrap").style.display="none";$("swBar").style.display="none";$("shipBar").style.display="none";$("state").style.display="";
@@ -431,7 +437,7 @@ function showLogin(msg){
   var go=function(){var u=$("lgU").value.trim(),pw=$("lgP").value;if(!u||!pw)return;$("lgBtn").disabled=true;
     fetch(BASE+"/api/db/auth-login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:pw})})
       .then(function(r){return r.json()}).then(function(j){
-        if(!j.token){$("lgErr").textContent=j.error||"Login failed";$("lgBtn").disabled=false;return}
+        if(!j.token){$("lgErr").textContent=j.error||t("login_fail");$("lgBtn").disabled=false;return}
         lsSet("order_collab_jwt",j.token);JWT=j.token;$("state").innerHTML="Loading…";load();
       }).catch(function(e){$("lgErr").textContent=e.message;$("lgBtn").disabled=false})};
   $("lgBtn").onclick=go;$("lgP").onkeydown=function(e){if(e.key==="Enter")go()};
@@ -442,7 +448,7 @@ function kv(rows){return rows.filter(function(r){return r[1]}).map(function(r){r
 var PDF=document.documentElement.classList.contains("pdfmode");
 function render(){
   var s=D.sheet,ro=s.status==="adopted";window.READONLY=ro;var fix=ro||PDF;
-  document.title="PI "+(s.display_no||"")+" · Order Collaboration";
+  document.title="PI "+(s.display_no||"")+" · "+t("page_title");
   $("tag").innerHTML=esc(t("subtitle"))+(WHO?" · "+esc(t("logged"))+" "+esc(WHO)+' · <a href="#" id="bLogout">'+esc(t("logout"))+"</a>":"");
   $("retMsg").style.display=s.return_reason?"":"none";$("retMsg").textContent=t("returned")+(s.return_reason||"");
   var se=s.seller||{},bu=s.buyer||{};
@@ -555,21 +561,21 @@ $("bPrint").onclick=function(){window.print()};
 $("cfView").onclick=function(e){e.preventDefault();openPdf("/contract"+sq())};
 $("cfDl").onclick=function(e){e.preventDefault();openPdf("/contract"+sq()+"&dl=1",true)};
 $("bSigned").onclick=function(){$("fileInput").value="";$("fileInput").click()};
-$("fileInput").onchange=function(){var f=this.files&&this.files[0];if(!f)return;if(f.size>8*1024*1024){toast("≤ 8 MB",true);return}
+$("fileInput").onchange=function(){var f=this.files&&this.files[0];if(!f)return;if(f.size>8*1024*1024){toast(t("max8"),true);return}
   readFile(f,function(b64){post("/upload",{kind:"signed_back",filename:f.name,mime:f.type,data_base64:b64}).then(function(j){if(!j.ok){toast(j.error||"Error",true);return}toast(t("uploaded"));load()})})};
 $("bSeal").onclick=function(){var b=this;ask(t("ask_seal"),function(){b.disabled=true;b.textContent=t("sealing");
   post("/seal").then(function(j){b.disabled=false;b.textContent=t("btn_seal");if(!j.ok){toast(j.error||"Error",true);return}toast(t("sealed"));load()})
     .catch(function(e){b.disabled=false;b.textContent=t("btn_seal");toast(e.message,true)})})};
 $("bSealUp").onclick=function(){var pick=function(){$("sealFile").value="";$("sealFile").click()};
   if((D.sheet.seal||{}).status==="active")ask(t("ask_change"),pick);else pick()};
-$("sealFile").onchange=function(){var f=this.files&&this.files[0];if(!f)return;if(f.size>2*1024*1024){toast("≤ 2 MB",true);return}
+$("sealFile").onchange=function(){var f=this.files&&this.files[0];if(!f)return;if(f.size>2*1024*1024){toast(t("max2"),true);return}
   readFile(f,function(b64){post("/seal-upload",{filename:f.name,mime:f.type,data_base64:b64}).then(function(j){if(!j.ok){toast(j.error||"Error",true);return}toast(t("seal_uploaded"));load()})})};
 document.addEventListener("click",function(e){
   if(e.target.id==="bLogout"){e.preventDefault();try{localStorage.removeItem("order_collab_jwt")}catch(x){}JWT="";showLogin();return}
   if(e.target.id==="bShip"){post("/shipment-link").then(function(j){if(j.ok&&j.url)location.href=j.url;else toast(j.error||t("ship_off"),true)});return}
   var tb=e.target.closest("#swTabs button[data-tab]");if(tb){swTab=tb.getAttribute("data-tab");renderSwitch();return}
   var c=e.target.closest(".swchip[data-sheet]");if(!c||String(c.getAttribute("data-sheet"))===String(D.sheet.id))return;
-  var go=function(){Q.set("sheet",c.getAttribute("data-sheet"));location.search=Q.toString()};if(dirty)ask("Unsaved changes will be lost. Switch?",go);else go();
+  var go=function(){Q.set("sheet",c.getAttribute("data-sheet"));location.search=Q.toString()};if(dirty)ask(t("unsaved"),go);else go();
 });
 load();
 })();
