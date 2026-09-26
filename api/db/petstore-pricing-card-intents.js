@@ -16,12 +16,12 @@ function authorFrom(req) {
   return session ? `clerk:${session.slice(0, 40)}` : "pricing-card";
 }
 
-async function insertIntent(client, row, decision, channel, oldPrice, targetPrice, reason, author) {
+async function insertIntent(client, row, decision, channel, oldPrice, targetPrice, reason, author, status) {
   const { rows } = await client.query(`
     WITH inserted AS (
       INSERT INTO petstore_price_intents
         (product_code, product_name, channel, old_price, target_price, reason, author, status)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,'approved')
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$9)
       ON CONFLICT DO NOTHING
       RETURNING id, product_code, channel, old_price, target_price, status, result, created_at
     ),
@@ -45,6 +45,7 @@ async function insertIntent(client, row, decision, channel, oldPrice, targetPric
     reason,
     author,
     OPEN_STATUSES,
+    status,
   ]);
   return rows[0] || null;
 }
@@ -55,7 +56,10 @@ function onlineChannels(decision) {
   return ["美团", "饿了么"];
 }
 
-export async function createCardPriceIntents(client, row, decision, req) {
+// 🔴 0926(Damon 0828「所有降价都必须他同意」):原来店长(manager)在卡片上点同意也直接写 approved,
+//    执行器随即改价。现在只有老板会话(boss)直通 approved;店长确认只到 mgr_ok,仍需 Damon 终审。
+export async function createCardPriceIntents(client, row, decision, req, session) {
+  const status = String(session?.role || "") === "boss" ? "approved" : "mgr_ok";
   const target = money(decision.price ?? row.new_price);
   const onlineTarget = money(decision.online_price);
   const reason = text(decision.reason, "卡片审批通过");
@@ -63,14 +67,14 @@ export async function createCardPriceIntents(client, row, decision, req) {
   const intents = [];
 
   if (["同意", "自定"].includes(decision.verdict) && target != null) {
-    const intent = await insertIntent(client, row, decision, "门店", row.old_price, target, reason, author);
+    const intent = await insertIntent(client, row, decision, "门店", row.old_price, target, reason, author, status);
     if (intent) intents.push(intent);
   }
 
   if (onlineTarget != null) {
     for (const channel of onlineChannels(decision)) {
       const oldPrice = channel === "美团" ? row.mt_price : (channel === "饿了么" ? row.ele_price : null);
-      const intent = await insertIntent(client, row, decision, channel, oldPrice, onlineTarget, reason, author);
+      const intent = await insertIntent(client, row, decision, channel, oldPrice, onlineTarget, reason, author, status);
       if (intent) intents.push({ ...intent, waiting_worker: channel !== "门店" });
     }
   }

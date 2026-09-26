@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { requireWritable } from "../moduleGate.js";
 import { getDailySales, postStockNote } from "./petstore-pricing-sales.js";
 import { createCardPriceIntents } from "./petstore-pricing-card-intents.js";
 import { requirePricingCardBatchOwner, requirePricingCardSession } from "./petstore-pricing-card-auth.js";
@@ -44,18 +45,9 @@ function timingTokenMatches(input, expected) {
   return crypto.timingSafeEqual(a, b);
 }
 
-function decodeJwtPayload(req) {
-  const auth = String(req.headers.authorization || "");
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : auth;
-  const payloadPart = token.split(".")[1];
-  if (!payloadPart) return {};
-  try {
-    const padded = payloadPart.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(payloadPart.length / 4) * 4, "=");
-    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
-  } catch (e) {
-    return {};
-  }
-}
+// 🔴 0926 迁入 petstore-api 时删掉了 decodeJwtPayload:它只解码不验签。requireAuth 优先用 ?token= 验签,
+//    而这里读 Authorization 原文 —— 头里塞伪造的 username=damon_sl、URL 里带一个真店员 token 就能冒充老板。
+//    现在一律用 requireAuth 验过签的 req.user。
 
 function bossUsers() {
   return String(process.env.PRICING_BOSS_USERS || "damon_sl")
@@ -70,7 +62,7 @@ function requireBoss(req, res) {
     return false;
   }
 
-  const payload = decodeJwtPayload(req);
+  const payload = req.user || {};
   // 0822:员工端 token 载荷是 {role,employee_id,name},没有 username;
   //      老板从员工端进来只有 name(Damon id=35 manager)。两字段都认,大小写不敏感。
   const who = String(payload.username || payload.name || "").trim().toLowerCase();
@@ -238,7 +230,7 @@ async function postCardConfirm(req, res, bodyArg, cardSession) {
         RETURNING p.id, p.product_code, p.product_name, p.old_price, p.new_price, p.mt_price, p.ele_price, p.damon_verdict, p.damon_price, p.damon_online_price, p.exec_status, p.idem_key
       `, [d.product_code, d.verdict, d.price, d.online_price, d.reason, d.context, d.idem_key]);
       if (updated.length) {
-        saved.push(await createCardPriceIntents(client, updated[0], d, req));
+        saved.push(await createCardPriceIntents(client, updated[0], d, req, cardSession));
         continue;
       }
       const current = await client.query(`
@@ -430,11 +422,13 @@ export default async function handler(req, res) {
         if (!requireBoss(req, res)) return;
         cardSession = { role: "boss", source: "pricing_boss" };
       }
+      if (req.method === "POST" && !(await requireWritable(req, res, "retail"))) return;
       if (req.method === "GET" && req.query?.view === "card") return getCardView(req, res);
       return postCardConfirm(req, res, body, cardSession);
     }
     if (!requireAuth(req, res)) return;
     if (!requireBoss(req, res)) return;
+    if (req.method === "POST" && !(await requireWritable(req, res, "retail"))) return;
     if (req.method === "GET" && action === "queue") return getQueue(req, res);
     if (req.method === "GET" && action === "stats") return getStats(req, res);
     if (req.method === "GET" && action === "daily_sales") return getDailySales(req, res);

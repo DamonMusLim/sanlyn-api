@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { requireWritable } from "../moduleGate.js";
 import { pricingTagBaseJoinSql, pricingTagBaseSelectSql, pricingTagSelectSql } from "./petstore-pricing-tag-sql.js";
 import { decorateRows, productDetailExtras, selectJsonByProduct, splitQuotesByReviewState } from "./petstore-products-detail.js";
 import {
@@ -26,18 +27,7 @@ function timingTokenMatches(input, expected) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-function decodeJwtPayload(req) {
-  const auth = String(req.headers.authorization || "");
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : auth;
-  const payloadPart = token.split(".")[1];
-  if (!payloadPart) return {};
-  try {
-    const padded = payloadPart.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(payloadPart.length / 4) * 4, "=");
-    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
-  } catch {
-    return {};
-  }
-}
+// 🔴 0926 迁入 petstore-api:删掉只解码不验签的 decodeJwtPayload 函数(可伪造老板/人员身份),改用 requireAuth 验过签的 req.user。
 
 function bossUsers() { return String(process.env.PRICING_BOSS_USERS || "damon_sl").split(",").map((s) => s.trim()).filter(Boolean); }
 function requireBoss(req, res) {
@@ -46,7 +36,7 @@ function requireBoss(req, res) {
     return false;
   }
 
-  const payload = decodeJwtPayload(req);
+  const payload = req.user || {};
   const who = String(payload.username || payload.name || "").trim().toLowerCase();
   if (who && bossUsers().includes(who)) return true;
 
@@ -64,7 +54,7 @@ function parseCursor(value) { const n = Number.parseInt(value || "0", 10); retur
 function textParam(value, max = 120) { const s = String(value || "").trim(); return s ? s.slice(0, max) : null; }
 
 function personId(req) {
-  const payload = decodeJwtPayload(req);
+  const payload = req.user || {};
   const raw = req.body?.updated_by_person_id || req.body?.person_id || req.body?.personId || payload.employee_id || payload.person_id || null;
   const n = Number.parseInt(raw, 10);
   return Number.isFinite(n) ? n : null;
@@ -408,7 +398,10 @@ export default async function handler(req, res) {
   try {
     if (!requireAuth(req, res)) return;
     if (!requireBoss(req, res)) return;
-    if (req.method === "POST" && req.query?.action === "review") return reviewProduct(req, res);
+    if (req.method === "POST" && req.query?.action === "review") {
+      if (!(await requireWritable(req, res, "retail"))) return;
+      return reviewProduct(req, res);
+    }
     if (req.method !== "GET") return json(res, 405, { ok: false, error: "method_not_allowed" });
     if (req.query?.action === "detail") return getDetail(req, res);
     return getList(req, res);
