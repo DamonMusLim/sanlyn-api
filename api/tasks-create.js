@@ -35,7 +35,7 @@ const VALID_LEVELS      = ["order", "factory", "doc", "logi", "approve"];
 const VALID_OWNER_TYPES = ["order", "factory", "document", "logistics"];
 const VALID_RISK        = ["low", "mid", "high", "urgent"];
 const VALID_MODE        = ["owned", "agent", "agent_compliance"];
-const VALID_DOMAINS     = ["ocean", "customs", "finance", "procurement", "docs", "general"];
+const VALID_DOMAINS     = ["ocean", "customs", "finance", "procurement", "docs", "general", "freight", "order", "petshop", "infra"];
 
 function genTaskId() {
   return "t-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6);
@@ -45,6 +45,34 @@ function genThreadId() {
 }
 function genMsgId() {
   return "m-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+export function resolveTaskPrefix(domain, taskPrefix) {
+  const hasExplicitPrefix = taskPrefix !== undefined && taskPrefix !== null;
+  if (hasExplicitPrefix) {
+    const explicitPrefix = String(taskPrefix).trim().toUpperCase();
+    if (!explicitPrefix) {
+      const err = new Error("task_prefix cannot be empty");
+      err.statusCode = 400;
+      throw err;
+    }
+    return explicitPrefix;
+  }
+
+  const normalizedDomain = typeof domain === "string" ? domain.trim() : "";
+  const prefixByDomain = {
+    freight: "CY",
+    ocean: "CY",
+    finance: "FIN",
+    order: "FS",
+    petshop: "CAW",
+    infra: "OPS",
+  };
+  const inferredPrefix = prefixByDomain[normalizedDomain];
+  if (inferredPrefix) return inferredPrefix;
+  const err = new Error("domain=" + (normalizedDomain || "(空)") + " 无法推导 task_prefix，请显式传入");
+  err.statusCode = 400;
+  throw err;
 }
 
 export default async function handler(req, res) {
@@ -143,6 +171,14 @@ export default async function handler(req, res) {
     factoryCompanyCode = ownerObjectId;
   }
 
+  let finalTaskPrefix;
+  try {
+    finalTaskPrefix = resolveTaskPrefix(b.domain, b.task_prefix);
+  } catch (e) {
+    const statusCode = e.statusCode || 400;
+    return res.status(statusCode).json({ success: false, error: e.message });
+  }
+
   // ── 组装 raw ──
   const rawBlob = {
     primary_action:    b.primary_action    || null,
@@ -165,12 +201,12 @@ export default async function handler(req, res) {
          id, title, task_type, level, status, risk_level, mode,
          owner_object_type, owner_object_id, owner_object_label,
          related_order_no, related_po_no, company_code, factory_company_code,
-         due_at, reason, raw, domain
+         due_at, reason, raw, domain, task_prefix
        ) VALUES (
          $1, $2, $3, $4, 'open', $5, $6,
          $7, $8, $9,
          $10, $11, $12, $13,
-         $14, $15, $16, $17
+         $14, $15, $16, $17, $18
        ) RETURNING *`,
       [
         taskId,
@@ -190,6 +226,7 @@ export default async function handler(req, res) {
         b.reason || null,
         JSON.stringify(rawBlob),
         b.domain || 'general',
+        finalTaskPrefix,
       ]
     );
     const task = insTask.rows[0];
