@@ -478,7 +478,7 @@ function render(){
     var el=$(x[0]),d=document.createElement("div");d.className="pdfval";d.textContent=(x[1]||"—")+((x[0]==="rqMarks"?rq.marks!=null:!!x[1])?" *":"");el.replaceWith(d)})}
   var pm=s.payment||{};
   $("payTerms").innerHTML=(pm.terms||pm.schedule||pm.days!=null)
-    ?(pm.terms?"<div>"+esc(pm.terms)+"</div>":"")+(pm.days!=null?"<div>"+esc(pm.days)+" "+esc(t("days"))+"</div>":"")+(pm.schedule?"<div>"+esc(t("sched"))+"："+esc(typeof pm.schedule==="string"?pm.schedule:JSON.stringify(pm.schedule))+"</div>":"")
+    ?(pm.terms?"<div>"+esc(pm.terms)+"</div>":"")+(pm.days!=null?"<div>"+esc(pm.days)+" "+esc(t("days"))+"</div>":"")+(pm.schedule&&!pm.terms?"<div>"+esc(t("sched"))+"："+esc(typeof pm.schedule==="string"?pm.schedule:JSON.stringify(pm.schedule))+"</div>":"")
     :'<span class="tbc">'+esc(t("tbc"))+"</span>";
   var py=s.payee;
   $("payee").innerHTML=py?'<div class="kv">'+kv([["holder",py.account_holder],["bank",py.bank_name_en],["account",py.account_no],["swift",py.swift],["bank_addr",py.bank_address]])+"</div>":'<span class="tbc">'+esc(t("tbc"))+"</span>";
