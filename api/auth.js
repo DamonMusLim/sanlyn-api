@@ -111,8 +111,6 @@ const PUBLIC_PATHS = [
   // Customer Invite: validate + activate are public (token is credential); generate requires admin JWT
   "/api/db/customer-invite/validate",
   "/api/db/customer-invite/activate",
-  // 受邀人设密码（无登录；token 是凭据，handler 内部校验 sha256/过期/已用/限流）
-  "/api/db/customer-set-password",
   // Forwarder Booking Submit — token-authenticated, no JWT
   "/api/db/hr-staff-auth",   // 员工端登录(手机号+密码;接口内自己防爆破) [Claude 0730]
   "/api/db/hr-apply",   // 招聘自助投递(候选人无账号;接口内限流+字段截断+状态锁死new) [Claude 0728]
