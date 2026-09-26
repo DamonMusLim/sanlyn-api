@@ -987,6 +987,7 @@ var PAGES = {
       QTY_REQUIRED:"补货数量必须为正整数",
       BAD_REQUEST:"请求参数错误"
     };
+    var priceKindName = {effective:"有效价", first_price:"首件价", reference:"参考"};
     window.rvOppTab = window.rvOppTab || "restock";
     window.rvOppDone = window.rvOppDone || {};
     // 0915 修:商品名含引号时 onclick 内联会被截断 → 改 data-* + 全局委托(只绑一次)
@@ -1042,25 +1043,56 @@ var PAGES = {
       }
     };
 
+    function oppPrice(r){
+      if (r.nearby_price===null || r.nearby_price===undefined) return '<span class="cm-na">—</span>';
+      var kind = r.nearby_price_kind || "reference";
+      var cls = kind==="effective" ? "" : " cm-warn";
+      return rvMoney(r.nearby_price)
+        + '<br><span class="cm-shop'+cls+'" title="'+rvEsc(r.nearby_price_shop||"")+'">'
+        + rvEsc(priceKindName[kind] || "参考")
+        + (r.nearby_price_shop ? ' · '+rvEsc(r.nearby_price_shop) : "")
+        + '</span>';
+    }
+    function oppMax(r){
+      if (r.nearby_max_sales===null || r.nearby_max_sales===undefined) return '<span class="cm-na">—</span>';
+      return rvN(r.nearby_max_sales) + (r.nearby_max_shop ? ' <span class="cm-shop">· '+rvEsc(r.nearby_max_shop)+'</span>' : "");
+    }
+    function oppOurs(r){
+      if (!r.product_code) return '<span class="cm-na">—</span>';
+      return '库存 ' + rvN(r.our_cur_stock) + '<br><span class="cm-shop">180天 ' + rvN(r.our_qty_180) + '</span>';
+    }
+    function oppAdvice(r){
+      if (!r.product_code) return '<span title="未匹配我方商品">新品,先问进价</span>';
+      var title = [r.restock_verdict, r.verdict_reason].filter(Boolean).join(" · ");
+      var q = Number(r.restock_qty || 0);
+      var txt = q > 0 ? String(q) : "不补";
+      return '<span title="'+rvEsc(title)+'">'+rvEsc(txt)+'</span>';
+    }
+
     function oppRows(t){
       var rows = (opp.groups && opp.groups[t]) || [];
       var h = '<div class="opp-pane" data-t="'+rvEsc(t)+'" style="'+(window.rvOppTab===t?'':'display:none')+'">';
-      h += '<table><thead><tr><th>排名</th><th>店</th><th>商品</th><th>月销</th><th>到手价</th><th>机制</th><th>品类</th><th>我方状态</th><th>置信度</th><th>操作</th></tr></thead><tbody>';
+      h += '<table><thead><tr><th>商品</th><th>附近总月销</th><th>附近最高月销</th><th>附近在卖几家</th><th>附近到手价</th><th>我方</th><th>建议采购</th><th>供应商</th><th>机制</th><th>品类</th><th>我方状态</th><th>置信度</th><th>操作</th></tr></thead><tbody>';
       for (var i=0;i<rows.length;i++){
         var r = rows[i];
-        var key = t+"|"+r.shop+"|"+r.product_name;
-        var can = Number(r.rank_in_type)<=20 && !r.is_med && (t==="restock" || t==="new_item" || t==="review");
+        // 0926:恢复操作按钮 —— 合并行用它代表的原始「店+商品名」调 act 接口(接口口径不变)
+        var key = t+"|"+r.act_shop+"|"+r.act_name;
+        var can = r.act_shop && r.act_name && Number(r.act_rank)<=20 && !r.is_med && (t==="restock" || t==="new_item" || t==="review");
         var op = '<span class="cm-na">—</span>';
         if (r.is_med) op = '<span class="cm-warn">兽药·只记录</span>';
         else if (can && window.rvOppDone[key]) op = '<button disabled>已建单 '+rvEsc(window.rvOppDone[key])+'</button>';
-        else if (can) op = '<button class="opp-act" data-s="'+encodeURIComponent(r.shop)+'" data-n="'+encodeURIComponent(r.product_name)+'" data-a="'+rvEsc(t)+'">'+(t==="restock"?"补货":t==="new_item"?"转新品":"转复核")+'</button>';
-        h += '<tr' + (r.is_med ? ' class="cm-med"' : '') + '><td>' + rvN(r.rank_in_type)
-          + '</td><td class="cm-shop">' + rvEsc(r.shop)
-          + '</td><td class="cm-name">' + rvEsc(r.product_name)
+        else if (can) op = '<button class="opp-act" data-s="'+encodeURIComponent(r.act_shop)+'" data-n="'+encodeURIComponent(r.act_name)+'" data-a="'+rvEsc(t)+'">'+(t==="restock"?"补货":t==="new_item"?"转新品":"转复核")+'</button>';
+        h += '<tr' + (r.is_med ? ' class="cm-med"' : '') + '><td class="cm-name">' + rvEsc(r.product_name)
           + (r.is_hook ? '<span class="cm-hook">引流价</span>' : '')
           + (r.is_med ? '<span class="cm-warn">兽药·只记录</span>' : '')
-          + '</td><td>' + rvN(r.month_sale)
-          + '</td><td>' + rvMoney(r.hand_price)
+          + (r.product_code ? '<br><span class="cm-shop">'+rvEsc(r.product_code)+'</span>' : '')
+          + '</td><td>' + rvN(r.nearby_total_sales)
+          + '</td><td>' + oppMax(r)
+          + '</td><td>' + rvN(r.nearby_shop_count)
+          + '</td><td>' + oppPrice(r)
+          + '</td><td>' + oppOurs(r)
+          + '</td><td>' + oppAdvice(r)
+          + '</td><td>' + (r.supplier ? rvEsc(r.supplier) : '<span class="cm-na">—</span>')
           + '</td><td>' + rvEsc(r.tier_text || r.tier_type || "—")
           + '</td><td>' + rvEsc(r.category || "—")
           + '</td><td>' + rvEsc(statusName[r.our_status] || r.our_status || "—")
