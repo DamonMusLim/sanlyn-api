@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>采购单审核 · Sanlyn</title>
+<style>
+:root{--ink:#1A1D21;--ink2:#4A5159;--dim:#8A9199;--bg:#EEF0F3;--page:#fff;--line:#D9DDE2;--line2:#EBEEF1;
+  --head:#2C3E50;--accent:#1F4B7A;--miss:#D64541;--miss-bg:#FDF0EF;--ok:#2E7D5B;--ok-bg:#EDF6F1;--warn:#B8860B;--warn-bg:#FBF5E6}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--ink:#E8EAED;--ink2:#B6BEC7;--dim:#7C858F;--bg:#0F1216;--page:#1A1E24;
+  --line:#2E353D;--line2:#252B32;--head:#31404F;--accent:#7CACD6;--miss:#E8756F;--miss-bg:#2B1A19;--ok:#6FAD8B;--ok-bg:#17251E;--warn:#D4A843;--warn-bg:#2A2417}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.65 "PingFang SC","Noto Sans SC",system-ui,sans-serif}
+.wrap{max-width:1200px;margin:0 auto;padding:16px}
+.card{background:var(--page);border:1px solid var(--line);border-radius:4px;padding:16px 18px;margin-bottom:12px}
+h1{font-size:19px;margin:0 0 4px}
+.meta{display:flex;gap:18px;flex-wrap:wrap;color:var(--ink2);font-size:12.5px}
+.meta b{color:var(--ink)}
+.badge{display:inline-block;padding:1px 9px;border-radius:10px;font-size:12px;font-weight:600;background:var(--line2);color:var(--ink2)}
+.badge.confirmed{background:var(--warn-bg);color:var(--warn)}.badge.adopted{background:var(--ok-bg);color:var(--ok)}
+.badge.returned{background:var(--miss-bg);color:var(--miss)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--head);color:#fff;font-weight:600;padding:6px;border:1px solid var(--head);text-align:center;font-size:11px}
+td{border:1px solid var(--line);padding:5px 6px;vertical-align:top}
+td.c{text-align:center}
+.chg{background:var(--warn-bg)}
+.chg .new{color:var(--warn);font-weight:700;display:block}
+.chg .old{color:var(--dim);text-decoration:line-through;font-size:11px}
+.pv{display:block;font-size:10.5px;color:var(--dim)}
+.box{border:1px dashed var(--line);border-radius:4px;padding:10px 12px;margin-top:10px;font-size:12.5px}
+.box h3{margin:0 0 6px;font-size:13px}
+.acts{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start}
+button{font:inherit;cursor:pointer;border-radius:4px;padding:9px 18px;border:1px solid var(--line);background:var(--page);color:var(--ink)}
+button.ok{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:700}
+button.no{border-color:var(--miss);color:var(--miss)}
+button:disabled{opacity:.45;cursor:not-allowed}
+textarea{width:100%;min-height:70px;font:inherit;padding:8px;border:1px solid var(--line);border-radius:4px;background:var(--page);color:var(--ink)}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--page);padding:9px 16px;border-radius:6px;display:none;z-index:9}
+.toast.err{background:var(--miss);color:#fff}
+.hist{font-size:11.5px;color:var(--ink2);max-height:220px;overflow:auto}
+.hist div{padding:2px 0;border-bottom:1px dotted var(--line2)}
+a{color:var(--accent)}
+@media (max-width:700px){.wrap{padding:10px}.tbl{overflow-x:auto}}
+</style></head><body>
+<div class="wrap">
+  <div id="state" class="card">正在读取…</div>
+  <div id="main" style="display:none">
+    <div class="card">
+      <h1>采购单审核 · <span id="no"></span> <span class="badge" id="st"></span></h1>
+      <div class="meta">
+        <span>订单：<b id="ord"></b></span><span>客户：<b id="cust"></b></span><span>工厂：<b id="fac"></b></span>
+        <span>工厂交货期：<b id="dd"></b></span><span>回签合同：<b id="cf"></b></span>
+      </div>
+      <div class="meta" id="remarkRow" style="margin-top:4px"></div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:6px">工厂更改记录</div>
+      <div id="chg"></div>
+    </div>
+
+    <div class="card" id="actCard">
+      <div class="acts">
+        <div><button class="ok" id="bAdopt">✅ 采纳</button></div>
+        <div style="flex:1;min-width:260px">
+          <textarea id="reason" placeholder="要退回工厂修改的话，写清楚哪里不对（会进给工厂的邮件草稿，你审核后再发）"></textarea>
+          <button class="no" id="bReturn" style="margin-top:6px">↩ 退回工厂修改</button>
+        </div>
+      </div>
+      <div id="doneMsg" style="margin-top:8px;font-weight:600"></div>
+    </div>
+
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+// 预览挂在 /po-test 下；正式环境接口在根路径
+var BASE=(location.pathname.indexOf("/po-test/")===0)?"/po-test":"";
+var API=BASE+"/api/db/po-collab";
+var SHEET=new URLSearchParams(location.search).get("sheet")||"";
+var TOKEN=localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||"";
+var D=null;
+function $(i){return document.getElementById(i)}
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function toast(m,e){var t=$("toast");t.textContent=m;t.className="toast"+(e?" err":"");t.style.display="block";clearTimeout(t._h);t._h=setTimeout(function(){t.style.display="none"},3200)}
+function api(path,opt){opt=opt||{};opt.headers=Object.assign({"Content-Type":"application/json","Authorization":"Bearer "+TOKEN},opt.headers||{});
+  return fetch(API+path,opt).then(function(r){return r.json().then(function(j){if(r.status===401)throw new Error("请先在 ai.sanlyn.cn 登录");if(!j.ok)throw new Error(j.error||("HTTP "+r.status));return j})})}
+var ST={opened:"工厂已打开",submitted:"工厂已提交（合同未传）",confirmed:"工厂已回签 · 待审核",adopted:"已采纳",returned:"已退回工厂",sent:"已发给工厂",void:"已作废"};
+
+function load(){
+  if(!SHEET){$("state").textContent="链接缺少 sheet 参数";return}
+  if(!TOKEN){$("state").innerHTML="请先在 <a href='/'>ai.sanlyn.cn</a> 登录，再打开这个链接";return}
+  api("/review?sheet="+encodeURIComponent(SHEET)).then(function(j){D=j;render()}).catch(function(e){$("state").textContent=e.message})
+}
+// 只显示工厂改了什么（Damon 0926「就显示工厂更改记录就好了」）
+var FL={qty:"数量(箱)",box_l:"箱长",box_w:"箱宽",box_h:"箱高",gw_ctn:"毛重/箱",nw_ctn:"净重/箱",barcode:"条码",
+  hs_code:"HS 建议",bag_stock:"袋子库存",pbag:"单价(袋)",cprice:"箱价"};
+function changeList(){
+  var names={};(D.lines||[]).forEach(function(l){names[l.seq]=l.product_name});
+  var byKey={},order=[];
+  (D.history||[]).forEach(function(x){var k=x.seq+"|"+x.field;
+    if(!byKey[k]){byKey[k]={seq:x.seq,field:x.field,old:x.old_val,nw:x.new_val,at:x.created_at};order.push(k)}
+    else{byKey[k].nw=x.new_val;byKey[k].at=x.created_at}});
+  if(!order.length)return '<div style="color:var(--dim)">工厂没改任何数据（只填了交货期、传了合同）</div>';
+  order.sort(function(a,b){return byKey[a].seq-byKey[b].seq});
+  var last=null;
+  return order.map(function(k){var c=byKey[k],head="";
+    if(c.seq!==last){last=c.seq;head='<div style="margin-top:8px;font-weight:600">第'+c.seq+'行 · '+esc(names[c.seq]||"")+'</div>'}
+    var warn=c.field==="qty"?' <span style="color:var(--miss)">（数量改了）</span>':"";
+    return head+'<div style="padding:3px 0 3px 12px;border-bottom:1px dotted var(--line2)">'+esc(FL[c.field]||c.field)+'：'
+      +'<span style="color:var(--dim);text-decoration:line-through">'+esc(c.old==null||c.old===""?"空":c.old)+'</span> → '
+      +'<b style="color:var(--warn)">'+esc(c.nw)+'</b>'+warn+'</div>'}).join("");
+}
+function render(){
+  var s=D.sheet;
+  $("state").style.display="none";$("main").style.display="block";
+  document.title="审核 "+(s.display_no||s.order_no)+" · Sanlyn";
+  $("no").textContent=s.display_no||("#"+s.id);
+  $("st").textContent=ST[s.status]||s.status;$("st").className="badge "+s.status;
+  $("ord").textContent=s.order_no;$("cust").textContent=s.customer||"—";$("fac").textContent=s.factory_name||"—";
+  $("dd").textContent=s.delivery_date||"未填";
+  var cf=(D.files||[]).filter(function(f){return f.kind==="signed_back"})[0];
+  $("cf").innerHTML=cf?'<a href="#" data-fid="'+cf.id+'">'+esc(cf.file_name)+'</a>':"未上传";
+  $("remarkRow").textContent=s.remarks?("工厂备注："+s.remarks):"";
+  $("chg").innerHTML=changeList();
+  var can=s.status==="confirmed";
+  $("bAdopt").disabled=!can;
+  $("bReturn").disabled=!(s.status==="confirmed"||s.status==="submitted");
+  $("doneMsg").textContent=s.status==="adopted"?("✅ 已由 "+(s.adopted_by||"")+" 采纳。下一步：给客户发正式 PI")
+    :s.status==="returned"?"↩ 已退回工厂，等工厂改完重交":s.status==="void"?"这张单已作废":(!can?"工厂还没回签完（要交货期 + 上传合同），暂时不能采纳":"");
+}
+$("bAdopt").onclick=function(){
+  if(!confirm("确认采纳？\n会写订单确认交期、工厂确认时间，并以工厂为准覆盖产品库的箱规/毛净重/条码。"))return;
+  var b=this;b.disabled=true;b.textContent="⏳ 采纳中…";
+  api("/adopt",{method:"POST",body:JSON.stringify({sheet_id:+SHEET})}).then(function(j){
+    toast("已采纳：数量差异 "+j.qty_diffs+" 行，产品库更新 "+j.product_changes+" 款");b.textContent="✅ 采纳";load();
+  }).catch(function(e){toast(e.message,true);b.disabled=false;b.textContent="✅ 采纳"});
+};
+$("bReturn").onclick=function(){
+  var r=$("reason").value.trim(); if(!r){toast("请先写退回原因",true);$("reason").focus();return}
+  if(!confirm("确认退回工厂修改？\n会生成一封给工厂的邮件草稿（在发件台，你审核后发）。"))return;
+  var b=this;b.disabled=true;
+  api("/return",{method:"POST",body:JSON.stringify({sheet_id:+SHEET,reason:r})}).then(function(j){
+    toast("已退回"+(j.draft_id?("，邮件草稿 #"+j.draft_id+" 在发件台"):"（工厂没有邮箱，没建草稿）"));$("reason").value="";load();
+  }).catch(function(e){toast(e.message,true);b.disabled=false});
+};
+// 合同要登录才能看：带 token 取回来再打开
+document.addEventListener("click",function(e){var a=e.target.closest("a[data-fid]");if(!a)return;e.preventDefault();
+  var w=window.open("","_blank");
+  fetch(API+"/file?sheet="+encodeURIComponent(SHEET)+"&id="+a.getAttribute("data-fid"),{headers:{"Authorization":"Bearer "+TOKEN}})
+    .then(function(r){if(!r.ok)throw new Error("打不开（"+r.status+"）");return r.blob()})
+    .then(function(b){w.location=URL.createObjectURL(b)}).catch(function(err){if(w)w.close();toast(err.message,true)})});
+load();
+</script>
+</body></html>

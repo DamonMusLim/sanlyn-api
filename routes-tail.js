@@ -206,4 +206,16 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/client-session",    () => import("./api/db/client-session.js"));
   mount("/api/db/client-accounts",   () => import("./api/db/client-accounts.js"));
   mount("/api/db/client-auth-check", () => import("./api/db/client-auth-check.js"));
+  // po-collab 采购单协同(九步SOP第1-2步:工厂确认/回签 + 我方审核采纳)—— 子路径,需前缀匹配
+  app.all("/api/db/po-collab/*", async (req, res) => {
+    try {
+      const mod = await import("./api/db/po-collab.js");
+      const handler = mod.default || mod;
+      await handler(req, res);
+    } catch (err) {
+      console.error("[po-collab] Error:", err);
+      if (!res.headersSent) res.status(500).json({ error: err.message });
+    }
+  });
+  mount("/api/db/po-collab", () => import("./api/db/po-collab.js"));
 }

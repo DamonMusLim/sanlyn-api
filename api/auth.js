@@ -98,6 +98,13 @@ const PUBLIC_PATHS = [
   "/api/db/ocean-doc-upload", // 海运单据通用上传（无登录；凭 ?k=SLIP_UPLOAD_KEY 授权，handler内fail-closed）
   "/api/db/slip-customer-search", // 客户自选票据搜索（无登录；?k=授权+customer参数服务端强制过滤）
   "/api/db/magic-link",   // Driver Magic Link (Air-A): 司机点 SMS 链接，凭 raw token + SHA-256 比对授权
+  // 采购单协同（九步SOP第1步）：工厂免登录，凭 magic_links(recipient_role='factory_po') 授权，
+  // handler 内 resolveToken() 逐次校验 hash+未吊销+未过期，fail-closed。
+  // ⛔ /send-link 不在此列 —— 那是内部签发链接的口，必须登录。
+  "/api/db/po-collab/validate",
+  "/api/db/po-collab/submit",
+  "/api/db/po-collab/upload",
+  "/api/db/po-collab/pdf",
   "/api/factory-fill",    // 工厂 token 填单（无登录；凭 _idx_tokens 授权）
   "/api/factory-confirm", // 工厂订单确认（无登录；凭 _idx_tokens 授权）
   "/api/pending-confirm", // 工厂确认交期（无登录；凭 _idx_tokens 授权，purpose=pending_confirm）

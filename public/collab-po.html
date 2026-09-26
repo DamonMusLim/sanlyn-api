@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>采购单确认 · Sanlyn</title>
+<style>
+:root{
+  --ink:#1A1D21;--ink2:#4A5159;--dim:#8A9199;
+  --bg:#EEF0F3;--page:#FFF;--line:#D9DDE2;--line2:#EBEEF1;
+  --head:#2C3E50;--accent:#1F4B7A;
+  --miss:#D64541;--miss-bg:#FDF0EF;--miss-line:#F0C4C1;
+  --ok:#2E7D5B;--ok-bg:#EDF6F1;--warn:#B8860B;--edit:#FFF8DC;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-size:13px;line-height:1.7;
+ font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+button{font:inherit;cursor:pointer}
+.topbar{position:sticky;top:0;z-index:20;background:var(--page);border-bottom:1px solid var(--line);
+ padding:9px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn{font-size:12px;font-weight:600;padding:6px 12px;border-radius:3px;border:1px solid var(--line);
+ background:var(--page);color:var(--ink2);white-space:nowrap}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.tag{margin-left:auto;font-size:11px;color:var(--dim)}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 322px;gap:16px;max-width:1300px;margin:0 auto;padding:16px}
+@media(max-width:1000px){.layout{grid-template-columns:1fr}}
+.sheet{background:var(--page);border:1px solid var(--line);border-radius:3px;padding:26px 24px 30px}
+.title-wrap{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;margin-bottom:18px}
+.t-mid{grid-column:2;text-align:center}
+.t-act{grid-column:3;justify-self:end;text-align:right}
+@media(max-width:700px){.title-wrap{grid-template-columns:1fr}.t-mid,.t-act{grid-column:1;justify-self:center;text-align:center}}
+.cn{font-size:23px;font-weight:700;letter-spacing:.5em;text-indent:.5em}
+.en{font-size:10px;letter-spacing:.42em;color:var(--dim);text-indent:.42em}
+.savebtn{background:var(--line2);color:var(--dim);border:1px solid var(--line);border-radius:5px;
+ padding:11px 26px;font-size:17px;font-weight:700;letter-spacing:.04em;cursor:not-allowed;white-space:nowrap}
+.savebtn.on{background:var(--ok);border-color:var(--ok);color:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(46,125,91,.28)}
+.savehint{display:block;font-size:11px;color:var(--miss);margin-top:5px}
+.party{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);font-size:11.5px}
+.party>div{padding:9px 11px}.party>div+div{border-left:1px solid var(--line)}
+.party b.t{display:block;font-size:11px;margin-bottom:5px}
+.kv{display:grid;grid-template-columns:76px 1fr;gap:3px 6px;align-items:baseline}
+.kv>span{color:var(--dim)}
+.fill{border-bottom:1px dashed var(--line);min-height:19px;padding:0 3px;outline:none}
+.fill:focus{background:var(--edit);border-bottom-color:var(--accent)}
+.fill.empty{border-bottom-color:var(--miss);background:var(--miss-bg);color:var(--miss)}
+.fill.touched{background:var(--edit)}
+.metarow{display:flex;gap:16px;flex-wrap:wrap;border:1px solid var(--line);border-top:0;padding:8px 11px;font-size:11.5px}
+input[type=date]{border:1px solid var(--line);border-radius:2px;padding:2px 6px;font:inherit;font-size:11px}
+input[type=date].empty{border-color:var(--miss);background:var(--miss-bg)}
+table.items{width:100%;border-collapse:collapse;font-size:11px}
+table.items th{background:var(--head);color:#fff;padding:6px 5px;border:1px solid var(--head);font-size:10px;line-height:1.35}
+table.items td{border:1px solid var(--line);padding:4px 5px;vertical-align:middle}
+td.c{text-align:center}td.r{text-align:right;font-variant-numeric:tabular-nums}
+#tb td[data-k]{outline:none;cursor:text;position:relative}
+#tb td[data-k]:hover{box-shadow:inset 0 0 0 1px var(--accent)}
+#tb td.editing{background:var(--edit)!important;box-shadow:inset 0 0 0 2px var(--accent)!important;
+ color:var(--ink)!important;cursor:text}
+#tb td.editing::after{content:"回车确认 · Esc 取消";position:absolute;left:0;top:100%;z-index:5;
+ background:var(--accent);color:#fff;font-size:9px;padding:1px 5px;border-radius:0 0 3px 3px;white-space:nowrap}
+td.miss{background:var(--miss-bg);color:var(--miss);text-align:center;font-size:10px;border:1px dashed var(--miss-line)!important}
+td.touched{background:var(--edit)}
+.grp td{background:var(--ok-bg);color:var(--accent);font-weight:600}
+.zero{color:var(--miss);font-weight:700}
+.hs-sus{color:var(--warn);cursor:help}
+#tb td.soft-miss{color:var(--dim);font-size:10px;background:transparent;
+ border:1px dashed var(--line)!important}
+#tb td.auto{color:var(--dim);font-style:italic;background:repeating-linear-gradient(45deg,
+ transparent,transparent 4px,rgba(0,0,0,.02) 4px,rgba(0,0,0,.02) 8px);cursor:default}
+#tb td.auto:hover{box-shadow:none}
+.colbtn{font-size:9.5px;padding:1px 6px;border-radius:2px;border:1px solid rgba(255,255,255,.45);
+ background:transparent;color:#fff;margin-left:5px;white-space:nowrap}
+.colbtn:hover{background:rgba(255,255,255,.15)}
+th.folded{width:auto!important;background:#3E5568}
+th.folded .colbtn{border-color:rgba(255,255,255,.7)}
+.thumb{width:26px;height:26px;border:1px dashed var(--miss-line);border-radius:2px;display:inline-flex;
+ align-items:center;justify-content:center;background:var(--miss-bg);color:var(--miss);cursor:pointer}
+.thumb.has{border:1px solid var(--ok);background:var(--ok-bg);color:var(--ok)}
+tfoot td{background:var(--line2);font-weight:700}
+.terms{border:1px solid var(--line);border-top:0;padding:9px 11px;font-size:10.5px;color:var(--ink2)}
+.tline{display:block;padding:2px 4px;border-radius:2px;outline:none}
+.tline:focus{background:var(--edit);box-shadow:inset 0 0 0 1px var(--accent)}
+.tline.edited{background:var(--edit);border-left:2px solid var(--warn);padding-left:6px}
+.tmark{font-size:9.5px;color:var(--warn);border:1px solid var(--warn);border-radius:2px;padding:0 5px;margin-left:6px}
+.bagtd{cursor:pointer}.bagtd::after{content:attr(data-sub);display:block;font-size:10px;font-weight:400}
+.bagtd.bag-ok{color:var(--ok)}.bagtd.bag-ok::after{color:var(--dim)}
+.bagtd.bag-short{color:var(--miss);font-weight:700}.bagtd.bag-short::after{color:var(--miss)}
+.btn.pri{background:var(--accent,#1F4B7A);border-color:var(--accent,#1F4B7A);color:#fff}
+.steps{margin-top:8px;text-align:left;font-size:11.5px;line-height:1.7;max-width:300px;margin-left:auto}
+.stp{padding:3px 0;border-top:1px dashed var(--line)}.stp em{display:block;font-style:normal;font-size:10.5px;color:var(--dim)}
+.stp .st{font-size:10.5px;padding:0 6px;border-radius:8px;background:var(--miss-bg,#FDF0EF);color:var(--miss)}
+.stp.done .st{background:var(--ok-bg,#EDF6F1);color:var(--ok)}
+.stp .btn{font-size:11px;padding:2px 8px;margin-left:4px}
+.steps .alldone{margin-top:4px;font-weight:700;color:var(--ok)}
+input.need{outline:2px solid var(--miss)}
+.tplbox{border:1px solid var(--line);border-top:0;padding:11px 12px;background:var(--line2);
+ display:grid;grid-template-columns:minmax(150px,auto) minmax(0,1fr);gap:14px;align-items:center}
+.tplbox>div{min-width:0}
+.histbox{border:1px solid var(--line);border-top:0;background:#fff;padding:11px 12px}
+.histbox>b{font-size:12px}
+.histbox .hsub{font-size:10.5px;color:var(--dim);margin-left:6px}
+.histrow{display:grid;grid-template-columns:104px 72px 1fr;gap:8px;align-items:baseline;
+  padding:5px 0;border-top:1px dashed var(--line);font-size:11px}
+.histrow .ht{color:var(--dim);font-variant-numeric:tabular-nums}
+.histrow .hw{font-weight:600}
+.histrow .hf{color:var(--dim)}
+.histrow .ho{color:var(--dim);text-decoration:line-through}
+.histrow .hn{color:var(--ok);font-weight:600}
+.histempty{font-size:11px;color:var(--dim);padding:6px 0}
+@media(max-width:760px){.histrow{grid-template-columns:1fr}}
+@media(max-width:760px){.tplbox{grid-template-columns:1fr}}
+.tpl-up{display:flex;align-items:center;gap:10px;border:1px dashed var(--line);border-radius:4px;
+ padding:9px 12px;background:var(--page);min-width:0;flex-wrap:wrap}
+.tpl-up>div{flex:1 1 220px;min-width:0}
+.side{position:sticky;top:56px;align-self:start;border:2px solid var(--miss);border-radius:4px;background:var(--page);overflow:hidden}
+.side.clean{border-color:var(--ok)}
+.side-h{background:var(--miss-bg);border-bottom:1px solid var(--miss-line);padding:10px 13px}
+.side.clean .side-h{background:var(--ok-bg);border-bottom-color:var(--ok)}
+.side-h .n{font-size:27px;font-weight:700;line-height:1;color:var(--miss)}
+.side.clean .side-h .n{color:var(--ok)}
+.side-h .l{font-size:11.5px;color:var(--miss);font-weight:600}
+.side.clean .side-h .l{color:var(--ok)}
+.side-h .s{font-size:10.5px;color:var(--dim);margin-top:2px}
+.mi{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:baseline;padding:7px 13px;
+ border-bottom:1px solid var(--line2);font-size:12px;cursor:pointer}
+.mi:hover{background:var(--line2)}
+.mi .nm em{display:block;font-size:10.5px;color:var(--dim);line-height:1.5}
+.mi .ct{font-weight:700;color:var(--miss);font-variant-numeric:tabular-nums}
+.mi.soft .ct{color:var(--warn)}.mi.done .ct{color:var(--ok)}
+.quick{padding:10px 13px;border-top:1px solid var(--line2)}
+.quick b{display:block;margin-bottom:5px;font-size:11px;color:var(--ink2)}
+.qbtn{display:block;width:100%;text-align:left;padding:6px 9px;margin-bottom:4px;border-radius:3px;
+ border:1px solid var(--line);background:var(--page);font-size:11.5px;color:var(--ink2)}
+.qbtn em{color:var(--dim);font-size:10.5px;font-style:normal}
+.side-f{border-top:1px solid var(--line);padding:11px 13px;background:var(--line2)}
+.gate{font-size:11.5px;color:var(--miss);font-weight:600;line-height:1.6}
+.gate.ok{color:var(--ok)}
+#state{padding:40px;text-align:center;color:var(--dim)}
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--head);color:#fff;
+ padding:10px 22px;border-radius:4px;font-size:13px;z-index:99;box-shadow:0 4px 18px rgba(0,0,0,.25);display:none}
+.toast.err{background:var(--miss)}
+@media print{
+  .topbar,.side,.tplbox,.histbox,.no-print,.toast{display:none!important}
+  .layout{grid-template-columns:1fr;padding:0;gap:0}
+  .sheet{border:0;padding:0}
+  body{background:#fff}
+  td.miss{background:transparent!important;border:1px solid var(--line)!important;color:transparent!important}
+  .fill.empty{background:transparent;border-bottom-color:var(--line);color:transparent}
+  .title-wrap{display:block;text-align:center}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar no-print">
+  <button class="btn pri" id="bImp" title="先点「下载Excel」拿模板，填好再导入">📥 批量导入</button>
+  <input type="file" id="impInput" accept=".xlsx,.xls,.csv" style="display:none">
+  <button class="btn" id="bPrint">🖨 打印/PDF</button>
+  <button class="btn" id="bPng">🖼 下载图片</button>
+  <button class="btn" id="bXls">📊 下载Excel</button>
+  <button class="btn" id="bAddRow">＋ 加产品行</button>
+  <button class="btn" id="bPdf">📄 下载采购合同 PDF</button>
+  <button class="btn" id="bQc">📎 下载 QC 要求 PDF</button>
+  <span class="tag" id="tag">加载中…</span>
+</div>
+
+<div id="state">正在读取采购单…</div>
+<div class="layout" id="wrap" style="display:none">
+  <div class="sheet" id="sheet">
+    <div class="title-wrap">
+      <div class="t-mid"><div class="cn">采 购 合 同</div><div class="en">PURCHASE ORDER</div></div>
+      <div class="t-act no-print">
+        <button class="savebtn" id="bSave" disabled>💾 保存并提交</button>
+        <div class="steps no-print" id="steps">
+          <div class="stp" id="stp1"><b>①</b> 填「可交货日期」并提交 <span class="st" id="st1">未完成</span></div>
+          <div class="stp" id="stp2"><b>②</b> 上传确认后的采购合同 <span class="st" id="st2">未上传</span>
+            <button class="btn" id="bSigned" type="button">📎 上传合同</button>
+            <em>先点左上「下载采购合同 PDF」，签字或盖章后上传；PDF / 图片均可</em></div>
+        </div>
+        <span class="savehint" id="saveHint"></span>
+      </div>
+    </div>
+
+    <div class="party">
+      <div>
+        <b class="t">买方开票资料 · Buyer</b>
+        <div class="kv">
+          <span>公司名称：</span><i class="fill" id="buyerName"></i>
+          <span>税号：</span><i class="fill" id="buyerTax"></i>
+          <span>开户银行：</span><i class="fill" id="buyerBank"></i>
+          <span>银行账户：</span><i class="fill" id="buyerAcct"></i>
+        </div>
+      </div>
+      <div>
+        <b class="t">卖方账户信息 · Vendor（请贵司补齐）</b>
+        <div class="kv">
+          <span>公司名称：</span><i class="fill" id="facName"></i>
+          <span>税号：</span><i class="fill" id="facTax"></i>
+          <span>开户银行：</span><i class="fill" contenteditable id="facBank" data-prof="bank_name"></i>
+          <span>银行账户：</span><i class="fill" contenteditable id="facAcct" data-prof="bank_account"></i>
+        </div>
+      </div>
+    </div>
+
+    <div class="metarow">
+      <span>单号 / Order No.：<b id="orderNo"></b></span>
+      <span>下单日期：<b id="orderDate">—</b></span>
+    </div>
+    <div class="metarow" style="border-top:0">
+      <span>可交货日期 / Delivery：<input type="date" id="dlvDate"></span>
+      <span style="flex:1">备注：<i class="fill" contenteditable id="remarks" style="display:inline-block;min-width:200px"></i></span>
+    </div>
+
+    <table class="items">
+      <thead><tr>
+        <th style="width:26px">行号</th>
+        <th id="thName">品名 / ITEM DESCRIPTION
+          <button class="colbtn no-print" id="bName" title="品名列显示/隐藏">隐藏</button></th>
+        <th style="width:44px">数量<br>QTY</th><th style="width:74px" class="no-print">袋子库存<br><span style="font-weight:400;opacity:.75">本单需</span></th><th style="width:52px">单价(袋)</th>
+        <th style="width:52px">箱价</th><th style="width:60px">金额</th>
+        <th style="width:84px" class="no-print colh" data-col="box">箱规 L*W*H<br><span style="font-weight:400;opacity:.75">cm</span></th>
+        <th style="width:58px" class="no-print">体积/箱<br>CBM <span style="font-weight:400;opacity:.75">自动</span></th>
+        <th style="width:56px" class="no-print colh" data-col="gw">毛重/箱<br>GW</th>
+        <th style="width:56px" class="no-print colh" data-col="nw">净重/箱<br>NW</th>
+        <th style="width:82px" class="no-print colh" data-col="hs_code">HS 建议</th>
+        <th style="width:96px" class="colh" data-col="barcode">条形码<br><span style="font-weight:400;opacity:.75">没有可空着</span></th>
+        <th style="width:34px" class="no-print colh" data-col="photo">图</th>
+      </tr></thead>
+      <tbody id="tb"></tbody>
+      <tfoot><tr>
+        <td colspan="2" class="r">合计 / TOTAL：</td>
+        <td class="c" id="sumQty">—</td><td class="no-print"></td><td></td><td></td>
+        <td class="r" id="sumAmt">—</td>
+        <td class="no-print"></td>
+        <td class="c no-print" id="sumCbm" style="font-size:10px">—</td>
+        <td class="c no-print" id="sumGw" style="font-size:10px">—</td>
+        <td class="no-print"></td><td class="no-print"></td>
+        <td></td><td class="no-print"></td>
+      </tr></tfoot>
+    </table>
+
+    <div class="terms">
+      <span style="float:right;font-size:9.5px;color:var(--dim)" id="termSrc"></span>
+      <b>合同条款 / Terms &amp; Conditions</b>
+      <span class="no-print" style="font-size:9.5px;color:var(--warn);margin-left:8px">✏️ 可直接在下面改 · Editable</span>
+      <div id="terms"></div>
+    </div>
+
+    <div class="tplbox no-print">
+      <div>
+        <b style="font-size:12px">以上为我方标准采购合同模板</b>
+        <span style="font-size:10.5px;color:var(--dim)">The above is our standard purchase contract template.</span>
+      </div>
+      <div class="tpl-up">
+        <span style="font-size:19px">📄</span>
+        <div style="flex:1">
+          <b style="font-size:12px">条款要改？两种都行 —— 直接在上面改，或上传贵司自己的模板</b>
+          <em style="display:block;font-size:10.5px;color:var(--dim);font-style:normal">Edit the terms above directly, or upload your own contract template.</em>
+          <em style="display:block;font-size:10.5px;color:var(--warn);font-style:normal">⚠️ 无论哪种，贵司的条款都需经我方确认后方可生效</em>
+        </div>
+        <button class="btn" id="bTpl">上传模板</button>
+      </div>
+    </div>
+
+    <div class="histbox no-print" id="histbox" hidden>
+      <b>改动记录</b><span class="hsub">谁、什么时候、把哪一行的哪个字段改成了什么 —— 只增不改</span>
+      <div id="histList"></div>
+    </div>
+  </div>
+
+  <div class="side" id="side">
+    <div class="side-h">
+      <div class="n" id="missN">—</div>
+      <div class="l" id="missL">项待补</div>
+      <div class="s">红色格子就是缺的，点右边条目跳过去</div>
+    </div>
+    <div id="missList"></div>
+    <div class="quick no-print">
+      <b>快速填写</b>
+      <button class="qbtn" id="qPrev">📋 从上一单带入　<em id="qPrevHint"></em></button>
+      <button class="qbtn" id="qMatch">🔎 按品名匹配库内产品　<em>自动带条码/箱规</em></button>
+      <button class="qbtn" id="qXls">📤 上传表格批量填　<em>Excel / CSV</em></button>
+    </div>
+    <div class="side-f">
+      <div class="gate" id="gate">—</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<input type="file" id="fileInput" style="display:none">
+
+<script src="/templates/vendor/html2canvas.min.js"></script>
+<script src="/templates/vendor/xlsx.full.min.js"></script>
+<script>
+(function(){
+"use strict";
+// API 基址跟着页面走：正式部署在 /public/collab-po.html → API=""；
+// 测试挂在 /po-test/public/collab-po.html → API="/po-test"。两种环境都对，不用改代码。
+// 预览挂在 /po-test 下；正式环境（/po?c=）接口在根路径 —— 原写法在 /po 下会拼成 /po/api/… 404
+var BASE=(location.pathname.indexOf("/po-test/")===0)?"/po-test":"";
+var API=BASE+"/api/db/po-collab";
+var TOKEN=new URLSearchParams(location.search).get("token")||new URLSearchParams(location.search).get("c")||"";
+var D=null, dirty=false, uploadCtx=null;
+
+function $(id){return document.getElementById(id)}
+function toast(msg,isErr){var t=$("toast");t.textContent=msg;t.className="toast"+(isErr?" err":"");
+  t.style.display="block";clearTimeout(t._h);t._h=setTimeout(function(){t.style.display="none"},2600)}
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function val(l,k){var t=l.theirs||{},o=l.ours||{};
+  if(t[k]!=null&&t[k]!=="")return t[k];
+  if(o[k]!=null&&o[k]!=="")return o[k];return""}
+function num(v){var n=Number(String(v==null?"":v).replace(/,/g,""));return isFinite(n)?n:0}
+// 📐 Damon 0918：「cbm 也没有，但是只要有纸箱规格就有了」
+// 箱规单位是 cm，CBM = L×W×H ÷ 1,000,000。⛔ 不让工厂填，填了箱规自动出。
+function cbmOf(l,w,h){
+  var a=num(l),b=num(w),c=num(h);
+  if(!a||!b||!c)return "—";
+  return (a*b*c/1e6).toFixed(4);
+}
+function p4(v){var n=num(v);return n?n.toFixed(4):""}
+
+// ── 载入 ──────────────────────────────────────
+function load(){
+  if(!TOKEN){$("state").innerHTML="<b>链接缺少 token</b><br>请用我们发给您的完整链接打开。";return}
+  fetch(API+"/validate?token="+encodeURIComponent(TOKEN))
+    .then(function(r){return r.json()})
+    .then(function(j){
+      if(!j.valid){$("state").innerHTML="<b>"+esc(j.error||"链接无效")+"</b>";return}
+      D=j; $("state").style.display="none"; $("wrap").style.display="";
+      render();
+    })
+    .catch(function(e){$("state").innerHTML="<b>读取失败：</b>"+esc(e.message)});
+}
+
+function initColLabels(){
+  document.querySelectorAll("th.colh[data-col]").forEach(function(th){
+    if(!th.getAttribute("data-label"))th.setAttribute("data-label",th.innerHTML);
+  });
+}
+function render(){
+  var s=D.sheet;
+  var NO=s.display_no||"—";   // 对外单号：PO号→合同号；⛔ 不显示 order_no（开头是客户编号）
+  document.title="采购单 "+NO+" · 请确认";
+  $("tag").textContent="协同 · "+s.factory_name+" · 免登录";
+  $("orderNo").textContent=NO;
+  $("orderDate").textContent=s.order_date||"—";
+  $("buyerName").textContent="厦门巴匕进出口有限公司";
+  $("buyerTax").textContent="91350206MA34RW3852";
+  $("buyerBank").textContent="中国银行厦门文灶支行";
+  $("buyerAcct").textContent="431279918006";
+  $("facName").textContent=s.factory_name||"";
+  $("facTax").textContent=(s.factory_profile&&s.factory_profile.tax_id)||"";
+  $("facBank").textContent=(s.factory_profile&&s.factory_profile.bank_name)||"";
+  $("facAcct").textContent=(s.factory_profile&&s.factory_profile.bank_account)||"";
+  if(s.factory_delivery_date)$("dlvDate").value=String(s.factory_delivery_date).slice(0,10);
+  $("remarks").textContent=s.factory_remarks||"";
+
+  initColLabels(); renderLines(); renderTerms(); recount(); paintSteps();
+  if(s.return_reason&&!$("retBanner")){var rb=document.createElement("div");rb.id="retBanner";
+    rb.style.cssText="margin:0 0 12px;padding:10px 14px;border:2px solid var(--miss);border-radius:4px;background:var(--miss-bg,#FDF0EF);color:var(--miss);font-weight:600";
+    rb.innerHTML="↩ 我们退回了这张采购单，请按下面修改后重新「保存并提交」：<div style='font-weight:400;color:var(--ink);margin-top:4px;white-space:pre-wrap'>"+esc(s.return_reason)+"</div>";
+    var sh=document.querySelector(".sheet"); if(sh)sh.insertBefore(rb,sh.firstChild);}
+  renderHistory();
+  $("qPrevHint").textContent=(D.prev_order? "上一单 "+D.prev_order : "暂无历史单");
+  $("qPrev").disabled=!D.prev_order;
+  $("bQc").disabled=!(D.download_pack||[]).some(function(a){return a.kind==="qc_standard"});
+}
+
+var FIELD_CN={qty:"数量",pbag:"单价(袋)",cprice:"箱价",barcode:"条形码",box_l:"箱长",box_w:"箱宽",box_h:"箱高",carton_qty:"装箱量",gw_ctn:"毛重/箱",nw_ctn:"净重/箱",cbm_ctn:"体积/箱",hs_code:"HS 编码",note:"备注",product_name:"品名"};
+function fmtT(x){var d=new Date(x);if(isNaN(d))return "";
+  function z(n){return (n<10?"0":"")+n}
+  return (d.getMonth()+1)+"-"+z(d.getDate())+" "+z(d.getHours())+":"+z(d.getMinutes());}
+// 改动记录（Damon 0918）—— 没改过就不显示，别占地方
+function renderHistory(){
+  var hs=D.history||[];
+  if(D.last_edit_by||D.contact_name){
+    var w=D.contact_name||D.last_edit_by;
+    $("tag").textContent+=" · 最近修改："+w+(D.last_edit_at?" "+fmtT(D.last_edit_at):"");
+  }
+  if(!hs.length){$("histbox").hidden=true;return}
+  $("histbox").hidden=false;
+  $("histList").innerHTML=hs.map(function(h){
+    return '<div class="histrow"><span class="ht">'+fmtT(h.created_at)+'</span>'
+      +'<span class="hw">'+esc(h.who||"")+'</span>'
+      +'<span><b>'+String(h.seq||"").padStart(2,"0")+'</b> '
+      +'<span class="hf">'+esc(FIELD_CN[h.field]||h.field)+'</span> '
+      +'<span class="ho">'+esc(h.old_val==null?"空":h.old_val)+'</span> → '
+      +'<span class="hn">'+esc(h.new_val==null?"空":h.new_val)+'</span></span></div>';
+  }).join("");
+}
+
+function renderLines(){
+  var h="";
+  h+='<tr class="grp"><td colspan="13">单号 '+esc(D.sheet.display_no||"—")+'</td></tr>';
+  (D.lines||[]).forEach(function(l){
+    var bc=val(l,"barcode"), bl=val(l,"box_l"), bw=val(l,"box_w"), bh=val(l,"box_h"),
+        hs=val(l,"hs_code"), q=num(val(l,"qty")), pb=val(l,"pbag"), cp=val(l,"cprice"),
+        gw=val(l,"gw_ctn"), nw=val(l,"nw_ctn");
+    var box=(bl&&bw&&bh)?(bl+"*"+bw+"*"+bh):"";
+    var amt=q*num(cp||pb);
+    h+='<tr data-id="'+l.id+'">'
+      +'<td class="c">'+String(l.seq||"").padStart(2,"0")+'</td>'
+      +'<td>'+esc(l.product_name)+'</td>'
+      +'<td class="c'+(q===0?" zero":"")+'" data-k="qty">'+(q||0)+'</td>'
+      +bagCell(l)
+      +'<td class="r" data-k="pbag">'+p4(pb)+'</td>'
+      +'<td class="r" data-k="cprice">'+p4(cp)+'</td>'
+      +'<td class="r" data-amt>'+(amt?amt.toFixed(2):"0.00")+'</td>'
+      +'<td class="c no-print'+(box?"":" miss")+'" data-k="box">'+(box||"缺")+'</td>'
+      +'<td class="c no-print auto" data-cbm data-k="cbm_ctn">'+(val(l,"cbm_ctn")||cbmOf(bl,bw,bh))+'</td>'
+      +'<td class="c no-print'+(gw?"":" miss")+'" data-k="gw_ctn">'+(gw||"缺")+'</td>'
+      +'<td class="c no-print'+(nw?"":" miss")+'" data-k="nw_ctn">'+(nw||"缺")+'</td>'
+      +'<td class="c no-print'+(hs?"":" miss")+'" data-k="hs_code"'
+        +(l.hs_suspect?' title="'+esc(l.hs_suspect_why)+'"':"")+'>'
+        +(hs? (l.hs_suspect?'<span class="hs-sus">⚠ '+esc(hs)+'</span>':esc(hs)) : "请建议")+'</td>'
+      +'<td class="c'+(bc?"":" soft-miss")+'" data-k="barcode">'+(bc||"没有可空着")+'</td>'
+      +'<td class="c no-print">'+(l.image_url
+          ? '<a href="'+esc(l.image_url)+'" target="_blank" rel="noopener"><img src="'+esc(l.image_url)+'" alt="" style="width:34px;height:34px;object-fit:cover;border-radius:3px;border:1px solid var(--line)"></a>'
+          : '<span class="thumb'+(l.has_photo?" has":"")+'" data-photo="'+l.id+'">'+(l.has_photo?"✓":"＋")+'</span>')+'</td>'
+      +'</tr>';
+  });
+  $("tb").innerHTML=h;
+  document.querySelectorAll("#tb td.bagtd").forEach(paintBag);
+}
+
+function bagCell(l){
+  var st=(D.stock||[]).filter(function(r){return r.seq===l.seq})[0];
+  if(!st||st.bag_stock==null)return '<td class="c no-print" style="color:var(--dim)" title="这款没有袋子库存记录">—</td>';
+  return '<td class="c no-print bagtd" data-k="bag_stock" data-orig="'+st.bag_stock+'" data-need="'+(st.bags_needed||0)+'" title="点一下可以改库存">'
+    +st.bag_stock+'</td>';
+}
+function paintBag(td){
+  var n=Number((td.textContent||"").replace(/,/g,"").trim()), need=Number(td.dataset.need||0);
+  var f=function(x){return Number(x).toLocaleString("zh-CN")};
+  var short=(isFinite(n)&&need)?Math.max(0,need-n):0;
+  td.classList.toggle("bag-short",short>0);
+  td.classList.toggle("bag-ok",short===0);
+  td.setAttribute("data-sub","需 "+f(need)+(short>0?(" · 差 "+f(short)):" ✓"));
+}
+function renderTerms(){
+  var h="";
+  (D.terms||[]).forEach(function(t,i){
+    h+='<span class="tline" contenteditable data-seq="'+(t.seq||i+1)+'">'
+      +esc(t.title_cn?(t.title_cn+"　"):"")+esc(t.body_cn||"")+'</span>';
+  });
+  $("terms").innerHTML=h||'<span style="color:var(--dim)">（未配置条款）</span>';
+  $("termSrc").textContent="条款来源："+(D.terms&&D.terms.length?"collab.po_terms":"默认");
+}
+
+// ── 缺什么 ────────────────────────────────────
+function recount(){
+  var m={barcode:0,box:0,hs:0,photo:0,zero:0,suspect:0,gw:0,nw:0};
+  document.querySelectorAll("#tb tr[data-id]").forEach(function(tr){
+    var g=function(k){var td=tr.querySelector('[data-k="'+k+'"]');return td?td.textContent.trim():""};
+    var bc=g("barcode"), box=g("box"), hs=g("hs_code"), q=num(g("qty")),
+        gw=g("gw_ctn"), nw=g("nw_ctn");
+    if(!bc||bc==="缺条码"||bc==="没有可空着")m.barcode++;
+    if(!box||box==="缺")m.box++;
+    if(!gw||gw==="缺")m.gw++;
+    if(!nw||nw==="缺")m.nw++;
+    if(!hs||hs==="请建议")m.hs++;
+    if(q===0)m.zero++;
+    if(tr.querySelector(".hs-sus"))m.suspect++;
+    if(!tr.querySelector(".thumb.has"))m.photo++;
+  });
+  var prof=(!$("facBank").textContent.trim()?1:0)+(!$("facAcct").textContent.trim()?1:0);
+  var dlv=$("dlvDate").value?0:1;
+  var gate=m.box+m.gw+m.nw+prof+dlv;  // ⛔ 条码不进闸（Damon 0918：有些品本来就没有）
+
+  var rows=[
+    ["📦","箱规 长×宽×高","发货前必须有", m.box, "", 'box'],
+    ["⚖️","毛重 GW / 箱","订舱报关都要用", m.gw, "", 'gw_ctn'],
+    ["📐","体积 CBM","<b>不用填</b> —— 箱规一填自动算出来", 0, "done", 'box'],
+    ["🪶","净重 NW / 箱","报关申报用", m.nw, "", 'nw_ctn'],
+    ["🧾","HS 编码建议","贵司比我们熟，建议一个；最终以我方申报为准", m.hs, "soft", 'hs_code'],
+    ["⚠️","HS 疑似不对","我们查着可能归错了，请确认", m.suspect, "soft", 'hs_code'],
+    ["🏷","条形码", "有就填，<b>没有可以空着</b>，不影响下单", m.barcode, "soft", 'barcode'],
+    ["📷","产品图","不强制，有更好", m.photo, "soft", 'photo'],
+    ["🏦","贵司开户行 / 账号","结算要用", prof, "", 'prof'],
+    ["📅","可交货日期","请填贵司能交货的日子", dlv, "", 'dlv'],
+    ["🔢","数量是 0 的行","请确认是否取消", m.zero, "soft", 'qty']
+  ];
+  var h="";
+  rows.forEach(function(r){
+    if(!r[3]&&r[4]!=="done")return;
+    if(r[4]==="done"&&r[3]===0){
+      h+='<div class="mi done" data-jump="'+r[5]+'"><span>'+r[0]+'</span>'
+        +'<span class="nm">'+r[1]+'<em>'+r[2]+'</em></span><span class="ct">自动</span></div>';
+      return;
+    }
+    if(!r[3])return;
+    h+='<div class="mi '+r[4]+'" data-jump="'+r[5]+'"><span>'+r[0]+'</span>'
+      +'<span class="nm">'+r[1]+'<em>'+r[2]+'</em></span><span class="ct">'+r[3]+'</span></div>';
+  });
+  if(!h)h='<div class="mi done"><span>✓</span><span class="nm">全部齐了<em>可以提交了</em></span><span class="ct">齐</span></div>';
+  $("missList").innerHTML=h;
+
+  var total=gate;  // 顶部大数字 = 真正拦下单的那些，跟底部那句同一个口径（Damon 0918：两个数字对不上，工厂会懵）
+  $("missN").textContent=total||"0";
+  $("missL").textContent=gate? "项待补 · 可以先提交，之后再补" : "已齐 · 可以提交";
+  $("side").classList.toggle("clean",gate===0);
+  $("gate").className="gate"+(gate?"":" ok");
+  $("gate").innerHTML=gate? "还差 <b>"+gate+"</b> 项（可以先提交，之后再补；条码/图片/HS 不算）"
+                          : "✅ 必填都齐了，点右上角「保存并提交」";
+  $("bSave").disabled=false;   // ⛔ 不再拦：缺项只提醒
+  $("bSave").className="savebtn on";
+  $("saveHint").textContent=gate? ("还差 "+gate+" 项，可以先提交，之后再补") : (dirty?"有改动未提交":"");
+  $("saveHint").style.color=gate?"var(--miss)":"var(--warn)";
+
+  // 合计
+  var sq=0,sa=0,scbm=0,sgw=0;
+  document.querySelectorAll("#tb tr[data-id]").forEach(function(tr){
+    var q=num(tr.querySelector('[data-k="qty"]').textContent);
+    var cp=num(tr.querySelector('[data-k="cprice"]').textContent)||num(tr.querySelector('[data-k="pbag"]').textContent);
+    var a=q*cp; tr.querySelector("[data-amt]").textContent=a.toFixed(2); sq+=q; sa+=a;
+    // 箱规一改，CBM 跟着重算
+    var boxTd=tr.querySelector('[data-k="box"]'), cbmTd=tr.querySelector("[data-cbm]");
+    if(boxTd&&cbmTd){
+      var parts=(boxTd.textContent||"").trim().split(/[*xX×]/);
+      var v=(parts.length===3)?cbmOf(parts[0],parts[1],parts[2]):"—";
+      cbmTd.textContent=v;
+      if(v!=="—")scbm+=num(v)*q;
+    }
+    var gwTd=tr.querySelector('[data-k="gw_ctn"]');
+    if(gwTd){var g=num(gwTd.textContent); if(g)sgw+=g*q}
+  });
+  $("sumQty").textContent=sq; $("sumAmt").textContent=sa.toFixed(2);
+  var sc=$("sumCbm"); if(sc)sc.textContent=scbm?scbm.toFixed(3)+" m³":"—";
+  var sg=$("sumGw");  if(sg)sg.textContent=sgw?sgw.toFixed(1)+" kg":"—";
+  if(!window._foldedOnce){window._foldedOnce=true;try{foldDone()}catch(e){}}
+}
+
+// ── 编辑事件 ──────────────────────────────────
+// 🐛 2026-09-18 真点出来的：点进红格子时占位字（缺条码/缺/请建议）没清，
+// 工厂一打字就变成「6931539600003缺条码」。focus 时先清掉占位。
+var PLACEHOLDER={"缺条码":1,"没有可空着":1,"缺":1,"请建议":1,"（请填品名）":1};
+
+// 🔒 Damon 0918：「所有的格子需要点击编辑才能填写，不然会错」
+// 单元格默认【只读】，点一下才进编辑态（蓝框+黄底，明确知道自己在改哪一格），
+// 失焦自动退回只读。防手滑改数、防滚动误触。
+function enterEdit(td){
+  if(!td||td.isContentEditable)return;
+  td.contentEditable="true";
+  td.classList.add("editing");
+  var t=(td.textContent||"").trim();
+  if(PLACEHOLDER[t]){td.textContent="";td.dataset.cleared="1"}
+  td.focus();
+  var r=document.createRange(); r.selectNodeContents(td);
+  var sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+}
+// 填完了就把红框/灰框去掉；清空了再加回来（Damon 0918「填写后就隐藏」的格子级版本）
+function syncMiss(td){
+  var k=td.getAttribute("data-k"), t=(td.textContent||"").trim();
+  var empty=(!t||PLACEHOLDER[t]);
+  td.classList.remove("miss","soft-miss");
+  if(empty) td.classList.add(k==="barcode"?"soft-miss":"miss");
+}
+function leaveEdit(td){
+  if(!td)return;
+  td.contentEditable="false";
+  td.classList.remove("editing");
+  if(td.dataset.cleared==="1"&&(td.textContent||"").trim()===""){
+    td.textContent={"barcode":"没有可空着","box":"缺","hs_code":"请建议",
+                    "gw_ctn":"缺","nw_ctn":"缺","product_name":"（请填品名）"}[td.getAttribute("data-k")]||"";
+  }
+  delete td.dataset.cleared;
+  syncMiss(td);
+  if(td.classList.contains("bagtd"))paintBag(td);
+  recount();
+}
+document.addEventListener("click",function(e){
+  var td=e.target.closest("#tb td[data-k], i.fill[data-prof]");
+  if(td&&!td.isContentEditable){enterEdit(td);return}
+  // 点到别处，把正在编辑的收掉
+  document.querySelectorAll(".editing").forEach(function(el){ if(el!==td)leaveEdit(el) });
+});
+document.addEventListener("keydown",function(e){
+  var td=e.target;
+  if(!td.classList||!td.classList.contains("editing"))return;
+  if(e.key==="Enter"){e.preventDefault();leaveEdit(td)}
+  if(e.key==="Escape"){e.preventDefault();leaveEdit(td)}
+  if(e.key==="Tab"){
+    e.preventDefault();
+    var all=[].slice.call(document.querySelectorAll("#tb td[data-k]"));
+    var i=all.indexOf(td); leaveEdit(td);
+    if(all[i+1])enterEdit(all[i+1]);
+  }
+});
+document.addEventListener("focusin",function(e){
+  var el=e.target;
+  if(!el.matches)return;
+  if(el.matches("i.fill[contenteditable]")){
+    var t=(el.textContent||"").trim();
+    if(PLACEHOLDER[t]){el.textContent="";el.dataset.cleared="1"}
+  }
+});
+// 没填就走：把占位字放回去，红格子保持红
+document.addEventListener("focusout",function(e){
+  var el=e.target;
+  if(!el.matches||el.classList.contains("editing"))return;
+  if(el.dataset.cleared!=="1")return;
+  if((el.textContent||"").trim()==="")
+    el.textContent={"barcode":"没有可空着","box":"缺","hs_code":"请建议","gw_ctn":"缺","nw_ctn":"缺"}[el.getAttribute("data-k")]||"";
+  delete el.dataset.cleared;
+  recount();
+});
+
+document.addEventListener("input",function(e){
+  var el=e.target;
+  if(el.matches('[contenteditable]')||el.id==="dlvDate"){
+    dirty=true;
+    if(el.matches("td[contenteditable]")){el.classList.add("touched");el.classList.remove("miss")}
+    if(el.classList.contains("fill")){el.classList.add("touched");el.classList.remove("empty")}
+    if(el.classList.contains("tline"))el.classList.add("edited");
+    recount();
+  }
+});
+$("dlvDate").addEventListener("change",function(){dirty=true;recount()});
+
+// 右侧条目点一下跳到第一个缺的格子
+document.addEventListener("click",function(e){
+  var mi=e.target.closest("[data-jump]");
+  if(mi){
+    var k=mi.getAttribute("data-jump"), t=null;
+    if(k==="prof")t=$("facBank").textContent.trim()?$("facAcct"):$("facBank");
+    else if(k==="dlv")t=$("dlvDate");
+    else if(k==="photo")t=document.querySelector(".thumb:not(.has)");
+    else t=document.querySelector('#tb td.miss[data-k="'+k+'"]')||document.querySelector('#tb td[data-k="'+k+'"]');
+    if(t){t.scrollIntoView({block:"center",behavior:"smooth"});
+      if(t.focus)setTimeout(function(){t.focus()},260)}
+    return;
+  }
+  var th=e.target.closest("[data-photo]");
+  if(th){uploadCtx={kind:"product_photo",line_id:th.getAttribute("data-photo"),el:th};$("fileInput").accept="image/*";$("fileInput").click()}
+});
+
+// ── 按钮 ─────────────────────────────────────
+$("bPrint").onclick=function(){window.print()};
+
+$("bPng").onclick=function(){
+  var b=this; b.disabled=true; b.textContent="⏳ 生成中…";
+  html2canvas($("sheet"),{scale:2,useCORS:true,backgroundColor:"#ffffff",logging:false}).then(function(cv){
+    var a=document.createElement("a");a.download="PO-"+(D.sheet.display_no||"draft")+".png";
+    a.href=cv.toDataURL("image/png");a.click();
+    b.disabled=false;b.textContent="🖼 下载图片";
+  }).catch(function(e){toast("生成失败："+e.message,true);b.disabled=false;b.textContent="🖼 下载图片"});
+};
+
+var XCOLS=[["行号","seq"],["品名","name"],["数量","qty"],["袋子库存","bag_stock"],
+  ["箱规 L*W*H(cm)","box"],["毛重/箱","gw_ctn"],["净重/箱","nw_ctn"],["HS建议","hs_code"],["条形码","barcode"],
+  ["单价(袋)","pbag"],["箱价","cprice"],["金额","amt"]];
+function cellOf(tr,k){
+  if(k==="seq")return parseInt(tr.children[0].textContent,10)||"";
+  if(k==="name")return tr.children[1].textContent.trim();
+  if(k==="amt"){var a=tr.querySelector("[data-amt]");return a?a.textContent.trim():""}
+  var td=tr.querySelector('[data-k="'+k+'"]'); if(!td)return "";
+  var t=td.textContent.trim(); return PLACEHOLDER[t]?"":t;
+}
+$("bXls").onclick=function(){
+  var rows=[XCOLS.map(function(c){return c[0]})];
+  document.querySelectorAll("#tb tr[data-id]").forEach(function(tr){
+    rows.push(XCOLS.map(function(c){return cellOf(tr,c[1])}));
+  });
+  var wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),"PO");
+  XLSX.writeFile(wb,"PO-"+(D.sheet.display_no||"draft")+".xlsx");
+};
+
+// ── 批量导入（Damon 0925「左上角批量导入」）────────────────
+// 认表头：行号/品名/条形码/箱规(或 长 宽 高)/毛重/净重/HS/袋子库存；按 行号 → 条码 → 品名 对上行
+// ⛔ 只填格子不提交：导完工厂自己核对再点「保存并提交」；单价/金额/数量不从表格改
+var IMP_RULES=[["seq",/^(行号|no\.?|序号)$/i],["name",/品名|item|description|描述/i],["barcode",/条形码|条码|barcode/i],
+  ["box",/箱规|l\s*\*\s*w\s*\*\s*h|外箱尺寸/i],["box_l",/^(长|length|l)(\s*\(?cm\)?)?$/i],["box_w",/^(宽|width|w)(\s*\(?cm\)?)?$/i],
+  ["box_h",/^(高|height|h)(\s*\(?cm\)?)?$/i],["gw_ctn",/毛重|gross|^gw/i],["nw_ctn",/净重|net|^nw/i],
+  ["hs_code",/^hs|hs\s*code|hs建议|海关编码/i],["bag_stock",/袋子|包装袋|bag/i]];
+function normName(t){return String(t||"").toUpperCase().replace(/[^A-Z0-9一-龥.]/g,"")}
+function setCell(td,v){
+  if(!td)return false; v=String(v==null?"":v).trim(); if(v==="")return false;
+  if(td.textContent.trim()===v)return false;
+  td.textContent=v; td.classList.add("touched"); syncMiss(td);
+  if(td.classList.contains("bagtd"))paintBag(td);
+  return true;
+}
+$("bImp").onclick=function(){$("impInput").value="";$("impInput").click()};
+$("impInput").onchange=function(){
+  var f=this.files&&this.files[0]; if(!f)return;
+  var rd=new FileReader();
+  rd.onload=function(){
+    try{
+      var wb=XLSX.read(new Uint8Array(rd.result),{type:"array"});
+      var aoa=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:""});
+      // 表头 = 前 10 行里命中列名最多的那一行
+      var hi=-1,best=0,map={};
+      for(var r=0;r<Math.min(10,aoa.length);r++){
+        var m={},n=0;
+        aoa[r].forEach(function(h,ci){var t=String(h).trim();
+          for(var k=0;k<IMP_RULES.length;k++){if(m[IMP_RULES[k][0]]==null&&IMP_RULES[k][1].test(t)){m[IMP_RULES[k][0]]=ci;n++;break}}});
+        if(n>best){best=n;hi=r;map=m}
+      }
+      if(hi<0||best<2){toast("没认出表头：请用「下载Excel」的模板，或表头写 行号/品名/箱规/毛重/净重/条形码/袋子库存",true);return}
+      var trs=[].slice.call(document.querySelectorAll("#tb tr[data-id]"));
+      var bySeq={},byBc={},byName={};
+      trs.forEach(function(tr){
+        bySeq[parseInt(tr.children[0].textContent,10)]=tr;
+        var bc=cellOf(tr,"barcode"); if(bc)byBc[bc]=tr;
+        byName[normName(tr.children[1].textContent)]=tr;
+      });
+      var hit=0,miss=0,cells=0;
+      aoa.slice(hi+1).forEach(function(row){
+        var get=function(k){return map[k]==null?"":String(row[map[k]]).trim()};
+        if(!row.join("").trim())return;
+        var tr=bySeq[parseInt(get("seq"),10)]||byBc[get("barcode")]||byName[normName(get("name"))];
+        if(!tr){miss++;return}
+        hit++;
+        var box=get("box"); if(!box&&get("box_l")&&get("box_w")&&get("box_h"))box=get("box_l")+"*"+get("box_w")+"*"+get("box_h");
+        [["box",box],["gw_ctn",get("gw_ctn")],["nw_ctn",get("nw_ctn")],["hs_code",get("hs_code")],
+         ["barcode",get("barcode")],["bag_stock",get("bag_stock").replace(/,/g,"")]].forEach(function(p){
+          if(setCell(tr.querySelector('[data-k="'+p[0]+'"]'),p[1]))cells++;
+        });
+      });
+      dirty=true; recount();
+      toast("导入 "+hit+" 行、改了 "+cells+" 格"+(miss?("；"+miss+" 行没对上"):"")+"。核对后点「保存并提交」",!!miss&&!hit);
+    }catch(e){toast("读表格失败："+e.message,true)}
+  };
+  rd.readAsArrayBuffer(f);
+};
+
+$("bAddRow").onclick=function(){
+  var tb=$("tb"),tr=document.createElement("tr");
+  tr.setAttribute("data-id","new-"+Date.now());tr.setAttribute("data-new","1");
+  tr.innerHTML='<td class="c">新</td><td contenteditable>（请填品名）</td>'
+    +'<td class="c" data-k="qty">0</td>'
+    +'<td class="r" data-k="pbag"></td>'
+    +'<td class="r" data-k="cprice"></td>'
+    +'<td class="r" data-amt>0.00</td>'
+    +'<td class="c no-print miss" data-k="box">缺</td>'
+    +'<td class="c no-print auto" data-cbm data-k="cbm_ctn">—</td>'
+    +'<td class="c no-print miss" data-k="gw_ctn">缺</td>'
+    +'<td class="c no-print miss" data-k="nw_ctn">缺</td>'
+    +'<td class="c no-print miss" data-k="hs_code">请建议</td>'
+    +'<td class="c soft-miss" data-k="barcode">没有可空着</td>'
+    +'<td class="c no-print"><span class="thumb" data-photo="new">＋</span></td>';
+  tb.appendChild(tr);dirty=true;recount();
+  tr.scrollIntoView({block:"center",behavior:"smooth"});
+};
+
+// 服务端 PDF（puppeteer）还没接，先用浏览器打印出 PDF —— 效果一样，右栏会自动隐藏。
+// TODO: 接 _html-to-pdf.js 出服务端 PDF，这样能直接当附件发邮件。
+$("bPdf").onclick=function(){
+  toast("即将打开打印窗口，选「另存为 PDF」即可");
+  setTimeout(function(){window.print()},700);
+};
+$("bQc").onclick=function(){
+  var qc=(D.download_pack||[]).filter(function(a){return a.kind==="qc_standard"});
+  if(!qc.length){toast("这单还没有挂 QC 要求文件",true);return}
+  qc.forEach(function(a){window.open(BASE+a.file_url,"_blank")});
+};
+
+$("bSigned").onclick=function(){uploadCtx={kind:"signed_back"};$("fileInput").accept=".pdf,image/*";$("fileInput").click()};
+$("dlvDate").addEventListener("change",function(){this.classList.remove("need")});
+function paintSteps(){
+  var s=D.sheet||{}, ok1=!!(s.submitted_at&&s.factory_delivery_date), cf=s.contract_file;
+  $("stp1").classList.toggle("done",ok1); $("st1").textContent=ok1?("✓ 交货 "+String(s.factory_delivery_date).slice(0,10)):"未完成";
+  $("stp2").classList.toggle("done",!!cf); $("st2").textContent=cf?("✓ "+cf.file_name):"未上传";
+  $("bSigned").textContent=cf?"重新上传":"📎 上传合同";
+  var old=$("steps").querySelector(".alldone"); if(old)old.remove();
+  if(s.status==="confirmed"||(ok1&&cf)){var d=document.createElement("div");d.className="alldone";
+    d.textContent="✅ 已确认，谢谢！我们接着安排下一步。";$("steps").appendChild(d)}
+}
+$("bTpl").onclick=function(){uploadCtx={kind:"their_contract"};$("fileInput").accept=".pdf,.doc,.docx,image/*";$("fileInput").click()};
+
+$("fileInput").onchange=function(){
+  var f=this.files&&this.files[0]; if(!f||!uploadCtx)return;
+  if(f.size>8*1024*1024){toast("文件不能超过 8MB",true);this.value="";return}
+  var fr=new FileReader();
+  fr.onload=function(){
+    fetch(API+"/upload",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({token:TOKEN,filename:f.name,mime:f.type,
+        data_base64:String(fr.result).split(",")[1],kind:uploadCtx.kind,
+        line_id:(uploadCtx.line_id&&String(uploadCtx.line_id).indexOf("new")<0)?uploadCtx.line_id:null})})
+      .then(function(r){return r.json()}).then(function(j){
+        if(!j.ok){toast(j.error||"上传失败",true);return}
+        toast("已上传：" + f.name);
+        if(uploadCtx.el){uploadCtx.el.className="thumb has";uploadCtx.el.textContent="✓";recount()}
+        if(uploadCtx.kind==="their_contract")$("bTpl").textContent="✓ 已上传";
+        if(uploadCtx.kind==="signed_back"){D.sheet.contract_file={file_name:f.name,file_url:j.file_url};if(j.status)D.sheet.status=j.status;paintSteps()}
+      }).catch(function(e){toast("上传失败："+e.message,true)});
+  };
+  fr.readAsDataURL(f); this.value="";
+};
+
+$("qPrev").onclick=function(){toast("从上一单带入：正在接，这一步我还没做完")};
+$("qMatch").onclick=function(){toast("按品名匹配：正在接，这一步我还没做完")};
+$("qXls").onclick=function(){$("bImp").click()};
+
+// ── 提交 ─────────────────────────────────────
+$("bSave").onclick=function(){
+  if(this.disabled)return;
+  if(!$("dlvDate").value){toast("请先填「可交货日期」再提交",true);$("dlvDate").focus();$("dlvDate").classList.add("need");return}
+  var b=this;b.disabled=true;b.textContent="⏳ 提交中…";
+  var lines=[];
+  document.querySelectorAll("#tb tr[data-id]").forEach(function(tr){
+    var id=tr.getAttribute("data-id"); if(tr.getAttribute("data-new"))return; // 新行这版先不提交
+    var g=function(k){var td=tr.querySelector('[data-k="'+k+'"]');return td?td.textContent.trim():""};
+    var box=g("box"), parts=box.split(/[*xX×]/).map(function(s){return s.trim()});
+    var o={id:id,qty:g("qty"),pbag:g("pbag"),cprice:g("cprice")};
+    var bs=tr.querySelector("td.bagtd"); if(bs){var bv=bs.textContent.replace(/,/g,"").trim(); if(bv!==""&&bv!==String(bs.dataset.orig))o.bag_stock=bv}
+    var gw=g("gw_ctn"), nw=g("nw_ctn");
+    if(gw&&gw!=="缺")o.gw_ctn=gw;
+    if(nw&&nw!=="缺")o.nw_ctn=nw;
+    var bc=g("barcode"); if(bc&&bc!=="缺条码"&&bc!=="没有可空着")o.barcode=bc;
+    var hs=g("hs_code").replace(/^⚠\s*/,""); if(hs&&hs!=="请建议")o.hs_code=hs;
+    if(parts.length===3&&parts[0]&&parts[1]&&parts[2]){o.box_l=parts[0];o.box_w=parts[1];o.box_h=parts[2]}
+    lines.push(o);
+  });
+  fetch(API+"/submit",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({token:TOKEN,lines:lines,
+      delivery_date:$("dlvDate").value||null,
+      remarks:$("remarks").textContent.trim(),
+      factory_profile:{bank_name:$("facBank").textContent.trim(),
+                       bank_account:$("facAcct").textContent.trim()}})})
+    .then(function(r){return r.json()}).then(function(j){
+      if(!j.ok){toast(j.error||"提交失败",true);b.disabled=false;b.textContent="💾 保存并提交";return}
+      dirty=false;
+      D.sheet.submitted_at=D.sheet.submitted_at||new Date().toISOString();
+      D.sheet.factory_delivery_date=$("dlvDate").value; if(j.status)D.sheet.status=j.status; paintSteps();
+      toast((j.bag_skipped&&j.bag_skipped.length)?"已提交；有 "+j.bag_skipped.length+" 款袋子挂了多个库存，没改，请联系我们":(j.message||"已提交，谢谢！"));
+      b.textContent="✓ 已提交";b.className="savebtn on";
+      $("saveHint").textContent="我们收到了，核对后会再联系您";
+      $("saveHint").style.color="var(--ok)";
+    }).catch(function(e){toast("提交失败："+e.message,true);b.disabled=false;b.textContent="💾 保存并提交"});
+};
+
+// ── 填完的列自动收起（Damon 0918「填写后就隐藏」）────────
+function foldDone(){
+  document.querySelectorAll("th.colh[data-col]").forEach(function(th){
+    var col=th.getAttribute("data-col"), idx=[].indexOf.call(th.parentNode.children,th);
+    var left=0;
+    document.querySelectorAll("#tb tr[data-id]").forEach(function(tr){
+      if(col==="photo"){ if(!tr.querySelector(".thumb.has"))left++; return }
+      var td=tr.children[idx]; if(!td)return;
+      var t=(td.textContent||"").trim();
+      if(!t||t==="缺"||t==="缺条码"||t==="没有可空着"||t==="请建议")left++;
+    });
+    var done=(left===0);
+    var idxs=[idx]; if(col==="box")idxs.push(idx+1);   // 体积/箱 跟着箱规
+    var ths=th.parentNode.children, foot=document.querySelector("table.items tfoot tr");
+    idxs.forEach(function(i){
+      if(ths[i])ths[i].style.display=done?"none":"";
+      document.querySelectorAll("#tb tr[data-id]").forEach(function(tr){
+        var td=tr.children[i]; if(td)td.style.display=done?"none":"";
+      });
+      // tfoot 第一格 colspan=2，所以合计行下标要减 1
+      if(foot&&foot.children[i-1])foot.children[i-1].style.display=done?"none":"";
+    });
+    th.classList.toggle("folded",done);
+  });
+}
+document.addEventListener("click",function(e){
+  var b=e.target.closest("[data-unfold]"); if(!b)return;
+  var th=b.closest("th"), idx=[].indexOf.call(th.parentNode.children,th);
+  th.classList.remove("folded"); th.innerHTML=th.getAttribute("data-label");
+  document.querySelectorAll("#tb tr").forEach(function(tr){
+    var td=tr.children[idx]; if(td)td.style.display="";
+  });
+});
+// 品名列开关（Damon：品名一般我们不显示的）
+var nameHidden=false;
+$("bName").onclick=function(e){
+  e.stopPropagation(); nameHidden=!nameHidden;
+  var idx=1;
+  $("thName").firstChild.textContent=nameHidden?"":"品名 / ITEM DESCRIPTION";
+  this.textContent=nameHidden?"显示品名":"隐藏";
+  document.querySelectorAll("#tb tr").forEach(function(tr){
+    var td=tr.children[idx]; if(td&&!tr.classList.contains("grp"))td.style.display=nameHidden?"none":"";
+  });
+};
+
+window.addEventListener("beforeunload",function(e){if(dirty){e.preventDefault();e.returnValue=""}});
+load();
+})();
+</script>
+</body>
+</html>
