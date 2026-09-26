@@ -16,6 +16,7 @@ import { requireAuth, extractUser } from "../../auth.js";
 import { APP_BASE, genRaw, rawToHash } from "./collab-shared.js";
 import { isInternal } from "./po-collab-handlers.js";
 import { sealStatus } from "./po-collab-seal.js";
+import { autoIssueCollabLinks } from "./collab-auto-links.js";
 
 export const CROLE = "customer_order";
 const LINK_DAYS = 14;
@@ -301,21 +302,22 @@ async function upsertPiTask(pool, sheetId) {
      JSON.stringify(raw)]);
 }
 
-// ── 发货协同入口：客户点了才发一条订舱协同链接（⛔ 不撤旧链接，免得已发给客户的链接失效）──
+// ── 发货协同入口：订单已挂订舱计划才给入口；点了走现成的签发 helper（与自动协同同一套：撤旧链 + 写 shipping_plans.customer_token）
+// GPT 0926 复核：原来每点一次就插一条新 customer_booking 链，不复用、不撤旧 = 同一票可能挂无限条有效链接
 export async function handleCustomerShipmentLink(req, res, pool) {
   const { sheet, err } = await resolveCustomerToken(pool, req.body?.token, req.body?.sheet);
   if (err) return res.status(403).json({ ok: false, error: err });
   if (!(await customerGate(req, res, pool, sheet))) return;
   const p = (await pool.query(
-    `SELECT sp.id, sp._id FROM orders o JOIN shipping_plans sp ON sp.id = o.shipping_plan_id WHERE o.order_no=$1 LIMIT 1`,
+    `SELECT sp.id FROM orders o JOIN shipping_plans sp ON sp.id = o.shipping_plan_id WHERE o.order_no=$1 LIMIT 1`,
     [sheet.order_no])).rows[0];
   if (!p) return res.status(404).json({ ok: false, error: "Shipment collaboration opens after booking." });
-  const raw = genRaw();
-  await pool.query(
-    `INSERT INTO magic_links (token_hash, recipient_role, meta, expires_at, access_log, created_at)
-     VALUES ($1,'customer_booking',$2,NOW() + INTERVAL '7 days','[]'::jsonb,NOW())`,
-    [rawToHash(raw), JSON.stringify({ shipment_id: p.id, plan_business_id: p._id, issued_via: "order_collab", from_sheet: sheet.id })]);
-  return res.json({ ok: true, url: `${APP_BASE}/public/collab-customer.html?token=${raw}` });
+  const issued = (await autoIssueCollabLinks(pool, p.id, ["customer"])) || [];
+  const link = issued.find(x => x && x.recipient_role === "customer_booking");
+  if (!link?.url) return res.status(502).json({ ok: false, error: "Shipment collaboration is not available yet." });
+  await pool.query(`INSERT INTO collab.po_event (sheet_id, kind, actor_side, actor_name, detail) VALUES ($1,'shipment_link','customer',$2,$3::jsonb)`,
+    [sheet.id, clip(req.user?.username, 60), JSON.stringify({ shipment_id: p.id })]);
+  return res.json({ ok: true, url: link.url });
 }
 
 // ── 我方审核（review.js 按 side 分派过来）───────────────────
