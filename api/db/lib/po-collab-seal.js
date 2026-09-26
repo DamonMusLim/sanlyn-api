@@ -7,6 +7,9 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import puppeteer from "puppeteer-core";
 import { PDFDocument } from "pdf-lib";
 import { generateToken } from "../../auth.js";
@@ -18,6 +21,24 @@ const RENDER_ORIGIN = () => process.env.PO_RENDER_ORIGIN
 const DAS_ORIGIN = () => process.env.PO_DAS_ORIGIN || "http://127.0.0.1:9000";   // DAS 在主服务上
 // A4 + 页边距（跟 page.pdf 的参数一致，量章的位置要用同一套）
 const MM = 96 / 25.4, PAGE_W = 210 * MM, PAGE_H = 297 * MM, M_TOP = 10 * MM, M_BOTTOM = 10 * MM, M_SIDE = 8 * MM;
+
+// 在生成好的 PDF 里找「（盖章）」那几个字的真实位置（页 + 坐标，左上为原点，0–1）。
+// ⛔ 别再按屏幕高度推算页码：多页合同分页跟屏幕排版对不上，0926 全流程测试章盖进了第 1 页表格中间
+async function locateSealInPdf(pdf) {
+  const tmp = path.join(os.tmpdir(), `po-seal-${process.pid}-${Date.now()}.pdf`);
+  try {
+    await fs.writeFile(tmp, pdf);
+    const { stdout } = await promisify(execFile)("pdftotext", ["-bbox", tmp, "-"], { maxBuffer: 20 * 1024 * 1024 });
+    let page = -1, W = 0, H = 0, hit = null;
+    for (const line of stdout.split("\n")) {
+      const pm = line.match(/<page width="([\d.]+)" height="([\d.]+)"/);
+      if (pm) { page++; W = +pm[1]; H = +pm[2]; continue; }
+      const wm = line.match(/<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">（盖章）<\/word>/);
+      if (wm) hit = { page, x: (+wm[1] + +wm[3]) / 2 / W, y: (+wm[2] + +wm[4]) / 2 / H };   // 取最后一个 = 签章栏
+    }
+    return hit;
+  } catch { return null; } finally { fs.unlink(tmp).catch(() => {}); }
+}
 
 // 用工厂看到的那一页，在打印版式下出 PDF；顺便量「乙方（盖章）」格子落在第几页、什么位置
 async function renderContract(token, sheetId, bearer) {
@@ -49,6 +70,7 @@ async function renderContract(token, sheetId, bearer) {
       const pageIdx = Math.floor(spot.cy / contentH);
       sig = { page: pageIdx, x: (spot.cx + M_SIDE) / PAGE_W, y: (spot.cy - pageIdx * contentH + M_TOP) / PAGE_H };
     }
+    sig = (await locateSealInPdf(pdf)) || sig;   // 以 PDF 里的真实位置为准，找不到才用估算
     return { pdf, sig };
   } finally { await browser.close(); }
 }
@@ -188,4 +210,4 @@ async function sealStatus(pool, factoryCompanyId) {
   return { status: "none" };
 }
 
-export { handleContractPdf, handleSeal, handleContract, handleSealUpload, sealStatus };
+export { locateSealInPdf, handleContractPdf, handleSeal, handleContract, handleSealUpload, sealStatus };

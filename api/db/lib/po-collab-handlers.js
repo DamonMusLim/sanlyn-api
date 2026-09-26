@@ -318,7 +318,8 @@ async function handleValidate(req, res, pool) {
   return res.json({
     valid: true, role: ROLE,
     sheet: {
-      id: sheet.id, order_no: sheet.order_no, factory_name: sheet.factory_name,
+      // ⛔ 不回 order_no：开头是客户编号，工厂在浏览器开发者工具里也能看到（0926 全流程测试抓到）
+      id: sheet.id, factory_name: sheet.factory_name,
       status: sheet.status, template_side: sheet.template_side,
       qc_required: sheet.qc_required,
       factory_delivery_date: sheet.factory_delivery_date,
