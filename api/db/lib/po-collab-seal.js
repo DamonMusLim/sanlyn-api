@@ -10,17 +10,12 @@ import path from "node:path";
 import os from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import puppeteer from "puppeteer-core";
 import { PDFDocument } from "pdf-lib";
 import crypto from "node:crypto";
 import { ossUploadBuffer } from "../../oss-direct.js";
 
 const UPLOAD_ROOT = "/opt/sanlyn-uploads/po-collab";
-const RENDER_ORIGIN = () => process.env.PO_RENDER_ORIGIN
-  || `http://127.0.0.1:${process.env.PREVIEW_PORT || process.env.PORT || 9000}`;
 const DAS_ORIGIN = () => process.env.PO_DAS_ORIGIN || "http://127.0.0.1:9000";   // DAS 在主服务上
-// A4 + 页边距（跟 page.pdf 的参数一致，量章的位置要用同一套）
-const MM = 96 / 25.4, PAGE_W = 210 * MM, PAGE_H = 297 * MM, M_TOP = 10 * MM, M_BOTTOM = 10 * MM, M_SIDE = 8 * MM;
 
 // 在生成好的 PDF 里找「（盖章）」那几个字的真实位置（页 + 坐标，左上为原点，0–1）。
 // ⛔ 别再按屏幕高度推算页码：多页合同分页跟屏幕排版对不上，0926 全流程测试章盖进了第 1 页表格中间
@@ -52,53 +47,69 @@ async function locateSealInPdf(pdf) {
   } catch { return null; } finally { fs.unlink(tmp).catch(() => {}); }
 }
 
-// 用工厂看到的那一页，在打印版式下出 PDF；顺便量「乙方（盖章）」格子落在第几页、什么位置
-async function renderContract(token, sheetId, bearer, pageFile = "collab-po.html") {
-  const browser = await puppeteer.launch({
-    executablePath: "/usr/bin/google-chrome", headless: "new",
-    args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
-  });
+// 🔴 Damon 0926：「我们的pi,po,这些都是模板了!不能动!不能改了」
+// 合同 PDF 一律用系统正式模板（/api/db/documents?type=pi|po&format=pdf，跟后台点「PI / 采购合同」出的是同一份），
+// ⛔ 不再拿协同页自己排版出 PDF，⛔ 不改模板本身。调用走 2 分钟服务令牌。
+async function renderTemplatePdf(docType, sheet) {
+  const id = String(sheet.order_id || sheet.order_no || "");
+  if (!id) throw new Error("协同单没有关联订单");
+  const svc = shortServiceToken({ uid: 90, username: "svc-agent", role: "admin", company_code: null });
+  const r = await fetch(`${DAS_ORIGIN()}/api/db/documents?type=${encodeURIComponent(docType)}&id=${encodeURIComponent(id)}&format=pdf`,
+    { headers: { Authorization: `Bearer ${svc}` } });
+  const buf = Buffer.from(await r.arrayBuffer());
+  if (!r.ok || !/pdf/i.test(r.headers.get("content-type") || "") || buf.slice(0, 4).toString() !== "%PDF")
+    throw new Error(`模板 PDF 生成失败（${docType} HTTP ${r.status}）`);
+  return buf;
+}
+
+// 在模板 PDF 上找盖章位（左上为原点，0–1；page 从 0 数，调 DAS 时 +1）
+//   po-seller：采购合同「卖方代表：（签字 / 盖章）」下方留白处
+//   pi-buyer ：PI「BUYER AUTHORIZED SIGNATURE (Signature / Company Seal)」签名线上
+async function locateTemplateSeal(pdf, anchor) {
+  const tmp = path.join(os.tmpdir(), `po-tpl-${process.pid}-${Date.now()}.pdf`);
   try {
-    const page = await browser.newPage();
-    await page.evaluateOnNewDocument((t) => { try { localStorage.setItem("po_factory_jwt", t); localStorage.setItem("order_collab_jwt", t); } catch (e) {} }, bearer);
-    await page.setViewport({ width: Math.round(PAGE_W - 2 * M_SIDE), height: 1200 });
-    await page.emulateMediaType("print");
-    const url = `${RENDER_ORIGIN()}/public/${pageFile}?c=${encodeURIComponent(token)}&sheet=${encodeURIComponent(sheetId)}&pdf=1`;
-    await page.goto(url, { waitUntil: "networkidle0", timeout: 30000 });
-    await page.waitForFunction(() => document.getElementById("wrap") && document.getElementById("wrap").style.display !== "none"
-      && document.querySelectorAll("#tb tr[data-id]").length > 0, { timeout: 20000 });
-    const spot = await page.evaluate(() => {
-      const el = document.getElementById("sealSpot"); if (!el) return null;
-      const r = el.getBoundingClientRect();
-      return { cx: r.left + r.width / 2 + window.scrollX, cy: r.top + r.height / 2 + window.scrollY };
-    });
-    const pdf = Buffer.from(await page.pdf({
-      format: "A4", printBackground: true, preferCSSPageSize: false,
-      margin: { top: "10mm", bottom: "10mm", left: "8mm", right: "8mm" },
-    }));
-    let sig = null;
-    if (spot) {
-      const contentH = PAGE_H - M_TOP - M_BOTTOM;
-      const pageIdx = Math.floor(spot.cy / contentH);
-      sig = { page: pageIdx, x: (spot.cx + M_SIDE) / PAGE_W, y: (spot.cy - pageIdx * contentH + M_TOP) / PAGE_H };
+    await fs.writeFile(tmp, pdf);
+    const { stdout } = await promisify(execFile)("pdftotext", ["-bbox", tmp, "-"], { maxBuffer: 20 * 1024 * 1024 });
+    const words = []; let page = -1, W = 0, H = 0;
+    for (const line of stdout.split("\n")) {
+      const pm = line.match(/<page width="([\d.]+)" height="([\d.]+)"/);
+      if (pm) { page++; W = +pm[1]; H = +pm[2]; continue; }
+      const wm = line.match(/<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">(.*)<\/word>/);
+      if (wm) words.push({ page, W, H, x0: +wm[1], y0: +wm[2], x1: +wm[3], y1: +wm[4], t: wm[5] });
     }
-    sig = (await locateSealInPdf(pdf)) || sig;   // 以 PDF 里的真实位置为准，找不到才用估算
-    return { pdf, sig };
-  } finally { await browser.close(); }
+    if (anchor === "po-seller") {
+      const a = words.filter(w => w.t === "卖方代表：").pop();
+      if (!a) return null;
+      const s = words.find(w => w.page === a.page && /盖章）$/.test(w.t) && w.x0 >= a.x0 - 5 && w.y0 >= a.y0);
+      const cx = s ? (s.x0 + s.x1) / 2 : (a.x0 + a.x1) / 2, bottom = s ? s.y1 : a.y1;
+      return { page: a.page, x: cx / a.W, y: Math.min(bottom + 32, a.H - 40) / a.H };
+    }
+    if (anchor === "pi-buyer") {
+      const i = words.findIndex((w, k) => w.t === "BUYER" && words[k + 1]?.t === "AUTHORIZED" && words[k + 2]?.t === "SIGNATURE");
+      if (i < 0) return null;
+      const a = words[i], e = words[i + 2];
+      const sub = words.find(w => w.page === a.page && w.t === "Seal)" && w.y0 > a.y0 && w.x1 < a.x0 + 200);
+      const bottom = sub ? sub.y1 : e.y1;
+      return { page: a.page, x: ((a.x0 + e.x1) / 2) / a.W, y: Math.min(bottom + 28, a.H - 40) / a.H };
+    }
+    return null;
+  } catch { return null; } finally { fs.unlink(tmp).catch(() => {}); }
 }
 
 function bearerOf(req) { const h = req.headers.authorization || ""; return h.startsWith("Bearer ") ? h.slice(7) : ""; }
 
 // opts 不传 = 工厂版原行为（采购合同）；客户版由 po-collab-customer.js 传 PI 的页面和文件名
 async function handleContractPdf(req, res, pool, sheet, opts = {}) {
-  const { pdf } = await renderContract(req.query?.token, sheet.id, bearerOf(req), opts.page);
+  let pdf;
+  try { pdf = await renderTemplatePdf(opts.docType || "po", sheet); }
+  catch (e) { return res.status(502).json({ ok: false, error: e.message }); }
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(`${opts.fileName || "采购合同"}-${sheet.id}.pdf`)}`);
   return res.end(pdf);
 }
 
 const FACTORY_SEAL = {
-  roles: ["factory", "supplier"], requireSubmitted: true, page: "collab-po.html", docName: "采购合同", actorSide: "factory",
+  roles: ["factory", "supplier"], requireSubmitted: true, docType: "po", anchor: "po-seller", docName: "采购合同", actorSide: "factory",
   msg: { role: "只能由工厂账号用本厂公章确认", adopted: "这单已经采纳过了",
          needSubmit: "请先填「可交货日期」并点「保存并提交」，再盖章确认",
          noStamp: "贵司还没有在我们系统登记公章，请改用「上传合同」", noSpot: "合同上找不到盖章位置" },
@@ -117,8 +128,11 @@ async function handleSeal(req, res, pool, sheet, maybeConfirm, opts = {}) {
     `SELECT id FROM customer_stamps WHERE company_code=$1 AND is_default AND is_active LIMIT 1`, [co.code])).rows[0];
   if (!stamp) return res.status(409).json({ ok: false, error: o.msg.noStamp });
 
-  // ① 出合同 PDF + 量章位
-  const { pdf, sig } = await renderContract(req.body?.token, sheet.id, bearerOf(req), o.page);
+  // ① 出系统模板合同 PDF（⛔ 模板不改）+ 在模板上找章位
+  let pdf;
+  try { pdf = await renderTemplatePdf(o.docType, sheet); }
+  catch (e) { return res.status(502).json({ ok: false, error: e.message }); }
+  const sig = await locateTemplateSeal(pdf, o.anchor);
   if (!sig) return res.status(500).json({ ok: false, error: o.msg.noSpot });
   const nPages = (await PDFDocument.load(pdf)).getPageCount();
   if (sig.page >= nPages) sig.page = nPages - 1;
@@ -234,4 +248,4 @@ async function sealStatus(pool, factoryCompanyId) {
   return { status: "none" };
 }
 
-export { locateSealInPdf, handleContractPdf, handleSeal, handleContract, handleSealUpload, sealStatus };
+export { locateSealInPdf, locateTemplateSeal, renderTemplatePdf, handleContractPdf, handleSeal, handleContract, handleSealUpload, sealStatus };

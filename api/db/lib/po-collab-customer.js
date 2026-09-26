@@ -25,7 +25,6 @@ const UPLOAD_ROOT = "/opt/sanlyn-uploads/po-collab";
 const SELLER_CODE = "BABI";                          // 客户版卖方 = 厦门巴匕（companies.code）
 const LINE_WL = ["qty", "note"];                     // 客户能改的行字段
 const REQ_WL = ["delivery", "marks", "remarks"];     // 客户能提的整单修改申请
-const PAGE = "collab-order.html";
 
 const ymd = (d) => (d ? new Date(new Date(d).getTime() + 8 * 3600e3).toISOString().slice(0, 10) : null);
 const codesOf = (u) => [u?.companyCode, u?.company_code, ...(Array.isArray(u?.companyCodes) ? u.companyCodes : [])].filter(Boolean);
@@ -256,7 +255,7 @@ export async function handleCustomerUpload(req, res, pool) {
 // 盖章/公章上传/PDF 复用 po-collab-seal.js，只把「谁家的章、谁能操作、渲染哪个页面」换成客户版
 export const CUSTOMER_SEAL_OPTS = (sheet) => ({
   companyId: sheet.party_company_id, party: sheet.factory_name, roles: ["customer"], requireSubmitted: false,
-  page: PAGE, docName: "PI", actorSide: "customer",
+  docType: "pi", anchor: "pi-buyer", docName: "PI", actorSide: "customer",
   msg: { role: "Only your company account can confirm with your company seal.", adopted: "This order has already been confirmed by us.",
          noStamp: "Your company seal is not registered with us yet. Please upload a signed PI instead.", noSpot: "Cannot find the seal position on the PI." },
 });
@@ -264,7 +263,7 @@ export const CUSTOMER_SEAL_UPLOAD_OPTS = (sheet) => ({
   companyId: sheet.party_company_id, party: sheet.factory_name, roles: ["customer"], actorSide: "customer", who: "客户",
   roleMsg: "Only your company account can upload your company seal.",
 });
-export const CUSTOMER_PDF_OPTS = { page: PAGE, fileName: "PI" };
+export const CUSTOMER_PDF_OPTS = { docType: "pi", fileName: "PI" };   // 系统正式 PI 模板（⛔ 不改模板）
 
 // ── 回签闭环：有签好的 PI（盖章或上传）→ confirmed → 给艾莎建任务（九步 SOP 第 4 步）──
 export async function maybeCustomerConfirm(pool, sheetId) {
