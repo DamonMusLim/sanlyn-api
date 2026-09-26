@@ -48,7 +48,7 @@ const router = express.Router();
 router.get("/api/console/sources", async (req, res) => {
   try {
     const result = await getPool().query(
-      "SELECT cat, name, status, detail, cnt, last_seen, probed_at FROM data_sources ORDER BY " +
+      "SELECT cat, name, status, detail, cnt, last_seen, probed_at, expect_days FROM data_sources ORDER BY " +
       "CASE cat WHEN 'core' THEN 1 WHEN 'email' THEN 2 WHEN 'wechat' THEN 3 WHEN 'wecom' THEN 4 " +
       "WHEN 'sms' THEN 5 WHEN 'call' THEN 6 WHEN 'shop' THEN 7 ELSE 8 END, id");
     // ⚖️ Damon 0805:「已接,再新增一个『未收到数据』」
@@ -70,9 +70,9 @@ router.get("/api/console/sources", async (req, res) => {
         if (DEAD.test(r.detail || '')) {
           out.status = 'no_data';
           out.why = '接得上,但没有数据进来';
-        } else if (days !== null && days >= 3) {
+        } else if (days !== null && days >= (r.expect_days || 3)) {
           out.status = 'no_data';
-          out.why = `最后一条是 ${days} 天前`;
+          out.why = `最后一条是 ${days} 天前（预期 ${r.expect_days || 3} 天内）`;
         }
         // ⚖️ DNA(Damon 0805):「任何一天 0 单都要立刻报」——「现在都在起量,你要分析是不是休息日」
         //   所以 0 单一天就标出来,但把「是不是周末」一并说清楚,别让他自己猜。
@@ -229,7 +229,7 @@ router.post("/api/console/blocked/answer", require("express").json(), async (req
 });
 
 // -- 微信短码入口: /c/<code> → 302 到真页面。微信里永不出现私链 key --
-const SHORT = { a7: "/one", c3: "/center", s9: "/sources", d5: "/one", h4: "/finance/history.html", q7: "/finance/ask.html", n8: "/finance/issues.html", g6: "/finance/dna.html", r4: "/finance/day0804.html" };
+const SHORT = { a7: "/one", c3: "/center", s9: "/sources", d5: "/one", h4: "/finance/history.html", q7: "/finance/ask.html", n8: "/finance/issues.html", g6: "/finance/dna.html", r4: "/finance/day0804.html", hb: "/health" };
 router.get("/g/:code", async (req, res) => {
   const t = SHORT[String(req.params.code || "").slice(0, 8)];
   if (!t) return res.status(404).type("html").send("<h3>链接不存在或已作废</h3>");

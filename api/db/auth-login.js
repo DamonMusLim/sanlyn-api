@@ -54,7 +54,7 @@ export default async function handler(req, res) {
                 BOOL_OR(e.status IS NOT NULL AND e.status <> 'ACTIVE') AS has_inactive_employee
            FROM accounts a
       LEFT JOIN employees e ON e.user_id::text = a.id::text
-          WHERE a.id::text = $1::text OR a.username = $2
+          WHERE a.id::text = $1::text OR a.username = $2 OR lower(a.email) = lower($2)
        GROUP BY a.id, a.username, a.role, a.company, a.supplier_role, a.company_code,
                 a.company_codes, a.raw, a.token_version, a.is_active
           LIMIT 1`,
@@ -63,7 +63,7 @@ export default async function handler(req, res) {
                 BOOL_OR(e.status IS NOT NULL AND e.status <> 'ACTIVE') AS has_inactive_employee
            FROM accounts a
       LEFT JOIN employees e ON e.user_id::text = a.id::text
-          WHERE a.id::text = $1::text OR a.username = $2
+          WHERE a.id::text = $1::text OR a.username = $2 OR lower(a.email) = lower($2)
        GROUP BY a.id, a.username, a.role, a.company, a.supplier_role, a.company_code,
                 a.company_codes, a.raw, a.is_active
           LIMIT 1`,
@@ -114,7 +114,7 @@ export default async function handler(req, res) {
               BOOL_OR(e.status IS NOT NULL AND e.status <> 'ACTIVE') AS has_inactive_employee
          FROM accounts a
     LEFT JOIN employees e ON e.user_id::text = a.id::text
-        WHERE a.username = $1
+        WHERE a.username = $1 OR lower(a.email) = lower($1)
      GROUP BY a.id, a.username, a.password, a.role, a.company, a.supplier_role,
               a.company_code, a.company_codes, a.raw, a.token_version, a.is_active
         LIMIT 1`,
@@ -124,7 +124,7 @@ export default async function handler(req, res) {
               BOOL_OR(e.status IS NOT NULL AND e.status <> 'ACTIVE') AS has_inactive_employee
          FROM accounts a
     LEFT JOIN employees e ON e.user_id::text = a.id::text
-        WHERE a.username = $1
+        WHERE a.username = $1 OR lower(a.email) = lower($1)
      GROUP BY a.id, a.username, a.password, a.role, a.company, a.supplier_role,
               a.company_code, a.company_codes, a.raw, a.is_active
         LIMIT 1`,

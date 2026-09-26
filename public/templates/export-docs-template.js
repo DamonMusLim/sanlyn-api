@@ -109,22 +109,18 @@ function fetchProductMaster(){
   }).catch(function(){return {};});
 }
 
-// 汇总所有产品行 → 按报关品名分组的海关行（真值来自产品，不用 orders 顶层脏值）
-function aggregate(all){
-  var groups={},rows=[],total={qty:0,nw:0,gw:0,cbm:0,amt:0};
-  all.forEach(function(o){
-    lineItems(o).filter(hasProd).forEach(function(p){
-      var q=qty(p),nw=nwCtn(p)*q,gw=gwCtn(p)*q,cbm=cbmCtn(p)*q,amt=amount(p);
-      // 英文版按报关英文名聚合(对齐提单9品名:猫砂盆/自动猫砂盆/指甲剪/宠物用品都归PET PRODUCTS);中文版按中文报关名
-      var key=(_langEn&&declNameEn(p))?declNameEn(p):declName(p);
-      var g=groups[key]||(groups[key]={name:key,sizes:{},qty:0,nw:0,gw:0,cbm:0,amt:0});
-      if(!g.nameEn)g.nameEn=declNameEn(p);
-      g.qty+=q;g.nw+=nw;g.gw+=gw;g.cbm+=cbm;g.amt+=amt;if(p.size)g.sizes[p.size]=1;
-      total.qty+=q;total.nw+=nw;total.gw+=gw;total.cbm+=cbm;total.amt+=amt;
-    });
-  });
-  Object.keys(groups).forEach(function(k){var g=groups[k];rows.push({name:g.name,nameEn:g.nameEn||(g.name==='宠物食品'?'PET FOOD':''),size:(Object.keys(g.sizes).length===1?Object.keys(g.sizes)[0]:''),qty:g.qty,nw:g.nw,gw:g.gw,cbm:g.cbm,amt:g.amt,up:(g.qty?g.amt/g.qty:0)});});
-  total.rows=rows;total.up=(total.qty?total.amt/total.qty:0);return total;
+function sumRows(rows){
+  var total={qty:0,nw:0,gw:0,cbm:0,amt:0,rows:(rows||[]).filter(function(r){return r&&!r.isHeader;})};
+  total.rows.forEach(function(r){total.qty+=Number(r.qty)||0;total.nw+=Number(r.nw)||0;total.gw+=Number(r.gw)||0;total.cbm+=Number(r.cbm)||0;total.amt+=Number(r.amt)||0;if(!r.up)r.up=(Number(r.qty)?(Number(r.amt)||0)/Number(r.qty):0);});
+  total.up=(total.qty?total.amt/total.qty:0);return total;
+}
+function enrichCustomsRows(rows){
+  return (rows||[]).map(function(r){var x=Object.assign({},r),codes=String(x.cp||x.code||'').split(/\s*\/\s*|\s*,\s*/).filter(Boolean);if(!x.nameEn){for(var i=0;i<codes.length;i++){var m=masterMeta({sku:codes[i]});if(m&&m.decl_en){x.nameEn=m.decl_en;break;}}}return x;});
+}
+function loadCustomsRows(orderNo,ids,containerNo){
+  var u=API+'/api/db/documents?type=pack&id='+encodeURIComponent(orderNo)+'&ids='+encodeURIComponent(ids||orderNo)+'&audience=customer&customs=1&format=rows';
+  if(containerNo)u+='&container_no='+encodeURIComponent(containerNo);u+='&token='+encodeURIComponent(tok());
+  return fetch(u,{headers:authH()}).then(chkAuth).then(function(d){var sheets=d&&d.sheets||[],pl=sheets.filter(function(s){return s&&s.sheetName==='Packing List';})[0]||sheets[0]||{};return sumRows(enrichCustomsRows(pl.rows||[]));});
 }
 
 function orderTerms(o){return o.trade_terms||(o.raw&&o.raw.trade_terms)||o.incoterm||(o.raw&&o.raw.incoterm)||'';}
@@ -211,7 +207,7 @@ function detailRows(all,ctnMap){
   order.forEach(function(k){
     var g=groups[k];
     if(!g.items.length)return;
-    rows.push({isHeader:true,label:groupLabel(g.orders.concat(g.emptyOrders),g.ctns,g.terms)});
+    rows.push({isHeader:true,ctnNos:uniq(g.ctns.map(function(c){return String(c&&c.container_no||'').trim();}).filter(Boolean)),label:groupLabel(g.orders.concat(g.emptyOrders),g.ctns,g.terms)});
     g.items.forEach(function(r){rows.push(r);});
   });
   return rows;
@@ -548,8 +544,9 @@ function init(){
       var companyP=fetchCompaniesByIds(collectCompanyIds(all));
       var sellerP=fetch(API+'/api/db/seller-profiles',{headers:authH()}).then(chkAuth).catch(function(){return [];});
       var ctnP=(onlyContainer||!_customsMode)?loadContainerInfo(all):Promise.resolve({});
-      return Promise.all([sellerP,companyP,ctnP]).then(function(rr){
-      var d=rr[0],companyMap=rr[1]||{},ctnMap=rr[2]||{};
+      var customsRowsP=_customsMode?loadCustomsRows(orderNo,qp('ids')||orderNo,onlyContainer):Promise.resolve(null);
+      return Promise.all([sellerP,companyP,ctnP,customsRowsP]).then(function(rr){
+      var d=rr[0],companyMap=rr[1]||{},ctnMap=rr[2]||{},customsAgg=rr[3];
       if(onlyContainer){
         all=all.filter(function(o){return orderHasContainer(o,ctnMap,onlyContainer);});
         if(!all.length)throw new Error('该柜没有匹配订单: '+onlyContainer);
@@ -561,14 +558,14 @@ function init(){
       window._freight=Number(docPrimary.inland_freight||_praw.inland_freight||0)||0;
       window._freightLabel=docPrimary.inland_freight_label||_praw.inland_freight_label||'提货运费';
       window._freightLabelEn=docPrimary.inland_freight_label_en||_praw.inland_freight_label_en||'INLAND FREIGHT';
-      window._agg=aggregate(all);window._cur=cur;window._docPrimary=docPrimary;  // 存主订单供切模式重算港口
+      window._cur=cur;window._docPrimary=docPrimary;  // 存主订单供切模式重算港口
       var _dlFsOrder=all.filter(function(o){return o&&(String(o.order_no)===orderNo||shortNo(o.order_no)===shortNo(orderNo));})[0]||docPrimary;
       var _dlFs=fsFromOrder(_dlFsOrder)||_dlFsOrder.contract_no||'';var _dlPo=(_dlFsOrder&&_dlFsOrder.customer_po)||orderRaw(_dlFsOrder).customerPO||orderRaw(_dlFsOrder).customer_po||'';
       // 2026-08-04 Damon:「名字帮我改成fs号」→ 下载文件名一律用 FS 主号,与抬头 No. 同源。
       // ⚠️ 旧规矩(已推翻,别改回去): 报关版IV-FS/客户版IV-PO —— 客户版会出成 IV-CL-14 这种。
       window._docBaseName=(_customsMode?'BG-':'IV-')+(_dlFs||_dlPo);
       document.title=window._docBaseName;
-      window._ctnMap=ctnMap;window._rows=detailRows(all,ctnMap);
+      window._ctnMap=ctnMap;window._rows=detailRows(all,ctnMap);window._agg=customsAgg||sumRows(window._rows);
       var ps=Array.isArray(d)?d:(d.data||[]);
       var issuingCo=companyById(companyMap,docPrimary.issuing_company_id);
       // ── 2026-08-04 Damon「为什么这个会这样」根治 ──

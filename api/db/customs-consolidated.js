@@ -52,6 +52,36 @@ function normalizeDeclName(name) {
   return MERGE_MAP[t] || t;
 }
 
+function collectDeclarationElements(bucket, raw) {
+  if (!raw) return;
+  if (!bucket._declElemParts) bucket._declElemParts = new Map();
+  if (!bucket._declElemRaw) bucket._declElemRaw = [];
+  for (const part of String(raw).split("|")) {
+    const text = part.trim();
+    if (!text) continue;
+    const m = text.match(/^\s*([0-9]+)\s*:\s*([^:]+?)\s*:\s*(.*)$/);
+    if (!m) {
+      if (!bucket._declElemRaw.includes(text)) bucket._declElemRaw.push(text);
+      continue;
+    }
+    const eNo = m[1];
+    const eName = m[2].trim();
+    const eVal = m[3].trim();
+    const key = eNo + "\u0001" + eName;
+    if (!bucket._declElemParts.has(key)) {
+      bucket._declElemParts.set(key, { eNo, eName, values: new Set() });
+    }
+    if (eVal) bucket._declElemParts.get(key).values.add(eVal);
+  }
+}
+
+function mergedDeclarationElements(bucket) {
+  const parsed = [...(bucket._declElemParts || new Map()).values()]
+    .sort((a, b) => Number(a.eNo) - Number(b.eNo) || a.eName.localeCompare(b.eName))
+    .map(e => e.eNo + ":" + e.eName + ":" + [...e.values].sort().join("/"));
+  return parsed.concat(bucket._declElemRaw || []).join("|") || null;
+}
+
 // W0-5 (feedback_declaration_fields_mandatory): removed keyword-based
 // deriveDeclName(). Inferring declaration_name from product names is a
 // customs filing risk — wrong HS bucket → seized goods / fines. The
@@ -706,7 +736,7 @@ export default async function handler(req, res) {
           container_no:         containerNo,
           contract_no:          contractNo,
           hs_code:              hsFinal,
-          declaration_elements: elemFinal,
+          declaration_elements: null,
           legal_unit_1:         legalU1,
           legal_unit_2:         legalU2,
           origin_country:       origin,
@@ -729,10 +759,10 @@ export default async function handler(req, res) {
       }
 
       const b = buckets[key];
-      // Update HS / elements if not yet set (first non-null wins, master preferred)
+      // Update single-value fields if not yet set (first non-null wins, master preferred)
       if (!b.hs_code              && hsFinal)   b.hs_code              = hsFinal;
       if (!b.declaration_name_en  && declNameEnFinal) b.declaration_name_en = declNameEnFinal;
-      if (!b.declaration_elements && elemFinal)  b.declaration_elements = elemFinal;
+      collectDeclarationElements(b, elemFinal);
       if (!b.origin_country       && origin)     b.origin_country       = origin;
       if (!b.legal_unit_1         && legalU1)    b.legal_unit_1         = legalU1;
       if (!b.legal_unit_2         && legalU2)    b.legal_unit_2         = legalU2;
@@ -791,7 +821,7 @@ export default async function handler(req, res) {
         contract_no:          b.contract_no || null,
         sizes:                [...b._sizes].join(" / "),   // e.g. "70G X 72/CTN / 80G X 24/CTN / 400G X 24/CTN"
         hs_code:              b.hs_code,
-        declaration_elements: b.declaration_elements,
+        declaration_elements: mergedDeclarationElements(b),
         // 成交单位:bucket内唯一才输出值;混了不同单位=null+冲突标记(绝不静默取一个,Codex review)
         transaction_unit:     b._txnUnits.size === 1 ? [...b._txnUnits][0] : null,
         transaction_unit_conflict: b._txnUnits.size > 1 ? [...b._txnUnits] : null,

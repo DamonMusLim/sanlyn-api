@@ -1,15 +1,27 @@
-// /api/db/manifest-message-channel - generate, validate, and persist pending manifest messages; never sends.
+// /api/db/manifest-message-channel — generate, validate, and persist manifest messages; never sends.
+import crypto from "crypto";
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
-import { businessCoverage, businessLens, businessMissing, notConnectedBusinessCoverage } from "./manifest-business-lens.js";
-import {
-  HEADER_FIELDS, LINE_FIELDS, OUTBOX, OUTBOX_FIELDS, VERSION, buildMessage, coverage,
-  expr, hasValue, lineCoverage, loadDrafts, loadLines, loadOrderLineItems,
-  missingCols, missingFieldCoverage, missingQtyCoverage, outboxSql, outboxState,
-  qtyCoverage, qualify, qtyFieldSpecs, selectedLineCoverage, val, writeDraft,
-} from "./manifest-message-build.js";
+import { normalizeCargoType } from "./lib/cargo-type-enum.js";
 
-const ROLES = new Set(["admin", "superadmin", "logistics", "ops"]);
+const ROLES = new Set(["admin", "logistics", "ops"]);
+const OUTBOX = "manifest_message_outbox";
+const REAL_CHANNEL = "shanghai_manifest";
+const SIM_CHANNEL = `sim_${REAL_CHANNEL}`;
+const HEADER_FIELDS = [
+  ["shipment_no", "舱单编号"], ["carrier", "船公司"], ["vessel", "船名"], ["voyage", "航次"],
+  ["bl_no", "提单号"], ["pol", "装港"], ["pod", "卸港"], ["shipper_name", "发货人"],
+  ["shipper_address", "发货人地址"], ["consignee_name", "收货人"], ["consignee_address", "收货人地址"],
+  ["notify_name", "通知人"], ["notify_address", "通知人地址"],
+];
+const LINE_FIELDS = [
+  ["declaration_name", "申报品名"], ["hs_code", "HS编码"], ["ctns", "箱数"],
+  ["gw_kg", "毛重"], ["amount", "逐项货值"],
+];
+const OUTBOX_FIELDS = [
+  "id", "shipment_id", "channel", "message_type", "payload", "validation_errors",
+  "status", "checksum", "created_by", "created_at", "updated_at",
+];
 
 function fail(res, status, error, extra = {}) {
   return res.status(status).json({ success: false, error, ...extra });
@@ -19,6 +31,13 @@ function canUse(user) {
 }
 function clean(v, max = 120) {
   return String(v ?? "").trim().slice(0, max);
+}
+function hasValue(v) {
+  return v !== null && v !== undefined && String(v).trim() !== "";
+}
+function pct(filled, total) {
+  if (!total) return null;
+  return Math.round((filled * 1000) / total) / 10;
 }
 async function tableExists(pool, table) {
   const r = await pool.query(
@@ -36,77 +55,234 @@ async function columns(pool, table) {
   );
   return new Set(r.rows.map((x) => x.column_name));
 }
-async function listShipments(pool, ctx, q) {
-  const shipmentCols = ctx.shipmentCols, companyCols = ctx.companyCols;
+function missingCols(colSet, names) {
+  return names.filter((n) => !colSet.has(n));
+}
+function coverage(rows, fields, colSet) {
+  return fields.map(([name, label]) => {
+    if (!colSet.has(name)) return { name, label, state: "not_connected", filled: 0, total: rows.length, fill_rate: null };
+    const filled = rows.filter((r) => hasValue(r[name])).length;
+    return { name, label, state: "ready", filled, total: rows.length, fill_rate: pct(filled, rows.length) };
+  });
+}
+function missingValues(row, fields, colSet, scope) {
+  return fields.filter(([name]) => !colSet.has(name) || !hasValue(row[name])).map(([name, label]) => ({
+    scope, name, label, reason: colSet.has(name) ? "empty" : "not_connected",
+  }));
+}
+function pick(row, fields) {
+  const out = {};
+  fields.forEach(([name]) => { out[name] = row[name] ?? null; });
+  return out;
+}
+function checksum(payload) {
+  return crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+}
+function actor(user) {
+  return user?.username || user?.name || user?.sub || null;
+}
+function ymd(date) {
+  return date.toISOString().slice(0, 10).replace(/-/g, "");
+}
+function simulationPayload(message, status, extra = {}) {
+  return {
+    ...message.payload,
+    channel: SIM_CHANNEL,
+    __simulation: true,
+    simulation_status: status,
+    ...extra,
+  };
+}
+function exportName(shipment, ext) {
+  const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const raw = clean(shipment?.shipment_no || shipment?.id || "shipment", 80) || "shipment";
+  const safe = raw.replace(/[^\w.-]+/g, "_");
+  return { raw: `manifest_${raw}_${ymd}.${ext}`, safe: `manifest_${safe}_${ymd}.${ext}` };
+}
+function setDownloadHeaders(res, shipment, ext, type) {
+  const name = exportName(shipment, ext);
+  res.setHeader("Content-Type", type);
+  res.setHeader("Content-Disposition", `attachment; filename="${name.safe}"; filename*=UTF-8''${encodeURIComponent(name.raw)}`);
+}
+function csvCell(v) {
+  const s = String(v ?? "");
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+function csvRow(values) {
+  return values.map(csvCell).join(",");
+}
+function errorText(e) {
+  return `${e.scope || ""} ${e.label || e.name || ""} ${e.reason || ""}`.trim();
+}
+function renderCsv(message) {
+  const rows = [
+    csvRow(["舱单编号", "提单号", "行号", ...LINE_FIELDS.map(([, label]) => label)]),
+    ...message.payload.lines.map((line, idx) => csvRow([
+      message.payload.shipment.shipment_no, message.payload.shipment.bl_no, idx + 1,
+      ...LINE_FIELDS.map(([name]) => line[name]),
+    ])),
+  ];
+  if (message.errors.length) {
+    rows.push("", csvRow(["校验未通过项"]), csvRow(["范围", "字段", "原因"]));
+    rows.push(...message.errors.map((e) => csvRow([e.scope, e.label || e.name, e.reason])));
+  }
+  return "\ufeff" + rows.join("\r\n") + "\r\n";
+}
+function renderTxt(message) {
+  const s = message.payload.shipment;
+  const rows = HEADER_FIELDS.map(([name, label]) => `${label}: ${s[name] ?? ""}`);
+  rows.push(`公司代码: ${s.company_code ?? ""}`, `货物属性枚举: ${s.cargo_type_enum ?? ""}`, "", "明细:");
+  message.payload.lines.forEach((line, idx) => {
+    rows.push(`第${idx + 1}行:`);
+    LINE_FIELDS.forEach(([name, label]) => rows.push(`${label}: ${line[name] ?? ""}`));
+  });
+  if (message.errors.length) rows.push("", "校验未通过项:", ...message.errors.map((e) => `- ${errorText(e)}`));
+  return rows.join("\n") + "\n";
+}
+function sendExport(res, format, shipment, message) {
+  if (format === "json") {
+    setDownloadHeaders(res, shipment, "json", "application/json; charset=utf-8");
+    return res.status(200).send(JSON.stringify(message, null, 2));
+  }
+  if (format === "csv") {
+    setDownloadHeaders(res, shipment, "csv", "text/csv; charset=utf-8");
+    return res.status(200).send(renderCsv(message));
+  }
+  if (format === "txt") {
+    setDownloadHeaders(res, shipment, "txt", "text/plain; charset=utf-8");
+    return res.status(200).send(renderTxt(message));
+  }
+  return fail(res, 400, "unsupported_export_format");
+}
+async function listShipments(pool, shipmentCols, q) {
   const limit = Math.min(parseInt(q.limit, 10) || 60, 120);
   const params = [], conds = [];
   const search = clean(q.q || q.search, 100);
   if (search) {
-    const searchCols = ["shipment_no", "bl_no", "company_code"].filter((n) => shipmentCols.has(n));
-    if (searchCols.length) {
-      params.push(`%${search}%`);
-      conds.push("(" + searchCols.map((n) => `s.${n}::text ILIKE $${params.length}`).join(" OR ") + ")");
-    }
+    params.push(`%${search}%`);
+    conds.push(`(s.shipment_no ILIKE $1 OR s.bl_no ILIKE $1 OR s.company_code ILIKE $1)`);
   }
-  const id = Number.parseInt(q.id, 10);
-  if (Number.isInteger(id) && shipmentCols.has("id")) {
-    params.push(id);
+  if (q.id) {
+    params.push(parseInt(q.id, 10));
     conds.push(`s.id = $${params.length}`);
   }
-  const dynamic = HEADER_FIELDS.map(([n]) => expr("s", shipmentCols, n)).join(", ");
-  const companyCode = val("s", shipmentCols, "company_code");
-  const companyJoin = ctx.hasCompanies && companyCols.has("code") && shipmentCols.has("company_code")
-    ? "LEFT JOIN companies c ON c.code = s.company_code"
-    : "";
-  const companyParts = [];
-  if (companyJoin && companyCols.has("name_cn")) companyParts.push("c.name_cn");
-  if (companyJoin && companyCols.has("name_en")) companyParts.push("c.name_en");
-  if (shipmentCols.has("company_code")) companyParts.push(companyCode);
-  const companyName = companyParts.length ? `COALESCE(${companyParts.join(", ")})` : "NULL::text";
-  const biz = businessLens(ctx);
-  const createdOrder = shipmentCols.has("created_at") ? "s.created_at DESC NULLS LAST, " : "";
+  const names = HEADER_FIELDS.map(([n]) => n).concat(["cargo_type"]);
+  const dynamic = names.filter((n) => shipmentCols.has(n)).map((n) => `s.${n}`).join(", ");
   params.push(limit);
   const r = await pool.query(`
-    SELECT ${expr("s", shipmentCols, "id")}, ${expr("s", shipmentCols, "etd")}, ${expr("s", shipmentCols, "status")},
-      ${expr("s", shipmentCols, "company_code")}, ${expr("s", shipmentCols, "order_id")}, ${dynamic},
-      ${companyName} AS company_name, ${biz.select}
+    SELECT s.id, s.etd, s.status, s.company_code, ${dynamic || "s.shipment_no"},
+      COALESCE(c.name_cn, c.name_en, s.company_code) AS company_name
     FROM customs_shipments s
-    ${companyJoin}
-    ${biz.joins.order}
-    ${biz.joins.plan}
+    LEFT JOIN companies c ON c.code = s.company_code
     ${conds.length ? "WHERE " + conds.join(" AND ") : ""}
-    ORDER BY ${createdOrder}${shipmentCols.has("id") ? "s.id DESC" : "1"} LIMIT $${params.length}`,
+    ORDER BY s.created_at DESC, s.id DESC LIMIT $${params.length}`,
     params
   );
   return r.rows;
 }
-async function shipmentTotal(pool) {
-  const r = await pool.query("SELECT count(*)::int AS total FROM customs_shipments");
-  return Number(r.rows[0]?.total || 0);
+async function loadLines(pool, lineCols, shipmentId) {
+  const cols = LINE_FIELDS.filter(([n]) => lineCols.has(n)).map(([n]) => n).join(", ");
+  const r = await pool.query(
+    `SELECT id, ${cols || "shipment_id"} FROM customs_shipment_lines WHERE shipment_id = $1 ORDER BY id LIMIT 500`,
+    [shipmentId]
+  );
+  return r.rows;
 }
-function notConnectedResponse() {
-  return {
-    success: true,
-    version: VERSION,
+async function loadDrafts(pool, hasOutbox) {
+  if (!hasOutbox) return [];
+  const r = await pool.query(
+    `SELECT id, shipment_id, channel, message_type, status, checksum, created_at, updated_at
+     FROM manifest_message_outbox
+     WHERE status IN ('blocked','pending_send')
+     ORDER BY updated_at DESC NULLS LAST, id DESC LIMIT 20`
+  );
+  return r.rows;
+}
+function buildMessage(shipment, lines, shipmentCols, lineCols) {
+  const lineMissing = [];
+  lines.forEach((line, idx) => {
+    lineMissing.push(...missingValues(line, LINE_FIELDS, lineCols, "line:" + (idx + 1)));
+  });
+  const cargo = normalizeCargoType(shipmentCols.has("cargo_type") ? shipment.cargo_type : null);
+  const errors = missingValues(shipment, HEADER_FIELDS, shipmentCols, "header").concat(lineMissing);
+  if (!lines.length) errors.push({ scope: "lines", name: "customs_shipment_lines", label: "舱单明细", reason: "not_connected" });
+  if (shipmentCols.has("cargo_type") && cargo.state !== "ready") {
+    errors.push({ scope: "header", name: "cargo_type", label: "货物属性内部枚举", reason: "unmapped" });
+  }
+  const payload = {
+    schema: "sanlyn.manifest.message.v1",
     generated_at: new Date().toISOString(),
-    send_disabled: true,
-    data: [],
-    drafts: [],
-    state: "not_connected",
-    missing: ["customs_shipments"],
-    coverage: {
-      total_rows: 0,
-      total_rows_all: 0,
-      header_fields: missingFieldCoverage(HEADER_FIELDS, "customs_shipments"),
-      business_fields: notConnectedBusinessCoverage(),
-      line_fields: missingFieldCoverage(LINE_FIELDS, "customs_shipment_lines").concat(missingQtyCoverage()),
-      outbox_missing: [OUTBOX],
-    },
-    outbox: outboxState(false, [OUTBOX], [OUTBOX]),
-    required_sql: outboxSql(false, [OUTBOX]),
+    channel: REAL_CHANNEL,
+    message_type: "manifest_declaration",
+    shipment: { id: shipment.id, company_code: shipment.company_code, cargo_type_enum: cargo.code, ...pick(shipment, HEADER_FIELDS) },
+    lines: lines.map((line) => ({ id: line.id, ...pick(line, LINE_FIELDS) })),
   };
+  return { payload, errors, checksum: checksum(payload), status: errors.length ? "blocked" : "pending_send" };
 }
-
+async function writeDraft(pool, message, shipmentId, user) {
+  const existing = await pool.query(
+    `SELECT id, shipment_id, channel, message_type, status, checksum, created_at, updated_at
+     FROM manifest_message_outbox
+     WHERE shipment_id = $1 AND checksum = $2 AND status IN ('blocked','pending_send')
+     ORDER BY id DESC LIMIT 1`,
+    [shipmentId, message.checksum]
+  );
+  if (existing.rows[0]) return existing.rows[0];
+  const r = await pool.query(
+    `INSERT INTO manifest_message_outbox
+      (shipment_id, channel, message_type, payload, validation_errors, status, checksum, created_by, created_at, updated_at)
+     VALUES ($1,'shanghai_manifest','manifest_declaration',$2::jsonb,$3::jsonb,$4,$5,$6,now(),now())
+     RETURNING id, shipment_id, channel, message_type, status, checksum, created_at, updated_at`,
+    [shipmentId, JSON.stringify(message.payload), JSON.stringify(message.errors), message.status, message.checksum, user?.username || user?.name || user?.sub || null]
+  );
+  return r.rows[0];
+}
+async function insertOutbox(pool, shipmentId, payload, errors, status, user) {
+  const r = await pool.query(
+    `INSERT INTO manifest_message_outbox
+      (shipment_id, channel, message_type, payload, validation_errors, status, checksum, created_by, created_at, updated_at)
+     VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7,$8,now(),now())
+     RETURNING id, shipment_id, channel, message_type, status, checksum, created_at, updated_at`,
+    [
+      shipmentId,
+      SIM_CHANNEL,
+      "manifest_declaration",
+      JSON.stringify(payload),
+      JSON.stringify(errors),
+      status,
+      checksum(payload),
+      actor(user),
+    ]
+  );
+  return r.rows[0];
+}
+async function simulateSend(pool, message, shipmentId, user) {
+  if (message.errors.length) {
+    return { simulated: false, reason: "validation_failed", errors: message.errors };
+  }
+  await pool.query("BEGIN");
+  try {
+    const now = new Date();
+    const queuedPayload = simulationPayload(message, "queued", { queued_at: now.toISOString() });
+    const queued = await insertOutbox(pool, shipmentId, queuedPayload, [], "queued", user);
+    const sentAt = new Date();
+    const sentPayload = simulationPayload(message, "sent", { queued_id: queued.id, sent_at: sentAt.toISOString() });
+    const sent = await insertOutbox(pool, shipmentId, sentPayload, [], "sent", user);
+    const ackAt = new Date();
+    const receipt = {
+      receipt_no: `SIM-${SIM_CHANNEL}-${ymd(ackAt)}-${String(sent.id).padStart(6, "0").slice(-6)}`,
+      acknowledged_at: ackAt.toISOString(),
+      is_simulation: true,
+    };
+    const acknowledgedPayload = simulationPayload(message, "acknowledged", { sent_id: sent.id, receipt });
+    const acknowledged = await insertOutbox(pool, shipmentId, acknowledgedPayload, [], "acknowledged", user);
+    await pool.query("COMMIT");
+    return { simulated: true, channel: SIM_CHANNEL, steps: { queued, sent, acknowledged }, receipt };
+  } catch (err) {
+    await pool.query("ROLLBACK");
+    throw err;
+  }
+}
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -117,75 +293,38 @@ export default async function handler(req, res) {
     const hasShipments = await tableExists(pool, "customs_shipments");
     const hasLines = await tableExists(pool, "customs_shipment_lines");
     const hasOutbox = await tableExists(pool, OUTBOX);
-    const hasCompanies = await tableExists(pool, "companies");
-    const hasOrderLineItems = await tableExists(pool, "order_line_items");
-    const hasOrders = await tableExists(pool, "orders");
-    const hasPlans = await tableExists(pool, "shipping_plans");
-    if (!hasShipments) return res.status(200).json(notConnectedResponse());
-
+    if (!hasShipments) return res.status(200).json({ success: true, data: [], drafts: [], state: "not_connected", missing: ["customs_shipments"] });
     const shipmentCols = await columns(pool, "customs_shipments");
     const lineCols = hasLines ? await columns(pool, "customs_shipment_lines") : new Set();
     const outboxCols = hasOutbox ? await columns(pool, OUTBOX) : new Set();
-    const companyCols = hasCompanies ? await columns(pool, "companies") : new Set();
-    const oliCols = hasOrderLineItems ? await columns(pool, "order_line_items") : new Set();
-    const orderCols = hasOrders ? await columns(pool, "orders") : new Set();
-    const planCols = hasPlans ? await columns(pool, "shipping_plans") : new Set();
-    const lensCtx = { hasCompanies, hasOrders, hasPlans, shipmentCols, companyCols, orderCols, planCols };
-    const oliCtx = { hasOrderLineItems, oliCols };
-    const qtySources = Object.fromEntries(qtyFieldSpecs(oliCtx).map((s) => [s.name, s.connected ? s.source : ""]));
-    const outboxMissing = hasOutbox ? qualify(OUTBOX, missingCols(outboxCols, OUTBOX_FIELDS)) : [OUTBOX];
-    const rawOutboxMissing = hasOutbox ? missingCols(outboxCols, OUTBOX_FIELDS) : [OUTBOX];
-    const params = req.method === "GET" ? (req.query || {}) : { ...(req.query || {}), ...(req.body || {}) };
-    const allShipmentRows = await shipmentTotal(pool);
-    const rows = await listShipments(pool, lensCtx, params);
+    const outboxMissing = hasOutbox ? missingCols(outboxCols, OUTBOX_FIELDS) : [OUTBOX];
+    const params = req.method === "GET" ? { ...(req.query || {}) } : { ...(req.query || {}), ...(req.body || {}) };
+    if (params.shipment_id && !params.id) params.id = params.shipment_id;
+    const rows = await listShipments(pool, shipmentCols, params);
     const selected = rows[0] || null;
-    const selectedOrderId = selected?.linked_order_id || selected?.order_id || null;
-    const headerRates = coverage(rows, HEADER_FIELDS, shipmentCols).map((f) => ({ ...f, source: `customs_shipments.${f.name}` }));
-    const businessRates = businessCoverage(rows, businessLens(lensCtx).availability);
-    rows.forEach((r) => {
-      r.business_missing = businessMissing(r, businessRates);
-      r.business_missing_count = r.business_missing.length;
-    });
-    const allLineRates = await lineCoverage(pool, hasLines, lineCols);
-    const allQtyRates = selected ? await qtyCoverage(pool, oliCtx, selectedOrderId) : missingQtyCoverage("缺 customs_shipments.order_id 或 orders.id 可关联记录");
-
-    const drafts = await loadDrafts(pool, hasOutbox && !rawOutboxMissing.length);
     if (req.method === "GET") {
+      if (params.export) {
+        if (!selected) return fail(res, 404, "shipment_not_found");
+        const lines = hasLines ? await loadLines(pool, lineCols, selected.id) : [];
+        return sendExport(res, String(params.export).toLowerCase(), selected, buildMessage(selected, lines, shipmentCols, lineCols));
+      }
       return res.json({
-        success: true,
-        generated_at: new Date().toISOString(),
-        data: rows,
-        drafts,
-        selected,
-        version: VERSION,
-        send_disabled: true,
-        coverage: {
-          total_rows: rows.length,
-          total_rows_all: allShipmentRows,
-          header_fields: headerRates,
-          business_fields: businessRates,
-          line_fields: allLineRates.concat(allQtyRates),
-          outbox_missing: outboxMissing,
-        },
-        outbox: outboxState(hasOutbox, rawOutboxMissing, outboxMissing, drafts),
-        required_sql: rawOutboxMissing.length ? outboxSql(hasOutbox, rawOutboxMissing) : "",
+        success: true, generated_at: new Date().toISOString(), data: rows, selected,
+        coverage: { total_rows: rows.length, header_fields: coverage(rows, HEADER_FIELDS, shipmentCols), outbox_missing: outboxMissing },
+        outbox: hasOutbox && !outboxMissing.length ? { state: "ready", drafts: await loadDrafts(pool, true) } : { state: "not_connected", drafts: [], missing_fields: outboxMissing },
       });
     }
     if (req.method !== "POST") return fail(res, 405, "Method not allowed");
+    if (!hasOutbox || outboxMissing.length) return fail(res, 409, "outbox_not_connected", { missing_fields: outboxMissing });
     if (!selected) return fail(res, 404, "shipment_not_found");
-    const action = (req.body || {}).action;
-    if (!["validate", "save"].includes(action)) return fail(res, 400, "invalid_action");
     const lines = hasLines ? await loadLines(pool, lineCols, selected.id) : [];
-    const lineRates = await selectedLineCoverage(pool, hasLines, lineCols, selected.id);
-    const qtyRates = await qtyCoverage(pool, oliCtx, selectedOrderId);
-    const orderLineItems = await loadOrderLineItems(pool, oliCtx, selectedOrderId);
-    const message = buildMessage(selected, lines, orderLineItems, shipmentCols, lineCols, qtySources, headerRates, lineRates, qtyRates, businessRates, hasOutbox && !rawOutboxMissing.length);
-    if (action === "validate") return res.json({ success: true, dry_run: true, sent: false, send_disabled: true, message });
-    if (!hasOutbox || rawOutboxMissing.length) return fail(res, 409, "outbox_not_connected", { missing_fields: outboxMissing, required_sql: outboxSql(hasOutbox, rawOutboxMissing) });
-    if (!shipmentCols.has("id") || !hasValue(selected.id)) return fail(res, 409, "shipment_id_not_connected", { missing_fields: ["customs_shipments.id"] });
-    if (!message.validation_summary.can_persist) return fail(res, 409, "cannot_persist");
+    const message = buildMessage(selected, lines, shipmentCols, lineCols);
+    if ((req.body || {}).action === "validate") return res.json({ success: true, dry_run: true, message });
+    if ((req.body || {}).action === "simulate") {
+      return res.json({ success: true, ...(await simulateSend(pool, message, selected.id, req.user || {})), message });
+    }
     const draft = await writeDraft(pool, message, selected.id, req.user || {});
-    return res.json({ success: true, sent: false, send_disabled: true, draft, message });
+    return res.json({ success: true, sent: false, draft, message });
   } catch (err) {
     console.error("[manifest-message-channel]", err);
     return fail(res, 500, err.message);

@@ -45,6 +45,10 @@ export async function renderCreditNote(pool, cnNo, opts){
   var curr = cn.currency || "CNY";
   var total = Number(cn.net_amount||0);
   var ap = opts.print;
+  // 采购侧(供应商→巴匕)判定：company_code 前缀 VEN- 为主，status 作兜底
+  // (草稿期 status=draft，签发后才是 issued_to_supplier，所以不能只看 status)
+  var isProcurement = /^VEN-/i.test(String(cn.company_code||"")) || String(cn.status||"")==="issued_to_supplier";
+  var confirmLabel = isProcurement ? "供应商确认 / SUPPLIER" : "客户确认 / CUSTOMER";
 
   var CSS=`<style>
     *{box-sizing:border-box;margin:0;padding:0}
@@ -125,12 +129,8 @@ export async function renderCreditNote(pool, cnNo, opts){
       <tfoot><tr><td colspan="5" class="tr">贷记总额 TOTAL CREDIT (${esc(curr)}):</td><td class="tr">${fmtM(total)}</td></tr></tfoot>
     </table>
     ${cn.note?`<div class="details-box"><h4>备注 / Remarks</h4><p style="color:#555;font-size:10.5px">${esc(cn.note)}</p></div>`:""}
-    <div class="details-box">
-      <h4>退款账户 / Banking</h4>
-      <div style="font-size:10.5px;line-height:1.8">受益人 ${esc(cfg.bank.beneficiary||"")}<br>银行 ${esc(cfg.bank.bankName||"")}<br>${cfg.bank.swift?`SWIFT ${esc(cfg.bank.swift)}<br>`:""}账号 RMB ${esc(cfg.bank.rmbAccount||"")} ${cfg.bank.usdAccount?` / USD ${esc(cfg.bank.usdAccount)}`:""}</div>
-    </div>
     <div class="sig-row">
-      <div class="sig-b">客户确认 / CUSTOMER<br><span style="font-weight:400;font-size:9px">(签字/盖章 Signature)</span></div>
+      <div class="sig-b">${confirmLabel}<br><span style="font-weight:400;font-size:9px">(签字/盖章 Signature)</span></div>
       <div class="sig-b" style="position:relative">我司签发 / ISSUED BY<br><span style="font-weight:400;font-size:9px">(签字/盖章 Signature)</span>${sellerSeal?`<img src="${esc(sellerSeal)}" style="position:absolute;right:12%;top:-30px;width:88px;height:88px;object-fit:contain;opacity:.92">`:""}</div>
     </div>
     <div class="footer-slogan">Generated &amp; Verified by Sanlyn OS</div>

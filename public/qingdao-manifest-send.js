@@ -1,7 +1,7 @@
 (function(){
   "use strict";
   var API="/api/db/qingdao-manifest-send";
-  var VERSION="v2026.09.16-1";
+  var VERSION="v2026.08.26-1";
   var state={rows:[],selected:null,coverage:null,lineSummary:null,send:null,generatedAt:null};
   var $=function(id){return document.getElementById(id)};
   function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
@@ -33,12 +33,7 @@
     if(!ready.length)return "未接入";
     var total=ready.reduce(function(a,f){return a+Number(f.total||0)},0);
     var filled=ready.reduce(function(a,f){return a+Number(f.filled||0)},0);
-    return total?pct(filled,total):"未接入";
-  }
-  function rateFor(name,group){
-    var f=(((state.coverage||{})[group]||[]).find(function(x){return x.name===name}));
-    if(!f||f.state!=="ready"||!Number(f.total))return "未接入";
-    return pct(f.filled,f.total);
+    return pct(filled,total);
   }
   function lineRate(){
     var line=state.lineSummary||{}, fields=line.fields||[];
@@ -50,7 +45,6 @@
     text($("mRows"),cov.total_rows?cov.total_rows:"未接入");
     text($("mPort"),fieldRate(cov.port_fields));
     text($("mHeader"),fieldRate(cov.fields));
-    text($("mBusiness"),fieldRate(cov.business_fields));
     text($("mSend"),"未接入");
     $("summary").textContent="版本 "+VERSION+" · 生成时间 "+new Date(state.generatedAt||Date.now()).toLocaleString("zh-CN")+" · 明细字段填充 "+lineRate();
   }
@@ -62,7 +56,7 @@
       var b=el("button","row"+(state.selected&&String(r.id)===String(state.selected.id)?" active":""));
       b.type="button";b.dataset.id=r.id;
       b.appendChild(el("strong","",rowTitle(r)));
-      b.appendChild(el("span","",([r.carrier,r.vessel,r.voyage].filter(Boolean).join(" / ")||"未设置")+" · "+([r.pol,r.pod].filter(Boolean).join(" → ")||"航线未设置")+" · 缺字段 "+(r.missing_count||"无")+" · 业务缺字段 "+(r.business_missing_count||"无")));
+      b.appendChild(el("span","",([r.carrier,r.vessel,r.voyage].filter(Boolean).join(" / ")||"未设置")+" · "+([r.pol,r.pod].filter(Boolean).join(" → ")||"航线未设置")+" · 缺字段 "+(r.missing_count||"无")));
       box.appendChild(b);
     });
   }
@@ -80,40 +74,13 @@
     if(r.missing&&r.missing.length)box.appendChild(el("p","muted","缺字段："+r.missing.map(function(x){return x.label+"("+x.name+")";}).join("、")));
     text($("readyPill"),r.missing_count?"待补字段":"基础字段已填");
   }
-  function kv(label,value,bad){
-    var d=el("div","kv"+(bad?" bad":"")),b=el("b","",label),s=el("span","");
-    text(s,value);d.appendChild(b);d.appendChild(s);return d;
-  }
-  function businessText(r,name,value){
-    var m=(r.business_missing||[]).find(function(x){return x.name===name});
-    if(m&&m.reason==="not_connected")return "未接入 · 缺 "+m.source+"；当前填充率 "+rateFor(name,"business_fields");
-    if(m&&m.reason==="empty")return "未接入 · 缺已填值 "+m.source+"；当前填充率 "+rateFor(name,"business_fields");
-    return value;
-  }
-  function renderBusiness(){
-    var box=$("business");clear(box);
-    var r=state.selected;
-    if(!r){box.appendChild(el("div","empty","未接入 · 缺可读取青岛舱单记录，当前填充率 未接入。"));text($("businessPill"),"未接入");return}
-    var grid=el("div","mini-grid");
-    grid.appendChild(kv("订单编号",r.order_no||r.order_contract_no));
-    grid.appendChild(kv("订单进程",businessText(r,"order_status",r.order_status)));
-    grid.appendChild(kv("海运进程",businessText(r,"plan_status",r.plan_status)));
-    grid.appendChild(kv("订单类型",businessText(r,"order_type",r.order_type)));
-    grid.appendChild(kv("业务类型",businessText(r,"business_type",r.business_type)));
-    grid.appendChild(kv("业务异常",businessText(r,"business_exception",r.business_exception),r.business_exception));
-    box.appendChild(grid);
-    if(r.business_missing&&r.business_missing.length)box.appendChild(el("p","muted","未接入/未填字段："+r.business_missing.map(function(x){return x.label+"("+x.source+")"}).join("、")+"。未接入条目不提供忽略。"));
-    text($("businessPill"),r.business_missing_count?"待补字段":"已接入");
-  }
   function renderCoverage(){
     var box=$("coverage");clear(box);
-    var fields=[].concat((state.coverage&&state.coverage.port_fields)||[],(state.coverage&&state.coverage.fields)||[],(state.coverage&&state.coverage.business_fields)||[],(state.coverage&&state.coverage.line_fields)||[]);
+    var fields=[].concat((state.coverage&&state.coverage.port_fields)||[],(state.coverage&&state.coverage.fields)||[],(state.coverage&&state.coverage.line_fields)||[]);
     if(!fields.length){box.appendChild(el("div","empty","未接入 · 缺字段清单，当前填充率 未接入。"));return}
     fields.forEach(function(f){
       var d=el("div","field"),name=el("b","",f.label),meta=el("span","");
-      if(f.state==="not_connected")text(meta,"未接入 · 缺字段 "+f.name+"；当前填充率 未接入");
-      else if(!Number(f.total))text(meta,"未接入 · 缺真实记录 "+f.name+"；当前填充率 未接入");
-      else if(!Number(f.filled||0))text(meta,"未接入 · 缺已填值 "+f.name+"；当前填充率 "+pct(0,f.total));
+      if(f.state==="not_connected"||!Number(f.total))text(meta,"未接入 · 缺字段或真实记录 "+f.name+"；当前填充率 未接入");
       else text(meta,f.name+" · "+f.filled+"/"+f.total+" · "+pct(f.filled,f.total));
       d.appendChild(name);d.appendChild(meta);box.appendChild(d);
     });
@@ -128,7 +95,7 @@
     box.appendChild(el("p","muted","缺字段："+(missing||"qingdao_manifest_status / qingdao_manifest_sent_at / qingdao_manifest_receipt_no")+"。当前填充率："+(rates||"未接入")+"。"));
     box.appendChild(el("p","muted","未接入条目不提供忽略，也不执行对外发送。"));
   }
-  function render(){renderMetrics();renderList();renderDetail();renderBusiness();renderCoverage();renderSendState()}
+  function render(){renderMetrics();renderList();renderDetail();renderCoverage();renderSendState()}
   async function load(id){
     try{
       var d=await api($("search").value.trim(),id);
@@ -143,7 +110,6 @@
   $("reload").addEventListener("click",function(){load()});
   $("search").addEventListener("keydown",function(e){if(e.key==="Enter")load()});
   $("sendBtn").addEventListener("click",function(){alert("青岛舱单发送通道尚未对接：缺青岛口岸申报接口、通道凭证、qingdao_manifest_status / qingdao_manifest_sent_at / qingdao_manifest_receipt_no 三列；当前页面只做数据核对。")});
-  window.addEventListener("message",function(event){var d=event.data||{};if(event.origin===location.origin&&d.type==="sanlyn:module-refresh")load(state.selected&&state.selected.id)});
-  if(window.parent!==window)window.parent.postMessage({type:"sanlyn:module-ready",protocol:"sanlyn:open-tab",module:"qingdao-manifest-send",title:"青岛-舱单发送",url:location.pathname+location.search,accepts:["sanlyn:module-refresh"]},location.origin);
+  if(window.parent!==window)window.parent.postMessage({type:"sanlyn:module-ready",title:"青岛-舱单发送",url:location.pathname},location.origin);
   load();
 })();

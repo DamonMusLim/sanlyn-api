@@ -7,8 +7,10 @@ var NAV=[
   item("工作台"),
   item("票看板"),
   item("客户总览"),
+  item("海运费一票总览"),
+  item("一票总览·四方"),
   item("运价管理"),
-  item("发件台",["待发","待回复","已发送","谁未回复","异常卡点","选模板发信"]),
+  item("发件台"),
   item("报价管理",["单票报价","费用模板","往来单位"]),
   item("集运订单",["待接单","海运出口","海运进口","空运出口","空运进口","物流园报关","陆运","铁路运输","内贸水运","自拼"]),
   item("数据通道",["船期市场"].concat(dataLeaves)),
@@ -33,23 +35,9 @@ var WORKBENCH_LINKS=[
   {title:"主表",url:"/ship-grid",desc:"海运主数据表"}
 ];
 var DEDICATED={
-  // 2026-09-03 智能邮箱改指真邮件中心(mini:3760,nginx /email/ 已反代)。
-  // 那边有 4612 封真邮件 + 收件箱/待审草稿/账单 三个真 tab;
-  // 原 /smart-email 只是个统计壳子(模板13/主体2/记录5),没有收件箱,Damon 看不到东西。
-  // Damon 0903:「这里我就显示 ob@ 的邮箱,待发,待回」
-  // ob-biz 实测 34 封(待发31/待回4);全库4612封里4511封是私人邮箱(gmail3508+qq1003),
-  // 不过滤就全混在一起看不清。account_id/needs_reply 参数服务端本就支持,无需改后端。
-  // 2026-09-03 二改(Damon:「把邮箱去掉,这个作为后端,前端就显示 待发邮件/内容审核/负责人/已发送/谁未回复」)
-  // 前台改指 hy 自己的发件台 /hy/mail.html(六标签,待发行可就地改 收件人/抄送/主题/正文/附件,
-  // 改动强制写 mail_outbox.before_edit+edited_fields)。原始邮件中心 /email/ 退居后端,不再摆在菜单第一层。
-  // ⛔ 发件台页面【故意没有发送按钮】—— 发送是红线,Damon 审过才发,别加。
-  "发件台":"/hy/mail.html#draft",
-  "发件台/待发":"/hy/mail.html#draft",
-  "发件台/待回复":"/hy/mail.html#reply",
-  "发件台/已发送":"/hy/mail.html#sent",
-  "发件台/谁未回复":"/hy/mail.html#cold",
-  "发件台/异常卡点":"/hy/mail.html#risk",
-  "发件台/选模板发信":"/hy/mail.html#new",
+  // 2026-09-11 邮件入口已并入 ac 财税邮箱模块,海管家只保留跳转入口。
+  // ⛔ 邮件页面【故意没有发送按钮】—— 发送是红线,Damon 审过才发,别加。
+  "发件台":"https://ai.sanlyn.cn/ac/",
   "集运订单/陆运":"/hy/trucking-rates.html",
   "报关/箱货/仓储/订舱平台":"/hy/booking-platform.html",
   "提单管理":"/hy/bl-management.html",
@@ -74,11 +62,13 @@ var DEDICATED={
   "柠檬云同步/资金线健康":"v_money_line_health",
   "待办中心/运维待办":"operation_todos",
   "费用管理/外币核销与汇损":"v_fx_settlement",
-  "费用管理/对账单-账单":"recon_sheets",
+  "费用管理/对账单-账单":"/hy/recon-sheets.html",
   "费用管理/对账单-明细行":"recon_lines",
   "费用管理/对账单-事件流":"recon_events",
   "费用管理/对账单-异常":"finance_recon_exceptions",
   "费用管理/集运费用明细":"/hy/consolidated-fee-details.html",
+  "海运费一票总览":"/hy/freight-overview.html",
+  "一票总览·四方":"/hy/freight-ticket-board.html",
   "费用管理/开票记录":"/hy/invoice-records.html",
   "运价管理":"/rates-hub",
   "费用管理/海管家2025账单导入":"/hgj-2025-bill-import",
@@ -153,7 +143,7 @@ var MODULE_MAP={
   "报关/箱货/仓储/舱单字段规则":"manifest_field_rules"
 };
 var REMOVED_SHELL_PAGES=[];
-var moduleRows=[],moduleSet={},REAL_PATHS=unique(Object.keys(DEDICATED).map(function(k){return pathOnly(DEDICATED[k])}).concat(WORKBENCH_LINKS.map(function(x){return pathOnly(x.url)}),["/hy/grid.html"]));
+var moduleRows=[],moduleSet={},REAL_PATHS=unique(Object.keys(DEDICATED).map(function(k){return pathOnly(DEDICATED[k])}).concat(WORKBENCH_LINKS.map(function(x){return pathOnly(x.url)}),["/hy/grid.html"])),EXTERNAL_HOSTS=externalHosts(Object.values(DEDICATED));
 var DEFAULT_TABS=[{id:FIXED_ID,title:"工作台",url:"/hy/workbench.html",fixed:true,sourceName:"工作台",workbench:true}];
 var state=loadState(),tabsEl=$("tabs"),stageEl=$("stage"),navEl=$("sideNav"),toastEl=$("toast"),moduleTitle=$("moduleTitle"),toastTimer=0,dragId="";
 var MODULE_STATE={};
@@ -182,7 +172,17 @@ function dedicatedUrl(name,parent){return DEDICATED[leafKey(name,parent)]||DEDIC
 function mappedModule(name,parent){return MODULE_MAP[leafKey(name,parent)]||MODULE_MAP[name]||""}
 function gridUrl(moduleKey){return moduleKey&&moduleSet[moduleKey]?"/hy/grid.html?module="+encodeURIComponent(moduleKey):""}
 function navUrl(name,parent,moduleKey){return dedicatedUrl(name,parent)||gridUrl(moduleKey||mappedModule(name,parent))}
-function pathOnly(url){try{return new URL(url,location.origin).pathname}catch(e){return ""}}
+function pathOnly(url){try{var parsed=new URL(url,location.origin);return parsed.origin===location.origin?parsed.pathname:""}catch(e){return ""}}
+function externalHosts(list){
+  var hosts={};
+  list.forEach(function(url){
+    try{
+      var parsed=new URL(String(url||""),location.origin);
+      if((parsed.protocol==="http:"||parsed.protocol==="https:")&&parsed.origin!==location.origin)hosts[parsed.host.toLowerCase()]=true;
+    }catch(e){}
+  });
+  return hosts;
+}
 function getModuleStatus(name,parent){
   if(!MODULE_STATE)return null;
   var row=MODULE_STATE[leafKey(name,parent||"")];
@@ -320,13 +320,31 @@ function loadState(){
 }
 function normalizeStoredTab(tab){
   if(!tab||typeof tab.id!=="string"||typeof tab.title!=="string")return null;
+  if(tab.id===FIXED_ID)return DEFAULT_TABS[0];
   if(tab.pending){
     var sourceName=typeof tab.sourceName==="string"?tab.sourceName:tab.title.replace(/ · [^·]+$/,""),parentName=typeof tab.parentName==="string"?tab.parentName:"";
     return {id:sanitizeId(tab.id),title:tab.title,url:"",pending:true,fixed:false,sourceName:sourceName,parentName:parentName};
   }
-  var url=normalizeUrl(tab.url);if(!url)return null;
-  return {id:sanitizeId(tab.id),title:tab.title,url:url,fixed:!!tab.fixed,sourceName:tab.sourceName||tab.title};
+  var url=normalizeUrl(tab.url);
+  if(url)return {id:sanitizeId(tab.id),title:tab.title,url:url,fixed:!!tab.fixed,sourceName:tab.sourceName||tab.title};
+  if(isMigratedStoredUrl(tab.url))return migratedStoredTab(tab);
+  return null;
 }
+function isMigratedStoredUrl(url){
+  if(typeof url!=="string"||!url.trim())return false;
+  try{
+    var parsed=new URL(url.trim(),location.origin);
+    if(parsed.origin!==location.origin)return false;
+    if(parsed.pathname==="/hy/grid.html"&&!String(parsed.searchParams.get("module")||"").trim())return true;
+    return REAL_PATHS.indexOf(parsed.pathname)<0;
+  }catch(e){return false}
+}
+function migratedStoredTab(tab){
+  var sourceName=typeof tab.sourceName==="string"?tab.sourceName:tab.title.replace(/ · 已迁移$/,"").replace(/ · [^·]+$/,"");
+  var parentName=typeof tab.parentName==="string"?tab.parentName:"";
+  return {id:sanitizeId(tab.id),title:migratedTitle(sourceName||tab.title),url:"",invalid:true,fixed:false,sourceName:sourceName||tab.title,parentName:parentName,oldUrl:String(tab.url||"")};
+}
+function migratedTitle(title){return String(title||"页面").replace(/ · 已迁移$/,"")+" · 已迁移"}
 function saveState(){localStorage.setItem(STORAGE_KEY,JSON.stringify({activeId:state.activeId,tabs:state.tabs}))}
 function render(){
   tabsEl.textContent="";
@@ -343,14 +361,67 @@ function render(){
   updatePaneVisibility();syncNav();var active=activeTab();moduleTitle.textContent=active?active.sourceName||active.title:"工作台";
 }
 function ensurePane(tab){
-  var pane=stageEl.querySelector('.frame[data-id="'+cssEscape(tab.id)+'"]');if(pane)return;
+  var pane=stageEl.querySelector('.frame[data-id="'+cssEscape(tab.id)+'"]');
+  var expected=expectedPaneKind(tab);
+  if(pane){
+    var isFrame=pane.tagName==="IFRAME";
+    if((expected==="iframe"&&!isFrame)||(expected==="placeholder"&&isFrame)||(isFrame&&!sameFrameUrl(pane.getAttribute("src")||pane.src,tab.url))){
+      pane.remove();pane=null;
+    }else{
+      if(tab.invalid)renderMigratedPane(pane,tab);
+      return;
+    }
+  }
   if(tab.id===FIXED_ID){pane=document.createElement("iframe");pane.className="frame";pane.dataset.id=tab.id;pane.title=tab.title;pane.src=tab.url}
+  else if(tab.invalid){
+    pane=document.createElement("section");pane.className="frame placeholder";pane.dataset.id=tab.id;renderMigratedPane(pane,tab);
+  }
   else if(tab.pending){
     pane=document.createElement("section");pane.className="frame placeholder";pane.dataset.id=tab.id;
     var sourceName=tab.sourceName||tab.title.replace(/ · [^·]+$/,""),row=getModuleStatus(sourceName,tab.parentName||""),statusText=pendingStatusText(row),note=row&&row.note?row.note:STATUS_FALLBACK_NOTE,moduleKey=row&&row.our_module_key?row.our_module_key:"",moduleLine=moduleKey?'<li>我方对应表:'+escapeHtml(moduleKey)+'</li>':"";
     pane.innerHTML='<div class="placeholder-card hgj-card"><h1>'+escapeHtml(sourceName)+'</h1><p>'+escapeHtml(statusText)+'</p><ul><li>原因:'+escapeHtml(note)+'</li>'+moduleLine+'<li>导航：未发生页面跳转</li><li>iframe：未创建</li></ul></div>';
   }else{pane=document.createElement("iframe");pane.className="frame";pane.dataset.id=tab.id;pane.title=tab.title;pane.src=tab.url}
   stageEl.appendChild(pane);
+}
+function expectedPaneKind(tab){return tab.invalid||tab.pending?"placeholder":"iframe"}
+function sameFrameUrl(current,next){
+  try{return new URL(current||"",location.origin).href===new URL(next||"",location.origin).href}
+  catch(e){return String(current||"")===String(next||"")}
+}
+function renderMigratedPane(pane,tab){
+  var sourceName=tab.sourceName||tab.title.replace(/ · 已迁移$/,""),next=migratedNavUrl(tab),goBtn=next?'<button type="button" data-action="go">去新位置</button>':"";
+  pane.className="frame placeholder";pane.dataset.id=tab.id;
+  pane.innerHTML='<div class="placeholder-card hgj-card"><h1>'+escapeHtml(sourceName)+'</h1><p>这个页面已经调整过了，请从左边菜单重新打开</p><div class="placeholder-actions">'+goBtn+'<button type="button" data-action="menu">回菜单</button></div></div>';
+  Array.prototype.slice.call(pane.querySelectorAll("button")).forEach(function(btn){
+    btn.onclick=function(){
+      if(btn.dataset.action==="menu")return closeToWorkbench(tab.id);
+      if(btn.dataset.action==="go")return migrateInvalidTab(tab.id,next,sourceName);
+    };
+  });
+}
+function migratedNavUrl(tab){
+  var leaf=findNavLeaf(tab.sourceName,tab.parentName||"")||findNavLeaf(tab.sourceName,"");
+  return leaf?navUrl(leaf.name,leaf.parent,leaf.module_key):"";
+}
+function findNavLeaf(name,parent){
+  var found=null,target=String(name||"").replace(/ · 已迁移$/,"");
+  walkLeaves(function(leaf,p){
+    if(found||leaf.name!==target)return;
+    if(parent&&p!==parent)return;
+    found={name:leaf.name,parent:p,module_key:leaf.module_key};
+  });
+  return found;
+}
+function closeToWorkbench(id){
+  var i=state.tabs.findIndex(function(t){return t.id===id});
+  if(i>=0&&!state.tabs[i].fixed)state.tabs.splice(i,1);
+  state.activeId=FIXED_ID;saveState();render();
+}
+function migrateInvalidTab(id,url,title){
+  var tab=state.tabs.find(function(t){return t.id===id});
+  if(!tab)return;
+  tab.invalid=false;tab.pending=false;tab.title=String(title||tab.sourceName||"页面").slice(0,80);tab.url=url;tab.sourceName=title||tab.sourceName||tab.title;
+  state.activeId=id;saveState();render();
 }
 function renderWorkbenchPane(pane){
   pane.innerHTML='<section class="workbench-head hgj-card"><h1 class="hgj-panel-title">工作台</h1><p>常用海运入口</p></section><section class="workbench-grid"></section>';
@@ -371,7 +442,18 @@ function openTab(input){
   if(state.tabs.length>=MAX_TABS)return showToast("最多同时打开 20 个标签页");
   state.tabs.push({id:id,title:String(input.title||url).slice(0,80),url:url,fixed:false,sourceName:input.sourceName||input.title||url});state.activeId=id;saveState();render();
 }
-function normalizeUrl(url){if(typeof url!=="string"||!url.trim())return "";var raw=url.trim();if(raw.charAt(0)!=="/"){/* 值不带 / 时必须转成 /hy/grid.html?module=,否则会被 SPA 兜底吞成老 admin 首页,用户会以为 hy 里嵌了老版本。2026-09-05 实测 finance_recon_exceptions 复现。 */raw="/hy/grid.html?module="+encodeURIComponent(raw)}try{var parsed=new URL(raw,location.origin);if(parsed.origin!==location.origin)return "";if(REAL_PATHS.indexOf(parsed.pathname)<0)return "";return parsed.pathname+parsed.search+parsed.hash}catch(e){return ""}}
+function normalizeUrl(url){
+  if(typeof url!=="string"||!url.trim())return "";
+  var raw=url.trim();
+  try{
+    if(raw.charAt(0)!=="/"&&!/^[A-Za-z][A-Za-z0-9+.-]*:/.test(raw)){/* 值不带 / 时必须转成 /hy/grid.html?module=,否则会被 SPA 兜底吞成老 admin 首页,用户会以为 hy 里嵌了老版本。2026-09-05 实测 finance_recon_exceptions 复现。 */raw="/hy/grid.html?module="+encodeURIComponent(raw)}
+    var parsed=new URL(raw,location.origin);
+    if(parsed.origin!==location.origin)return (parsed.protocol==="http:"||parsed.protocol==="https:")&&EXTERNAL_HOSTS[parsed.host.toLowerCase()]?parsed.href:"";
+    if(REAL_PATHS.indexOf(parsed.pathname)<0)return "";
+    if(parsed.pathname==="/hy/grid.html"&&!String(parsed.searchParams.get("module")||"").trim())return "";
+    return parsed.pathname+parsed.search+parsed.hash;
+  }catch(e){return ""}
+}
 function trustedFrameSource(source){return !!source&&source!==window&&Array.from(stageEl.querySelectorAll("iframe.frame")).some(function(f){return f.contentWindow===source})}
 function updatePaneVisibility(){Array.from(stageEl.children).forEach(function(p){p.classList.toggle("active",p.dataset.id===state.activeId)})}
 function refreshActive(){var pane=stageEl.querySelector('.frame[data-id="'+cssEscape(state.activeId)+'"]');if(pane&&pane.contentWindow)pane.contentWindow.location.reload();else showToast("待建模块无页面可刷新")}

@@ -51,14 +51,15 @@ export default async function handler(req, res) {
 
     // 1) 订单存在性检查
     const or = await pool.query(
-      "SELECT order_no, company_code, raw FROM orders WHERE order_no=$1",
+      "SELECT order_no, company_code, factory_code, raw FROM orders WHERE order_no=$1",
       [orderNo]
     );
     if (or.rows.length === 0) return res.status(404).json({ error: "order not found" });
+    const orderRow = or.rows[0];
 
     // Customer 只能给自己的订单发链接
     if (isCustomer) {
-      const orderOwner = or.rows[0].company_code || "";
+      const orderOwner = orderRow.company_code || "";
       const userCodes = Array.isArray(req.user.companyCodes) ? req.user.companyCodes
                       : (req.user.companyCode ? [req.user.companyCode] : []);
       if (!orderOwner || !userCodes.includes(orderOwner)) {
@@ -66,8 +67,15 @@ export default async function handler(req, res) {
       }
     }
 
+    if (isConfirmMode && !factoryCompanyCode) {
+      factoryCompanyCode = (orderRow.factory_code || "").trim();
+    }
+
     // 2) 若没指定工厂 → 建 CN-* stub
     if (!factoryCompanyCode) {
+      if (isConfirmMode) {
+        return res.status(400).json({ error: "factoryCompanyCode or order.factory_code required for factory_confirm" });
+      }
       factoryCompanyCode = "CN-" + Date.now().toString(36).toUpperCase() + "-" +
                            Math.random().toString(36).slice(2, 6).toUpperCase();
       await pool.query(
@@ -82,8 +90,11 @@ export default async function handler(req, res) {
       );
     } else {
       // 验证工厂存在
+      const factorySql = isConfirmMode
+        ? "SELECT code AS company_code FROM companies WHERE code=$1"
+        : "SELECT company_code FROM customers WHERE company_code=$1";
       const fr = await pool.query(
-        "SELECT company_code FROM customers WHERE company_code=$1",
+        factorySql,
         [factoryCompanyCode]
       );
       if (fr.rows.length === 0) {
@@ -97,9 +108,9 @@ export default async function handler(req, res) {
 
     // 4) 反向索引
     await pool.query(
-      `INSERT INTO _idx_tokens (token, company_code, purpose, expires_at)
-       VALUES ($1, $2, $3, $4)`,
-      [token, factoryCompanyCode, isConfirmMode ? "factory_confirm" : "factory_fill", expiresAt]
+      `INSERT INTO _idx_tokens (token, company_code, purpose, expires_at, order_no)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [token, factoryCompanyCode, isConfirmMode ? "factory_confirm" : "factory_fill", expiresAt, isConfirmMode ? orderNo : null]
     );
 
     // 5) 写入 customers.raw.activeTokens[]
@@ -112,17 +123,19 @@ export default async function handler(req, res) {
       expiresAt: expiresAt.toISOString(),
       issuedBy: req.user.username || req.user.userId || "system",
     };
-    await pool.query(
-      `UPDATE customers SET
-         raw = jsonb_set(
-           COALESCE(raw, '{}'::jsonb),
-           '{activeTokens}',
-           COALESCE(raw->'activeTokens', '[]'::jsonb) || $1::jsonb
-         ),
-         updated_at = NOW()
-       WHERE company_code = $2`,
-      [JSON.stringify(tokenRecord), factoryCompanyCode]
-    );
+    if (!isConfirmMode) {
+      await pool.query(
+        `UPDATE customers SET
+           raw = jsonb_set(
+             COALESCE(raw, '{}'::jsonb),
+             '{activeTokens}',
+             COALESCE(raw->'activeTokens', '[]'::jsonb) || $1::jsonb
+           ),
+           updated_at = NOW()
+         WHERE company_code = $2`,
+        [JSON.stringify(tokenRecord), factoryCompanyCode]
+      );
+    }
 
     // 6) 订单上标记已发送
     await pool.query(

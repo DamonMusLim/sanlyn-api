@@ -3,7 +3,6 @@
 import { getPool, setCors } from "./db.js";
 import { extractUser } from "../auth.js";
 import { writeAudit } from "./audit-helper.js";
-import { getOSSClient } from "../oss-direct.js";
 
 const ROLES = new Set(["supplier", "sanlyn", "admin"]);
 function json(res, s, p) { return res.status(s).json(p); }
@@ -37,9 +36,10 @@ function pubRow(r) {
   const thr = n(r.plate_fee_refund_qty);
   const refunded = thr != null && thr > 0 && cum >= thr;
   return {
+    id: r.id,
     sku_code: r.sku_code, name: r.name || "", brand: r.brand || "",
     barcode: r.barcode || "", supplier_item_code: r.supplier_item_code || "",
-    material: r.material || "", spec: r.spec || "", unit: r.unit || "",
+    material: r.material || "", spec: r.spec || "", unit: r.unit || "", dimensions: r.dimensions || "",
     image_url: r.image_url || "", plate_image_url: r.plate_image_url || "",
     plate_status: r.plate_status || "", plate_uploaded_at: r.plate_uploaded_at || "",
     plate_nas_location: r.plate_nas_location || "", plate_archived_at: r.plate_archived_at || "",
@@ -58,8 +58,8 @@ async function listRows(pool, r, scope, req) {
   let billCode = "";
   if (!isInternal(r)) { vals.push(scope); where += ` AND supplier_code = ANY($${vals.length}::text[])`; billCode = scope[0] || ""; }
   else { const sc = clean(req.query.supplier_code || ""); if (sc) { vals.push(sc); where += ` AND supplier_code = $${vals.length}`; } billCode = sc; }
-  const q = `SELECT pm.sku_code, pm.name, pm.brand, pm.barcode, pm.supplier_item_code,
-                    pm.material, pm.spec, pm.unit, pm.image_url, pm.plate_image_url,
+  const q = `SELECT pm.id, pm.sku_code, pm.name, pm.brand, pm.barcode, pm.supplier_item_code,
+                    pm.material, pm.spec, pm.unit, pm.dimensions, pm.image_url, pm.plate_image_url,
                     pm.plate_status, pm.plate_uploaded_at::text AS plate_uploaded_at,
                     pm.plate_nas_location, pm.plate_archived_at::text AS plate_archived_at,
                     pm.moq, pm.lead_time_days, pm.price_ex_tax, pm.tax_point,
@@ -79,11 +79,27 @@ async function listRows(pool, r, scope, req) {
   return { rows, supplier };
 }
 
-const WRITABLE = ["name", "brand", "barcode", "supplier_item_code", "material", "spec", "unit",
+const WRITABLE = ["name", "brand", "barcode", "supplier_item_code", "material", "spec", "unit", "dimensions",
   "image_url", "plate_image_url", "status", "notes", "moq", "lead_time_days", "plate_fee", "price_ex_tax", "tax_point",
   "plate_fee_refund_qty", "quote_date", "quote_valid_until"];
-const TEXTF = new Set(["name", "brand", "barcode", "supplier_item_code", "material", "spec", "unit", "image_url", "plate_image_url", "status", "notes"]);
+const BATCHABLE = {
+  spec: "spec",
+  unit: "unit",
+  material: "material",
+  dimensions: "dimensions",
+  tax_point: "tax_point",
+  moq: "moq",
+  lead_time_days: "lead_time_days",
+  quote_date: "quote_date",
+  quote_valid_until: "quote_valid_until",
+  status: "status",
+  brand: "brand",
+  supplier_item_code: "supplier_item_code",
+  notes: "notes",
+};
+const TEXTF = new Set(["name", "brand", "barcode", "supplier_item_code", "material", "spec", "unit", "dimensions", "image_url", "plate_image_url", "status", "notes"]);
 const DATEF = new Set(["quote_date", "quote_valid_until"]);
+const NUMF = new Set(["tax_point", "moq", "lead_time_days", "plate_fee", "price_ex_tax", "plate_fee_refund_qty"]);
 function dstr2(v) { if (!v) return ""; if (v instanceof Date) return v.getFullYear() + "-" + String(v.getMonth() + 1).padStart(2, "0") + "-" + String(v.getDate()).padStart(2, "0"); return String(v).slice(0, 10); }
 async function saveRow(client, req, r, scope, row) {
   const sku = clean(row.sku_code, 80);
@@ -124,6 +140,38 @@ async function save(req, res, pool, r, scope) {
     try { await writeAudit(pool, req, { action: "supplier-catalog.edit", entity_type: "bag", entity_id: c.sku, before: c.before, after: c.after, note: "供应商款式填报" }); } catch (_) {}
   }
   return json(res, 200, { success: true, saved: results.map(c => c.sku) });
+}
+
+async function batchUpdate(req, res, pool, r, scope) {
+  if (!(r === "supplier" || isInternal(r))) return json(res, 403, { success: false, error: "save forbidden" });
+  const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  const ids = rawIds.map(x => Number(x));
+  if (!rawIds.length || rawIds.length > 200 || ids.some(x => !Number.isInteger(x) || x <= 0)) return json(res, 400, { success: false, error: "ids invalid" });
+  const field = clean(req.body?.field || "", 80);
+  const col = BATCHABLE[field];
+  if (!col) return json(res, 400, { success: false, error: "field_not_batchable" });
+  let value;
+  if (DATEF.has(field)) value = clean(req.body?.value, 20) || null;
+  else if (NUMF.has(field)) value = num(req.body?.value);
+  else value = clean(req.body?.value, 300);
+
+  const vals = [ids];
+  let where = "id = ANY($1::int[])";
+  if (!isInternal(r)) { vals.push(scope); where += " AND supplier_code = ANY($2::text[])"; }
+  const client = await pool.connect();
+  let before = [];
+  try {
+    await client.query("BEGIN");
+    before = (await client.query(`SELECT id, sku_code, ${col} AS old_value FROM packaging_materials WHERE ${where} FOR UPDATE`, vals)).rows;
+    if (before.length) {
+      await client.query(`UPDATE packaging_materials SET ${col}=$${vals.length + 1}, updated_at=NOW() WHERE ${where}`, [...vals, value]);
+    }
+    await client.query("COMMIT");
+  } catch (e) { await client.query("ROLLBACK"); throw e; } finally { client.release(); }
+  for (const row of before) {
+    try { await writeAudit(pool, req, { action: "supplier-catalog.batch-edit", entity_type: "bag", entity_id: row.sku_code, before: { [field]: row.old_value }, after: { [field]: value }, note: "供应商款式批量填报" }); } catch (_) {}
+  }
+  return json(res, 200, { success: true, ok: true, updated: before.length });
 }
 
 async function create(req, res, pool, r, scope) {
@@ -200,6 +248,7 @@ async function plateSign(req, res, pool, r, scope) {
   await assertSkuScope(pool, r, scope, sku);
   const key = `temp/plate/${sku}-${Date.now()}-${cleanFilename(req.body?.filename)}`;
   const ct = cleanContentType(req.body?.content_type);
+  const { getOSSClient } = await import("../oss-direct.js");
   const client = getOSSClient();
   return json(res, 200, {
     success: true,
@@ -252,6 +301,7 @@ export default async function handler(req, res) {
   try {
     if (req.method === "GET") return json(res, 200, { success: true, role: r, can_edit: r === "supplier" || isInternal(r), org_name: clean(req.user?.company || ""), ...(await listRows(pool, r, scope, req)) });
     const action = clean(req.query.action || req.body?.action || "", 40);
+    if (req.method === "PATCH" && !action) return await batchUpdate(req, res, pool, r, scope);
     if (req.method === "PATCH" && action === "save") return await save(req, res, pool, r, scope);
     if (req.method === "PATCH" && action === "set-flavors") return await setFlavors(req, res, pool, r, scope);
     if (req.method === "PATCH" && action === "create") return await create(req, res, pool, r, scope);

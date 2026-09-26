@@ -188,6 +188,31 @@ function actorOf(req) {
   return u.name || u.username || u.email || u.role || "admin";
 }
 
+function normalizeRequestedFsNo(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const fsNo = String(value).trim();
+  if (!/^FS\d{11}$/.test(fsNo)) {
+    const error = new Error("fs_no must match FSYYYYMMDDNNN");
+    error.statusCode = 400;
+    throw error;
+  }
+  return fsNo;
+}
+
+async function generateFsNoForToday(client) {
+  const dayRes = await client.query("SELECT to_char(CURRENT_DATE, 'YYYYMMDD') AS ds");
+  const ds = dayRes.rows[0].ds;
+  await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", ["orders_fs_no_gen:" + ds]);
+  const seqRes = await client.query(
+    `SELECT COALESCE(MAX(substring(fs_no FROM 11 FOR 3)::int), 0) + 1 AS seq
+       FROM orders
+      WHERE fs_no ~ $1`,
+    ["^FS" + ds + "[0-9]{3}$"]
+  );
+  const seq = Number(seqRes.rows[0].seq);
+  return "FS" + ds + String(seq).padStart(3, "0");
+}
+
 function callShippingPlanCreate(req, body) {
   return new Promise(function(resolve) {
     const mockReq = {
@@ -269,6 +294,12 @@ async function handlePatch(req, res) {
   const body = req.body || {};
   const { id, raw: rawPatch, ...rest } = body;
   if (!id) return res.status(400).json({ error: "id required" });
+  let requestedFsNo = null;
+  try {
+    requestedFsNo = normalizeRequestedFsNo(body.fs_no);
+  } catch (err) {
+    return res.status(err.statusCode || 400).json({ error: err.message });
+  }
 
   // Validate order_no/company_code prefix consistency BEFORE writing.
   // 2026-08-14: 同一 active 集团内换下单公司放行(订单号不动),留痕 data_guard_log。
@@ -396,11 +427,35 @@ async function handlePatch(req, res) {
   if (body.first_issued_at !== undefined && typeof body.first_issued_at === "object") {
     n++; sets.push("first_issued_at = COALESCE(first_issued_at,'{}') || $" + n + "::jsonb"); vals.push(JSON.stringify(body.first_issued_at));
   }
-  n++; sets.push("updated_at = NOW()");
-  vals.push(id);
-  const sql = "UPDATE orders SET " + sets.join(", ") + " WHERE id = $" + (n) + " RETURNING id";
-  const r = await pool.query(sql, vals);
-  if (r.rowCount === 0) return res.status(404).json({ error: "order not found" });
+  const client = await pool.connect();
+  let updatedRow = null;
+  let assignedFsNo = null;
+  try {
+    await client.query("BEGIN");
+    const cur = await client.query("SELECT id, status, fs_no FROM orders WHERE id = $1 FOR UPDATE", [id]);
+    if (cur.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "order not found" });
+    }
+    const current = cur.rows[0];
+    const becomesConfirmed = rest.status === "confirmed" && current.status !== "confirmed";
+    if (becomesConfirmed && !current.fs_no) {
+      assignedFsNo = requestedFsNo || await generateFsNoForToday(client);
+      n++; sets.push("fs_no = $" + n); vals.push(assignedFsNo);
+      n++; sets.push("fs_no_source = $" + n); vals.push(requestedFsNo ? "provided_on_confirm" : "auto_on_confirm");
+    }
+    n++; sets.push("updated_at = NOW()");
+    vals.push(id);
+    const sql = "UPDATE orders SET " + sets.join(", ") + " WHERE id = $" + (n) + " RETURNING id, fs_no";
+    const r = await client.query(sql, vals);
+    await client.query("COMMIT");
+    updatedRow = r.rows[0];
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
   let shippingPlanResult = null;
   if (rest.confirmed_ship_date !== undefined) {
     try {
@@ -410,7 +465,7 @@ async function handlePatch(req, res) {
       shippingPlanResult = { shipping_plan_warning: e.message };
     }
   }
-  return res.status(200).json({ success: true, id, ...(shippingPlanResult || {}) });
+  return res.status(200).json({ success: true, id, fs_no: updatedRow?.fs_no || assignedFsNo || undefined, ...(shippingPlanResult || {}) });
 }
 
 // ── POST (no action): create a new order — admin only, minimal fields ─────────

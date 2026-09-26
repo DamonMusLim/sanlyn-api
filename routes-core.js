@@ -1,5 +1,6 @@
 // server.js — Express adapter for Alibaba Cloud FC routes.
-import { registerPetHrRoutes } from "./routes-pet-hr.mjs"; import { mountPortalRoutes } from "./portal-routes.js";
+import { registerPetHrRoutes } from "./routes-pet-hr.mjs";
+import { mountPortalRoutes } from "./portal-routes.js";
 export function registerCoreRoutes(app, mount) {
   mount("/api/db/auth-login",        () => import("./api/db/auth-login.js"));
   mount("/api/db/version",           () => import("./api/db/version.js")); // 版本自检:commit+部署时间 2026-07-07
@@ -416,7 +417,10 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/pricing-desk/unpublish", () => import("./api/db/pricing-desk.js")); // 下架客户牌价
   mount("/api/public/collab-master", () => import("./api/public/collab-master.js")); // 协同总表统一投影层 [Claude 0723 #bp-collab-master-build-0723]
   mount("/api/public/customer-myportal", () => import("./api/public/customer-myportal.js")); // P1 只读客户门户(orders/docs/missing/price) [Claude 0723 #bp-p1-customer-portal-0723]
-  mount("/api/public/customer-bargain", () => import("./api/public/customer-bargain.js")); // customer target price loop (议价闭环, off ntfy)
+  mount("/api/public/customer-bargain", () => import("./api/public/customer-bargain.js")); // 客户议价目标价(心里价位只进内部)
+  mount("/api/public/customer-apply", () => import("./api/public/customer-apply.js")); // 新客户申请开户(公开,限流,进审核队列)
+  mount("/api/public/customer-invite", () => import("./api/db/customer-invite.js")); // 发开户激活邀请(admin/自助 magic-link)
+  mount("/api/public/customer-set-password", () => import("./api/db/customer-set-password.js")); // 客户凭邀请token自设密码
   mount("/api/db/customer-quote-link", () => import("./api/public/customer-quote.js")); // issue customer quote magic link
   mount("/api/public/customer-quote",  () => import("./api/public/customer-quote.js")); // customer quote lens
   mount("/api/public/forwarder-rfqs",  () => import("./api/public/freight-quote.js")); // forwarder RFQ center lens

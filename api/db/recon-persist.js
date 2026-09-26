@@ -1,5 +1,7 @@
+// line_count: 415
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { handleEnterInvoiceNo } from "./recon/recon-enter-invoice.js";
 import { loadConfig } from "./recon/recon-config-loader.js";
 import { runReadonly } from "./recon/recon-engine.js";
 
@@ -391,19 +393,31 @@ function actionFrom(req) {
   return path.replace(/^\/+/, "") || "";
 }
 
+function cronUser(req, action) {
+  const secret = String(process.env.CRON_SECRET || "");
+  const header = String(req.headers?.["x-cron-secret"] || "");
+  if (action === "generate" && secret && header === secret) {
+    return { username: "system:cron", role: "finance", auth_via: "cron-secret" };
+  }
+  return null;
+}
+
 export default async function handler(req, res) {
   setCors(req, res);
   if (req.method === "OPTIONS") return res.status(200).end();
   try {
-    if (!requireAuth(req, res)) return;
-    if (!FINANCE_ROLES.has(req.user?.role)) return json(res, 403, { error: "Forbidden", message: "仅财务/管理员可操作" });
     const action = actionFrom(req);
+    const cron = cronUser(req, action);
+    if (cron) req.user = cron;
+    else if (!requireAuth(req, res)) return;
+    if (!FINANCE_ROLES.has(req.user?.role)) return json(res, 403, { error: "Forbidden", message: "仅财务/管理员可操作" });
     if (req.method === "POST" && action === "generate") return handleGenerate(req, res);
     if (req.method === "GET" && action === "sheets") return handleSheets(req, res);
     if (req.method === "GET" && action === "sheet") return handleSheet(req, res);
     if (req.method === "POST" && action === "confirm") return handleConfirm(req, res);
     if (req.method === "POST" && action === "settle-suggest") return handleSettleSuggest(req, res);
     if (req.method === "POST" && action === "settle-confirm") return handleSettleConfirm(req, res);
+    if (req.method === "POST" && action === "enter-invoice-no") return handleEnterInvoiceNo(req, res);
     return json(res, 404, { error: "unknown action" });
   } catch (err) {
     console.error("[recon-persist]", err);

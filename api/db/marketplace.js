@@ -3,8 +3,7 @@
 // Ocean Marketplace routes for Logistics Hub.
 // 2026-06-11 rewrite (Damon 拍板):
 //   · Data source = freight_rates (active + 船期未过期), grouped by POL+POD lane.
-//   · Customer sees ONLY customer_* sell prices — hq40/gp20 cost columns are
-//     NEVER selected here (成本泄漏铁律). Missing sell price → label「询价」.
+//   · Customer sees ONLY customer_* sell prices — 成本列只在服务端用于算 lane 中间价，绝不输出.
 //   · Visibility = lanes matching the viewer's historical order PODs
 //     (orders.raw.pod, normalized: KELANG/KLANG→same family). No history →
 //     show all lanes (filter is anti-clutter, rates are not per-customer secrets).
@@ -12,8 +11,17 @@
 //     the hub as that company (company selector in HubHome).
 //   · All MOCK seed data removed — empty DB renders a real empty state.
 import { getPool, setCors } from "../db.js";
+import {
+  loadLaneSailings,
+  pickSailing,
+  pickSailings,
+  SCHEDULE_POD_CODE_ALIAS,
+  normCarrier,
+} from "./_market-sailing-dates.js";
 
 const MY_FAMILIES = new Set(["KLANG", "KK", "PASIR"]);
+const LANE_MID_FLOOR_MARKUP_USD = 50;
+const DERIVED_ETD_OFFSET_DAYS = 1;
 
 // Normalize messy POD spellings to a port family key.
 // "PORT KELANG WEST" / "Port Klang Westport" / "PORT KLANG" → KLANG
@@ -30,6 +38,207 @@ function toISODate(v) {
   if (!v) return null;
   const d = v instanceof Date ? v : new Date(v);
   return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
+function rateDateISO(r) {
+  return toISODate(r.valid_from) || toISODate(r.created_at);
+}
+
+function isHistoricalRate(r) {
+  const d = rateDateISO(r);
+  return !!d && (Date.now() - new Date(d + "T00:00:00Z").getTime()) > 30 * 864e5;
+}
+
+function addDaysISO(v, days) {
+  const iso = toISODate(v);
+  if (!iso) return null;
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + Number(days || 0));
+  return d.toISOString().slice(0, 10);
+}
+
+function positiveNumber(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function laneMid(rows, costKey, isHistoricalFn) {
+  const freshCosts = rows
+    .filter(r => !isHistoricalFn(r))
+    .map(r => positiveNumber(r[costKey]))
+    .filter(n => n != null);
+  if (!freshCosts.length) return null;
+  const minCost = Math.min(...freshCosts);
+  const maxCost = Math.max(...freshCosts);
+  return Math.max(
+    Math.round((minCost + maxCost) / 2),
+    minCost + LANE_MID_FLOOR_MARKUP_USD
+  );
+}
+
+export function shouldShowLane(rows) {
+  return rows.some(r => positiveNumber(r.customer_hq40) != null || positiveNumber(r.customer_gp20) != null);
+}
+
+export function lockPublicPrices(route) {
+  return {
+    ...route,
+    floorSellGp20: null,
+    floorSellHq40: null,
+    priceLocked: true,
+    // 未登录不许按价格/真报价排序(排序本身会泄露谁是真报价、谁最便宜):改按船期、再按船司名
+    carriers: [...(route.carriers || [])]
+      .sort((a, b) => String(a.sailingDate || "9999").localeCompare(String(b.sailingDate || "9999")) || String(a.name || "").localeCompare(String(b.name || "")))
+      .map(carrier => ({
+      ...carrier,
+      sellHq40: null,
+      sellGp20: null,
+      isBest: false,
+      // historical/rateDate 会暴露哪些是旧报价派生行;rateId 公开态无用
+      historical: false,
+      rateDate: null,
+      rateId: null,
+      priceGrid: (carrier.priceGrid || []).map(row => ({
+        ...row,
+        rates: (row.rates || []).map(rate => ({
+          date: rate.date,
+          usd: null,
+          label: "login",
+        })),
+      })),
+    })),
+  };
+}
+
+function floorSell(rows, key, isHistoricalFn) {
+  const prices = rows
+    .filter(r => !isHistoricalFn(r))
+    .map(r => positiveNumber(r[key]))
+    .filter(n => n != null);
+  return prices.length ? Math.min(...prices) : null;
+}
+
+function publicRateFields(r) {
+  return {
+    id: r.id,
+    pol: r.pol,
+    pod: r.pod,
+    pod_port_id: r.pod_port_id,
+    pol_port_id: r.pol_port_id,
+    carrier: r.carrier,
+    route_code: r.route_code,
+    via: r.via,
+    transit_days: r.transit_days,
+    next_sailing: r.next_sailing,
+    eta_date: r.eta_date,
+    doc_cutoff: r.doc_cutoff,
+    cargo_cutoff: r.cargo_cutoff,
+    free_days_base: r.free_days_base,
+    free_days_ext: r.free_days_ext,
+    freetime: r.freetime,
+    customer_hq40: r.customer_hq40,
+    customer_gp20: r.customer_gp20,
+    valid_from: r.valid_from,
+    created_at: r.created_at,
+    pod_canonical_name: r.pod_canonical_name,
+  };
+}
+
+export function priceLane(rows, isHistoricalFn = isHistoricalRate) {
+  const laneMidHq40 = laneMid(rows, "hq40", isHistoricalFn);
+  const laneMidGp20 = laneMid(rows, "gp20", isHistoricalFn);
+  const floorSellHq40 = floorSell(rows, "customer_hq40", isHistoricalFn);
+  const floorSellGp20 = floorSell(rows, "customer_gp20", isHistoricalFn);
+  const byCarrier = new Map();
+
+  for (const raw of rows) {
+    if (!raw.carrier || !String(raw.carrier).trim()) continue; // 无船司的行不上牌
+    const historical = isHistoricalFn(raw);
+    const ownHq = !historical ? positiveNumber(raw.customer_hq40) : null;
+    const ownGp = !historical ? positiveNumber(raw.customer_gp20) : null;
+    const displayHq = ownHq != null ? ownHq : laneMidHq40;
+    const displayGp = ownGp != null ? ownGp : laneMidGp20;
+    const source = ownHq != null || ownGp != null
+      ? "customer_rate"
+      : (displayHq != null || displayGp != null ? "lane_mid" : "inquiry");
+    const priority = source === "customer_rate" ? 0 : 1;
+    const cmp = displayHq != null ? displayHq : (displayGp != null ? displayGp * 2 : Infinity);
+    const cur = byCarrier.get(raw.carrier);
+    if (!cur || priority < cur._priority || (priority === cur._priority && cmp < cur._cmp)) {
+      byCarrier.set(raw.carrier, {
+        ...publicRateFields(raw),
+        _priority: priority,
+        _cmp: cmp,
+        _ownHq40: ownHq,
+        _ownGp20: ownGp,
+        _displayHq40: displayHq,
+        _displayGp20: displayGp,
+        _source: source,
+      });
+    }
+  }
+
+  const pricedRows = [...byCarrier.values()];
+  let bestId = null;
+  let bestPrice = Infinity;
+  for (const r of pricedRows) {
+    const p = r._ownHq40 != null ? Number(r._ownHq40) : null;
+    if (p != null && p < bestPrice) {
+      bestPrice = p;
+      bestId = r.id;
+    }
+  }
+
+  return { rows: pricedRows, bestId, laneMidHq40, laneMidGp20, floorSellHq40, floorSellGp20 };
+}
+
+function minTransit(laneRows, sailings, carrier) {
+  const carrierTransit = (sailings || [])
+    .filter(s => normCarrier(s.carrier) === normCarrier(carrier))
+    .map(s => positiveNumber(s.transit_days))
+    .filter(n => n != null);
+  if (carrierTransit.length) return Math.min(...carrierTransit);
+  const laneTransit = laneRows
+    .map(r => positiveNumber(r.transit_days))
+    .filter(n => n != null);
+  return laneTransit.length ? Math.min(...laneTransit) : null;
+}
+
+function withScheduleMeta(dates, meta = {}) {
+  for (const [key, value] of Object.entries({
+    vessel: meta.vessel || null,
+    voyage: meta.voyage || null,
+    matched: meta.matched === true,
+  })) {
+    Object.defineProperty(dates, key, { value, enumerable: false });
+  }
+  return dates;
+}
+
+export function rowDates(row, laneRows, isHistoricalFn = isHistoricalRate, sailings = [], todayISO = null) {
+  const pick = pickSailing({ ...row, next_sailing: null }, sailings, todayISO); // 0914 Damon:船期以维运网为准,不用货代报的日期(货代多报进港/截单日)
+  if (pick) return withScheduleMeta({ sailingDate: pick.sailingDate, etaDate: pick.etaDate }, pick);
+
+  const realEtd = toISODate(row.next_sailing);
+  let sailingDate = realEtd;
+
+  if (!sailingDate && row._source === "lane_mid") {
+    const base = laneRows
+      .filter(r => !isHistoricalFn(r))
+      .filter(r => positiveNumber(r.customer_hq40) != null || positiveNumber(r.customer_gp20) != null)
+      .map(r => toISODate(r.next_sailing))
+      .filter(Boolean)
+      .sort()[0] || null;
+    sailingDate = addDaysISO(base, DERIVED_ETD_OFFSET_DAYS);
+  }
+
+  let etaDate = toISODate(row.eta_date);
+  if (!etaDate && sailingDate) {
+    const transit = positiveNumber(row.transit_days) || minTransit(laneRows, sailings, row.carrier);
+    etaDate = transit != null ? addDaysISO(sailingDate, transit) : null;
+  }
+
+  return withScheduleMeta({ sailingDate, etaDate });
 }
 
 // ports 表 MYJHB/MYPGU 是同一码头两条记录——牌价层先折叠，根治归港口命名项目
@@ -53,6 +262,22 @@ function fmtSailing(d) {
   const dt = new Date(d);
   if (isNaN(dt.getTime())) return String(d);
   return `${dt.getMonth() + 1}/${dt.getDate()}`;
+}
+
+function todayShanghaiISO() {
+  return new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+}
+
+function scheduleCodes(row) {
+  const polCode = String(row?.pol_unlocode || "").trim().toUpperCase();
+  const rawPodCode = String(row?.pod_unlocode || "").trim().toUpperCase();
+  const podCode = SCHEDULE_POD_CODE_ALIAS[rawPodCode] || rawPodCode;
+  return polCode && podCode ? { polCode, podCode } : null;
+}
+
+function laneSailingKey(row) {
+  const codes = scheduleCodes(row);
+  return codes ? `${codes.polCode}→${codes.podCode}` : null;
 }
 
 export default async function handler(req, res) {
@@ -80,11 +305,20 @@ export default async function handler(req, res) {
 
   if (type === "ddp") {
     // No ddp_rates table yet — real empty state, never mock.
-    return res.status(200).json({ ok: true, source: "empty", type, routes: [] });
+    return res.status(200).json({
+      ok: true,
+      source: "empty",
+      type,
+      routes: [],
+      ...(isPublic ? { priceLocked: true } : {}),
+    });
   }
 
   if (type !== "freight") {
-    return res.status(400).json({ error: `Unknown marketplace type: ${type}` });
+    return res.status(400).json({
+      error: `Unknown marketplace type: ${type}`,
+      ...(isPublic ? { priceLocked: true } : {}),
+    });
   }
 
   try {
@@ -108,16 +342,19 @@ export default async function handler(req, res) {
       if (fams.size > 0) allowedFamilies = fams;
     }
 
-    // 2. Active, non-expired rate cards. customer_* sell prices ONLY —
-    //    hq40/gp20 (采购成本) must never appear in this endpoint.
+    // 2. Active, non-expired rate cards. customer_* sell prices are output;
+    //    hq40/gp20 costs are selected only for server-side laneMid calculation.
     // 2026-07-23 港口规范化补齐：join ports 拿 pod_port_id 的 canonical_name，
     // 分组优先按 pod_port_id（同一真实港口的不同写法归一条 lane）。
     const rates = await pool.query(`
       SELECT r.id, r.pol, r.pod, r.pod_port_id, r.pol_port_id, r.carrier, r.route_code, r.via, r.transit_days,
-             r.next_sailing, r.free_days_base, r.free_days_ext, r.freetime,
+             r.next_sailing, r.eta_date, r.doc_cutoff, r.cargo_cutoff,
+             r.free_days_base, r.free_days_ext, r.freetime, r.gp20, r.hq40,
              r.customer_hq40, r.customer_gp20, r.valid_from, r.created_at,
+             pp.unlocode AS pol_unlocode, p.unlocode AS pod_unlocode,
              p.name_en AS pod_canonical_name
       FROM freight_rates r
+      LEFT JOIN ports pp ON pp.id = r.pol_port_id
       LEFT JOIN ports p ON p.id = r.pod_port_id
       WHERE r.status = 'active'
         AND (r.next_sailing IS NULL
@@ -139,65 +376,78 @@ export default async function handler(req, res) {
       lanes.get(key).push(r);
     }
 
-    const routes = [...lanes.entries()].map(([key, allRows]) => {
-      // 2026-06-11 Damon 拍板：①无卖价的行不上架（航线时间还不全，询价行=噪音）
-      // ②同一船司只保留最低卖价一条。整航线没有任何有价行 → 不显示该航线卡。
-      const priced = allRows.filter(r =>
-        (r.customer_hq40 != null && Number(r.customer_hq40) > 0) ||
-        (r.customer_gp20 != null && Number(r.customer_gp20) > 0));
-      const byCarrier = new Map();
-      for (const r of priced) {
-        if (!r.carrier || !String(r.carrier).trim()) continue; // 无船司的行不上牌
-        const k = r.carrier;
-        const cmp = r.customer_hq40 != null ? Number(r.customer_hq40) : Number(r.customer_gp20) * 2;
-        const cur = byCarrier.get(k);
-        if (!cur || cmp < cur._cmp) byCarrier.set(k, Object.assign({}, r, { _cmp: cmp }));
-      }
-      const rows = [...byCarrier.values()];
+    const todayISO = todayShanghaiISO();
+    const sailingLanes = [];
+    const seenSailingLanes = new Set();
+    for (const allRows of lanes.values()) {
+      const codes = scheduleCodes(allRows[0]);
+      if (!codes) continue;
+      const key = `${codes.polCode}→${codes.podCode}`;
+      if (seenSailingLanes.has(key)) continue;
+      seenSailingLanes.add(key);
+      sailingLanes.push(codes);
+    }
+    const laneSailings = await loadLaneSailings(pool, sailingLanes);
+
+    let routes = [...lanes.entries()].map(([key, allRows]) => {
+      const laneCutoff = allRows
+        .map(r => toISODate(r.doc_cutoff) || toISODate(r.cargo_cutoff))
+        .filter(Boolean)
+        .sort()[0] || null;
+
+      if (!shouldShowLane(allRows)) return null;
+      const { rows, bestId, floorSellHq40, floorSellGp20 } = priceLane(allRows, isHistoricalRate);
       if (!rows.length) return null;
       const { flag, region } = podMeta(rows[0].pod);
-
-      // Best = lowest customer 40HQ sell price in the lane (priced rows only).
-      let bestId = null, bestPrice = Infinity;
-      for (const r of rows) {
-        const p = r.customer_hq40 != null ? Number(r.customer_hq40) : null;
-        if (p != null && p < bestPrice) { bestPrice = p; bestId = r.id; }
-      }
+      const laneScheduleRows = laneSailings.get(laneSailingKey(allRows[0])) || [];
 
       const carriers = rows.map(r => {
-        const date = fmtSailing(r.next_sailing) || "—";
-        const isBest = r.id === bestId;
+        const realEtd = toISODate(r.next_sailing);
+        const dateInfo = rowDates(r, allRows, isHistoricalRate, laneScheduleRows, todayISO);
+        const sailingOptions = pickSailings(r, laneScheduleRows, todayISO);
+        const { sailingDate, etaDate } = dateInfo;
+        const date = fmtSailing(sailingDate) || "—";
+        const isBest = r._source === "customer_rate"; // 0914 Damon:★=真有报价的实际船公司(可多家),不再只标最低价
         const grid = [];
-        const hq = r.customer_hq40 != null ? Number(r.customer_hq40) : null;
+        const hq = r._displayHq40 != null ? Number(r._displayHq40) : null;
         grid.push({ ctype: "40HQ", rates: [hq != null ? { date, usd: hq, win: isBest } : { date, usd: null, label: "询价" }] });
-        const gp = r.customer_gp20 != null ? Number(r.customer_gp20) : null;
+        const gp = r._displayGp20 != null ? Number(r._displayGp20) : null;
         if (gp != null) grid.push({ ctype: "20GP", rates: [{ date, usd: gp }] });
-        return {
+        const row = {
           name: r.carrier || "—",
-          voyage: r.route_code || "",
           isBest,
           isBooked: false,
           // 建单用（BookSheet）：ISO 船期 + 卖价 + 运价卡 id（全是卖方侧字段，客户可见无泄漏）
           rateId: r.id,
-          sailingDate: r.next_sailing ? String(r.next_sailing).slice(0, 10) : null,
+          sailingDate,
+          date: sailingDate,
+          etaDate,
+          sailings: sailingOptions,
+          cutoffDate: laneCutoff,
           sellHq40: hq,
           sellGp20: gp,
           transitDays: r.transit_days || null,
           via: r.via || null,
           freeDays: r.free_days_base != null
             ? (r.free_days_ext ? `${r.free_days_base}+${r.free_days_ext}` : String(r.free_days_base))
-            : (r.freetime != null ? String(r.freetime) : null),
+            : (r.freetime != null ? String(r.freetime) : "7"),
           priceGrid: grid,
           // pg 驱动吐 Date 对象，必须 toISOString 取日期，String().slice 会得 "Mon Jul 13" 再 parse 成 2001 年
-          rateDate: toISODate(r.valid_from) || toISODate(r.created_at),
-          historical: (() => {
-            const d = toISODate(r.valid_from) || toISODate(r.created_at);
-            return !!d && (Date.now() - new Date(d + "T00:00:00Z").getTime()) > 30 * 864e5;
-          })(),
+          rateDate: rateDateISO(r),
+          historical: isHistoricalRate(r),
         };
+        if (isInternal) {
+          row._realEtd = realEtd;
+          row._displayEtd = sailingDate;
+          row._source = r._source;
+          row._schedule = { vessel: dateInfo.vessel, voyage: dateInfo.voyage, matched: dateInfo.matched };
+        }
+        return row;
       });
 
-      const sailings = rows.map(r => r.next_sailing).filter(Boolean).sort();
+      // ★(真报价)在前按 40HQ 升序:前端默认选中 carriers.find(isBest),保证默认=最低真价
+      carriers.sort((a, b) => (b.isBest - a.isBest) || ((a.sellHq40 ?? Infinity) - (b.sellHq40 ?? Infinity)));
+      const sailings = carriers.map(c => c.sailingDate).filter(Boolean).sort();
       return {
         id: `lane-${key.replace(/[^A-Za-z0-9]+/g, "-")}`,
         pol: rows[0].pol, pod: rows[0].pod,
@@ -207,6 +457,10 @@ export default async function handler(req, res) {
         nextSailingDate: sailings[0] || null,
         nextSailingContainers: "",
         cargoCategory: "",
+        currency: "USD",
+        locale: "en",
+        floorSellGp20,
+        floorSellHq40,
         carriers,
       };
     })
@@ -214,8 +468,25 @@ export default async function handler(req, res) {
     // Lanes with nearest sailing first, lanes without dates last.
     .sort((a, b) => String(a.nextSailingDate || "9999") < String(b.nextSailingDate || "9999") ? -1 : 1);
 
-    return res.status(200).json({ ok: true, source: "db", type, routes });
+    if (isPublic) routes = routes.map(lockPublicPrices);
+
+    return res.status(200).json({
+      ok: true,
+      source: "db",
+      type,
+      locale: "en",
+      currency: "USD",
+      routes,
+      ...(isPublic ? { priceLocked: true } : {}),
+    });
   } catch (err) {
-    return res.status(200).json({ ok: true, source: "error", type, routes: [], fallback_reason: err.code || err.message });
+    return res.status(200).json({
+      ok: true,
+      source: "error",
+      type,
+      routes: [],
+      fallback_reason: err.code || err.message,
+      ...(isPublic ? { priceLocked: true } : {}),
+    });
   }
 }

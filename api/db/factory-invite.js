@@ -28,6 +28,45 @@ var DAILY_QUOTA   = 5;
 
 var ALLOWED_TYPES = ["colleague","customer","factory","ocean","trucking","service"];
 
+// ── 邀请守卫常量（2026-09-11 加）──────────────────────────────────
+// 有效期：原 7 天。实测 7 天那批 28 条短链全部自然过期失效，
+// 唯一一条 3 个月的被点了 73 次 → 改 90 天。
+var INVITE_TTL_DAYS = 90;
+
+// 「谁能邀请谁」——Damon 0911 确认「谁带上谁对的」。
+// ⚖️ 第一阶段硬编码在这里，⛔不建配置表、⛔不从 company_roles 推导
+//    （company_roles 是事实角色，不是策略本身）。将来真要改再抽配置表。
+// null = 不限制。
+var INVITE_ALLOWED_FROM = {
+  colleague: null,                              // 同公司同事，任何已登录用户都可邀
+  customer:  ["factory", "trader"],
+  factory:   ["customer", "trader"],
+  ocean:     ["factory", "trader", "customer"],
+  trucking:  ["factory", "ocean"],
+  service:   null                               // 服务商暂不限制
+};
+
+// 🔴 只有方向表【认识】的业务身份才参与判定。
+//    2026-09-11 dry-run：38 个账号里 supplier_role 24 个为空，回退到 role 会拿到
+//    logistics/sales 这类【员工角色】—— 它们不在任何 allowed_from 里，
+//    照直比会把 29/38 个账号全部 403 拦死（我们自己的业务员首当其冲）。
+//    所以：认不出身份 → 放行 + 留痕，不拦。
+//    ⚖️ 敢 fail-open 的依据：非 admin 发的邀请 status 一律是 'pending' 要人审，
+//       这道闸不是最后一道防线；而拦错会直接打断业务。
+var KNOWN_INVITER_TYPES = ["factory", "trader", "customer", "ocean", "trucking"];
+// 库里 supplier_role 存的是 'truck'，方向表写的是 'trucking' —— 归一化，别让枚举打架
+var INVITER_ALIAS = { truck: "trucking", trucker: "trucking" };
+
+function inviterTypeOf(req) {
+  var u = req.user || {};
+  var t = u.supplierRole || "";
+  // role 只在它本身就是业务身份时才回退（logistics/sales/ops 这类员工角色不算）
+  if (!t && u.role && KNOWN_INVITER_TYPES.indexOf(u.role) >= 0) t = u.role;
+  t = INVITER_ALIAS[t] || t;
+  return KNOWN_INVITER_TYPES.indexOf(t) >= 0 ? t : "";
+}
+// ──────────────────────────────────────────────────────────────
+
 function makeToken() { return crypto.randomBytes(24).toString("hex"); }
 
 function isAdmin(req) {
@@ -179,10 +218,37 @@ export default async function handler(req, res) {
   var taxId         = body.tax_id || null;
   var message       = body.message || null;
   var note          = body.note    || null;
-  var invitedBy     = body.invited_by || (req.user && req.user.email) || "anonymous";
+  // 🔴 身份只认 token，⛔不从 body 取。
+  //    原来 body.invited_by 优先于 token，客户端传个别人的名字就能
+  //    ①把发起人写成别人 ②绕过每日 5 条限额（换个名字重新计数）。
+  var inviteUser    = req.user || {};
+  var invitedBy     = inviteUser.email || inviteUser.username ||
+                      (inviteUser.uid ? ("uid:" + inviteUser.uid) : "anonymous");
+  var claimedBy     = body.invited_by || null;
+  if (claimedBy && claimedBy !== invitedBy) {
+    // 不报错，但留痕：便于事后发现谁在试着冒名
+    note = note ? (note + "\ninvited_by_claimed=" + claimedBy) : ("invited_by_claimed=" + claimedBy);
+  }
 
   // ── Validation ──
   if (!ALLOWED_TYPES.includes(type)) return res.status(400).json({ error: "invalid type" });
+
+  // ── 「谁能邀请谁」服务端强制校验 ──
+  // 前端 availableTypes 只是展示，curl 直接打就绕过去了，所以判定必须在这里。
+  var inviterType = inviterTypeOf(req);
+  var allowedFrom = INVITE_ALLOWED_FROM[type];
+  if (!isAdmin(req) && inviterType && Array.isArray(allowedFrom) &&
+      allowedFrom.indexOf(inviterType) < 0) {
+    return res.status(403).json({
+      error: "invite_direction_not_allowed",
+      from: inviterType, to: type, allowed_from: allowedFrom
+    });
+  }
+  if (!isAdmin(req) && !inviterType) {
+    // 认不出业务身份：放行但留痕（见顶部 KNOWN_INVITER_TYPES 的理由）
+    note = note ? (note + "\ninvite_from_role_unknown=1") : "invite_from_role_unknown=1";
+  }
+
   if (!factoryName)                  return res.status(400).json({ error: "factory_name / companyName required" });
   if (!channelValue)                 return res.status(400).json({ error: "channel_value required" });
 
@@ -229,7 +295,7 @@ export default async function handler(req, res) {
     var status = isAdmin(req) ? "approved" : "pending";
 
     var token = makeToken();
-    var expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    var expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
     var ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.ip || null;
     var ua = req.headers["user-agent"] || null;
 

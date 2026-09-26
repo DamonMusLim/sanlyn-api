@@ -50,6 +50,7 @@ export async function renderPurePortChargeDoc(pool, id) {
   const docNo = await issueDocNo(pool, {
     prefix: "PC", seed: blNo || plan.shipment_no || plan.id, blNo,
     docType: "pure_portcharge", totalCny,
+    templateCode: "portcharge",  // 注册表 portcharge.renderer 含 doc-pure-portcharge.js、doc_type=portcharge_only
     snapshot: { plan_id: plan.id, payer_company_code: payerCode, charges: pc.rows, used_fallback_card: pc.usedFallbackCard },
   });
   const body = `

@@ -19,11 +19,6 @@ const execFileAsync = promisify(execFile);
 const TEMPLATE_PATH = path.join(process.cwd(), "public/templates/receipt-master.docx");
 const DEFAULT_FILLER_NAME = "林志凌"; // Damon 指定:所有收款证明的填报人都是这个名字
 
-function stripCompanyPrefix(s) {
-  if (!s) return "";
-  return String(s).replace(/^\d+-/, "");
-}
-
 // 表格填写说明：组织机构代码栏填"统一社会信用代码第9-18位"，不是完整18位代码
 function orgCodeSegment(taxNo) {
   if (!taxNo) return "";
@@ -70,15 +65,25 @@ function uniqueNonEmpty(values) {
   return [...new Set(values.map(nonEmptyText).filter(Boolean))];
 }
 
-// 🔴 2026-09-09 止血:原先这里扫 raw 里 key 含 contract 的项当合同号,是错的。
-// raw 里那些是【第三方之间的合同】,不是我方的:
-//   hengan_contract=HAHHV2604 → 恒安↔HARMONIOUS 的货物合同,跟我方收款无关
-//   contract_sq=MXIAS0000185  → 同样是外部合同
-// 而 orders.contract_no(FS2026...)才是我方销售合同(卖方 BABI/洋宝宝)。
-// Damon 0909 定:【没有我方销售合同时,交易合同号就用提单号】——运费服务贸易里提单本身即运输合同。
-// ⛔ 绝不把第三方合同号印到给银行的合规单据上。
-function contractNosFromBl(plans) {
-  return uniqueNonEmpty(plans.map(pl => nonEmptyText(pl.bl_no)));
+function normalizeBlNo(v) {
+  const s = nonEmptyText(v).split(/[＃#]/)[0].trim();
+  if (!s || s.includes("待补")) return "";
+  return s;
+}
+
+// Damon 2026-09-18 定:海运费属服务贸易,合同号一律填提单号 BL。
+// FS 开头的是货物销售合同,跟这笔运费无关,不再作为收款证明合同号回退来源。
+function contractNosFromBl(plans, warnings) {
+  const values = [];
+  for (const pl of plans) {
+    const blNo = normalizeBlNo(pl.bl_no);
+    if (blNo) {
+      values.push(blNo);
+    } else {
+      warnings.push(`missing_bl:${pl.shipment_no || ""}`);
+    }
+  }
+  return uniqueNonEmpty(values);
 }
 
 function formatMoney(v) {
@@ -87,16 +92,90 @@ function formatMoney(v) {
   return Number.isFinite(n) ? n.toFixed(2) : "";
 }
 
-async function loadReceivableAmount(pool, plans) {
-  const blNos = uniqueNonEmpty(plans.map(pl => pl.bl_no));
-  if (!blNos.length) return 0;
+async function loadReceiptBankSlipData(pool, plans) {
+  const refs = uniqueNonEmpty(plans.flatMap(pl => [pl.shipment_no, pl.bl_no]));
+  if (!refs.length) return {
+    amount: "",
+    payerName: "",
+    receiptDate: "",
+    source: "none",
+    slipIds: [],
+    beneficiaryReferences: [],
+    warnings: [],
+    reason: "no_shipment_or_bl",
+  };
+
   const r = await pool.query(
-    `SELECT COALESCE(SUM(total_incl_tax), 0) AS amount
-       FROM v_hy_invoice_prep
-      WHERE bl_no = ANY($1::text[])`,
-    [blNos]
+    `SELECT l.slip_id,
+            l.shipment_no,
+            l.bl_no,
+            l.amount_alloc,
+            l.alloc_currency,
+            s.sender_name,
+            s.payment_date,
+            s.beneficiary_reference
+       FROM bank_slip_links l
+       JOIN bank_slips s ON s.id = l.slip_id
+      WHERE (l.shipment_no = ANY($1::text[]) OR l.bl_no = ANY($1::text[]))
+        AND s.beneficiary_company_code = 'OCEANBABY'
+        AND l.alloc_status IN ('allocated','pending_allocation')
+        AND l.amount_alloc IS NOT NULL
+        AND s.cash_direction IS DISTINCT FROM 'out'
+        AND COALESCE(l.alloc_status,'') NOT IN ('voided_duplicate','manual_review')
+      ORDER BY s.payment_date NULLS LAST, l.slip_id`,
+    [refs]
   );
-  return Number(r.rows[0]?.amount || 0);
+
+  const rows = r.rows || [];
+  if (!rows.length) return {
+    amount: "",
+    payerName: "",
+    receiptDate: "",
+    source: "none",
+    slipIds: [],
+    beneficiaryReferences: [],
+    warnings: [],
+    reason: "no_matching_slip",
+  };
+
+  const slipIds = uniqueNonEmpty(rows.map(row => row.slip_id));
+  const currencies = uniqueNonEmpty(rows.map(row => row.alloc_currency || "CNY")).map(x => x.toUpperCase());
+  const warnings = [];
+  if (currencies.some(c => c !== "CNY")) {
+    warnings.push(`non_cny_slip_currency:${currencies.join(",")}`);
+    return {
+      amount: "",
+      payerName: "",
+      receiptDate: "",
+      source: "none",
+      slipIds,
+      beneficiaryReferences: uniqueNonEmpty(rows.map(row => row.beneficiary_reference)),
+      warnings,
+      reason: "non_cny_slip_currency",
+    };
+  }
+
+  const amount = rows.reduce((sum, row) => sum + Number(row.amount_alloc || 0), 0);
+  const payerNames = uniqueNonEmpty(rows.map(row => row.sender_name));
+  if (payerNames.length > 1) warnings.push(`multiple_slip_payers:${payerNames.join("|")}`);
+
+  const dates = rows
+    .map(row => row.payment_date)
+    .filter(Boolean)
+    .map(d => new Date(d))
+    .filter(d => !Number.isNaN(d.getTime()))
+    .sort((a, b) => b.getTime() - a.getTime());
+
+  return {
+    amount: amount > 0 ? amount.toFixed(2) : "",
+    payerName: payerNames.length === 1 ? payerNames[0] : "",
+    receiptDate: dates[0] ? dates[0].toISOString().slice(0, 10) : "",
+    source: amount > 0 ? "slip" : "none",
+    slipIds,
+    beneficiaryReferences: uniqueNonEmpty(rows.map(row => row.beneficiary_reference)),
+    warnings,
+    reason: amount > 0 ? "" : "zero_slip_amount",
+  };
 }
 
 // 公司抬头模版（Damon 保存的"模版1/模版2..."，可编辑，见 receipt_company_templates 表）
@@ -125,7 +204,7 @@ async function docxBufferToPdf(docxBuffer) {
   }
 }
 
-// 把公章图叠到"单位公章或财务专用章"那一行附近（近似定位，母版排版固定，坐标基于A4 150dpi实测换算）
+// 把公章图叠到"单位公章或财务专用章"那一行附近。
 async function stampSeal(pdfBuffer, sealUrl) {
   if (!sealUrl) return pdfBuffer;
   try {
@@ -142,9 +221,11 @@ async function stampSeal(pdfBuffer, sealUrl) {
     // 真实公章标准直径=40mm(跟DAS其它盖章路径SEAL_DIAMETER_PT同一个常量)，之前写死60pt(≈21mm)只有真章一半大——
     // 图片本身按40mm出的没错，问题在嵌入PDF时的显示尺寸没跟着改。中心点保持在原来手工核对过的位置不变，只是半径变大。
     const SEAL_DIAMETER_PT = 40 * 72 / 25.4; // ≈113.4pt = 真实40mm
-    // 真章比例放大后，中心点也往右下微调，避开上方"直接投资结算流程简化"勾选格线，
-    // 落在"单位公章或财务专用章"字样和"填表说明"标题之间的空白区（实测调过，非拍脑袋）。
-    const oldCenterX = 155 + 45, oldCenterY = 138 + 13;
+    // 2026-09-18 实测当前母版 PDF 文本 bbox:
+    // "单位公章或财务专用章" x=113.95..233.95, 距页顶 y=574.79..592.03, 页高841.89。
+    // 当前依赖(pdf-lib)只能绘制/嵌图，不能可靠读取文本坐标，所以用实测文字中心右移20pt：
+    // centerX=193.95, centerY=841.89-583.4=258.49。
+    const oldCenterX = 193.95, oldCenterY = 841.89 - 583.4;
     const w = SEAL_DIAMETER_PT, h = (dims.height / dims.width) * SEAL_DIAMETER_PT;
     const x = oldCenterX - w / 2, y = oldCenterY - h / 2;
     // 定位在"单位公章或财务专用章"印刷字样右侧的空白处，避免盖住上方"备注/申明"文字行
@@ -187,6 +268,8 @@ export async function renderReceiptDoc(pool, refs, overrides = {}) {
   if (allOrderNos.length > 0) {
     const oRes = await pool.query(
       `SELECT o._id, o.order_no, o.contract_no, o.customer_po, o.raw,
+              c.name_cn AS customer_name_cn,
+              c.name_en AS customer_name_en,
               COALESCE(ctr.code, c.country) AS country_code
        FROM orders o
        LEFT JOIN companies c ON c.id = o.customer_company_id
@@ -211,39 +294,22 @@ export async function renderReceiptDoc(pool, refs, overrides = {}) {
 
   const sellerCfg = await loadSellerCfg(pool, {}, null, { shipping: true });
   const customerName = p.customer_cn || p.customer_en || p.customer || "";
-  const orderContractNos = uniqueNonEmpty(orders.map(o => stripCompanyPrefix(o.contract_no)));
-  const planContractNos = uniqueNonEmpty(plans.flatMap(pl => Array.isArray(pl.contract_nos) ? pl.contract_nos.map(stripCompanyPrefix) : []));
-  const blContractNos = contractNosFromBl(plans);
-  const contractNo = overrides.contract_no || (
-    orderContractNos.length ? orderContractNos.join(", ")
-      : planContractNos.length ? planContractNos.join(", ")
-        : blContractNos.join(", ")
-  );
+  const bankSlipData = await loadReceiptBankSlipData(pool, plans);
+  const warnings = [...bankSlipData.warnings];
+  const blContractNos = overrides.contract_no ? [] : contractNosFromBl(plans, warnings);
+  const contractNo = overrides.contract_no || blContractNos.join(", ");
 
   const bankAmount = formatMoney(overrides.amount_total);
-  let amountCny = bankAmount;
+  let amountCny = bankAmount || bankSlipData.amount;
   let amountSource = bankAmount ? "bank" : "none";
-  if (!amountCny) {
-    const receivableAmount = await loadReceivableAmount(pool, plans);
-    if (receivableAmount > 0) {
-      amountCny = receivableAmount.toFixed(2);
-      amountSource = "receivable";
-    }
-  }
-  if (!amountCny) {
-    const quotedAmount = plans.reduce((s, pl) => s + Number(pl.freight_total_cny || 0), 0);
-    if (quotedAmount > 0) {
-      amountCny = quotedAmount.toFixed(2);
-      amountSource = "quoted";
-    }
-  }
+  if (!amountSource || amountSource === "none") amountSource = amountCny ? bankSlipData.source : "none";
 
   const currency = (overrides.currency || "CNY").toUpperCase();
   const data = {
-    receipt_date: formatReceiptDate(overrides.receipt_date),
+    receipt_date: formatReceiptDate(overrides.receipt_date || bankSlipData.receiptDate),
     receipt_company_name: sellerCfg.nameCN || sellerCfg.nameEN || "",
     receipt_org_code: orgCodeSegment(sellerCfg.taxNo),
-    payer_name: overrides.payer_name || customerName,
+    payer_name: overrides.payer_name || bankSlipData.payerName || (bankSlipData.slipIds.length ? "" : customerName),
     payer_country: overrides.payer_country || payerCountry,
     contract_no: contractNo,
     amount_total: amountCny,
@@ -290,6 +356,11 @@ export async function renderReceiptDoc(pool, refs, overrides = {}) {
     },
     data,
     amount_source: amountSource,
+    receipt_amount_source: amountSource,
+    usedBankSlipIds: bankSlipData.slipIds,
+    bankSlipReferences: bankSlipData.beneficiaryReferences,
+    warnings,
+    autoFillReason: bankSlipData.reason,
     usedBankOverride: amountSource === "bank" || !!overrides.payer_name,
   };
 }
@@ -308,6 +379,7 @@ export async function renderReceiptDocByTemplate(pool, templateKey, overrides = 
   const currency = (overrides.currency || "CNY").toUpperCase();
   const isGoods = tpl.trade_type === "goods";
   const orgCode = orgCodeSegment(tpl.org_code_full);
+  const contractNo = overrides.contract_no || "";
 
   const data = {
     receipt_date: formatReceiptDate(overrides.receipt_date),
@@ -315,7 +387,7 @@ export async function renderReceiptDocByTemplate(pool, templateKey, overrides = 
     receipt_org_code: orgCode,
     payer_name: overrides.payer_name || "",
     payer_country: overrides.payer_country || "",
-    contract_no: overrides.contract_no || "",
+    contract_no: contractNo,
     amount_total: amountCny,
     filler_tel: tpl.filler_tel || "",
     filler_name: (overrides.filler_name || DEFAULT_FILLER_NAME) + "      ", // 后面留空格,不然跟紧挨着的"联系电话"标签挤在一起
@@ -325,7 +397,7 @@ export async function renderReceiptDocByTemplate(pool, templateKey, overrides = 
     // 服务贸易(海运费)字段
     service_trade_amount: isGoods ? "" : amountCny,
     service_trade_bop_code: isGoods ? "" : "222011",
-    service_trade_contract_no: isGoods ? "" : (overrides.contract_no || ""),
+    service_trade_contract_no: isGoods ? "" : contractNo,
     // 货物贸易字段
     goods_trade_amount: isGoods ? amountCny : "",
     goods_desc: isGoods ? (overrides.goods_desc || "") : "",

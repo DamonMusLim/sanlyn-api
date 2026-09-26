@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { loadReconMaster } from "./recon-master.js";
+import { callerCompanyScope } from "../lib/viewmodel-adapter.js";
 
 function clean(v) { return String(v ?? "").trim(); }
 function title(ws, text, width) {
@@ -17,6 +18,27 @@ function addSheet(wb, name, heads, rows) {
   rows.forEach(r => ws.addRow(r));
   ws.columns.forEach(c => { c.width = 16; });
   return ws;
+}
+
+// ── 调用方是不是我方主体（可跨公司看对账）──────────────────
+// ⚖️ 判公司归属只看 companies 表，⛔不按 role/公司名猜。
+//    实测只有 6 个账号属于我方主体(BABI/LUVSOME/VEN-LL)，其余 31 个是外部。
+// 60 秒进程内缓存，别每次导出都打一次库。
+const sanlynEntityCache = new Map();
+const SANLYN_ENTITY_CACHE_TTL_MS = 60 * 1000;
+
+async function callerIsSanlynEntity(pool, req) {
+  const code = clean(req.user && req.user.companyCode);
+  if (!code) return false;
+  const cached = sanlynEntityCache.get(code);
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) return cached.value;
+  const result = await pool.query(
+    `SELECT COALESCE(is_sanlyn_entity, false) AS is_sanlyn_entity
+       FROM companies WHERE code=$1 LIMIT 1`, [code]);
+  const value = Boolean(result.rows[0] && result.rows[0].is_sanlyn_entity);
+  sanlynEntityCache.set(code, { value, expiresAt: now + SANLYN_ENTITY_CACHE_TTL_MS });
+  return value;
 }
 
 async function detailRows(pool, company) {
@@ -48,6 +70,18 @@ export default async function handler(req, res) {
     const company = clean(req.query.company);
     if (!company) return res.status(400).json({ success: false, error: "company required" });
     const pool = getPool();
+    // 🔴 2026-09-11 堵越权：原来 ?company= 直接进 WHERE，零校验。
+    //    实证：外部货代账号(万汇恒通 CN-00028)能下载任意公司的对账单，
+    //    含成本价/销售价/供应商。照 partner-relationships.js 的写法加范围校验。
+    const isAdmin = req.user && req.user.role === "admin";
+    if (!isAdmin && !(await callerIsSanlynEntity(pool, req))) {
+      const scope = callerCompanyScope(req);
+      const allowed = scope.all || [];
+      if (allowed.length === 0) return res.status(403).json({ error: "Account scope missing" });
+      if (!allowed.includes(company)) {
+        return res.status(403).json({ error: "Out of scope", requested: company, allowed: allowed });
+      }
+    }
     const master = await loadReconMaster(pool, req.query);
     const d = await detailRows(pool, company);
     const wb = new ExcelJS.Workbook();

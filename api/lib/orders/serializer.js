@@ -39,9 +39,7 @@ const CUSTOMER_FACING = new Set([
   "delivery_date",
   "required_arrival",
   "confirmed_delivery",
-  "vessel", "voyage",
   "pol", "destination_port",
-  "bl_no",
   "company_name_en",     // customer's own company display name (NOT company_code)
   "brand",
   "remarks",
@@ -50,9 +48,8 @@ const CUSTOMER_FACING = new Set([
   "products",            // already stripped by stripSensitive() for factoryPrice/cost
   "inland_freight", "inland_freight_label", "inland_freight_label_en", // 提货运费(客户SC/IV显示)
   // Live shipping joins from orders.js GET LEFT LATERAL JOINs:
-  "sp_bl_no", "sp_etd", "sp_eta", "sp_pol", "sp_pod",
+  "sp_etd", "sp_eta", "sp_pol", "sp_pod",
   "sp_status_cn", "sp_tracking_updated_at",
-  "driver_name", "driver_phone", "truck_plate", "planned_load_at",
   // W0-1 review fix #2: _events / _tasks intentionally OMITTED from external
   // allowlists — they carry raw actor_role / actor_company_id / meta which
   // leak internal workflow. Re-add only after building a visibility-scoped

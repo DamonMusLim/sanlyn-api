@@ -3,11 +3,11 @@
  * Source: getComputedStyle values from eyun.hgj.com/work_bench, 2026-08-26.
  */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;            /* 0907 固定浅色,不跟随系统 */
+  background: #F2F3F5;           /* html 原为透明,系统深色下会透出黑底 */
   --hgj-bg: #F2F3F5;
   --hgj-card: #FFFFFF;
   --hgj-primary: #006AFF;
-  --hgj-on-primary: #FFFFFF;
   --hgj-primary-bg: #E6F4FF;
   --hgj-title: #282828;
   --hgj-side-bg: #00132E;
@@ -20,23 +20,13 @@
   --hgj-font: -apple-system, system-ui, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --hgj-bg: #101418;
-    --hgj-card: #1A2028;
-    --hgj-primary: #006AFF;
-    --hgj-on-primary: #FFFFFF;
-    --hgj-primary-bg: #102C52;
-    --hgj-title: #F2F4F7;
-    --hgj-side-bg: #00132E;
-    --hgj-side-text: #99A0AB;
-    --hgj-line: #303A49;
-    --hgj-text: #F2F4F7;
-    --hgj-muted: #A4ACB9;
-    --hgj-danger: #FF8A80;
-    --hgj-warn: #FFB86B;
-  }
-}
+/* 2026-09-07 Damon:「颜色先改,看不清。固定就好了。」
+   原来这里有一整套深色变量,系统开深色模式就自动切过去,
+   实测对比度不够、数字看不清。工作台是天天看数字的地方,固定浅色。
+   ⛔ 要深色以后单独做开关,别再挂 prefers-color-scheme 自动跟随。
+   原深色块备份在 hgj-ui.css.bak-0907-lightonly
+*/
+
 
 * {
   box-sizing: border-box;
@@ -73,7 +63,7 @@
 /* HGJ small tab button such as "未开票" and "未核销". */
 .hgj-tabbtn {
   border: 1px solid var(--hgj-primary);
-  border-radius: 0;
+  border-radius: 3px;
   background: var(--hgj-primary-bg);
   color: var(--hgj-primary);
   font: 12px/1 var(--hgj-font);
@@ -114,3 +104,8 @@ select,
 textarea {
   font: inherit;
 }
+
+/* 2026-08-30 嵌入 /hy/ 外壳时隐藏页面自带侧边栏,让内容占满 */
+.sanlyn-embedded .side{display:none !important}
+.sanlyn-embedded .app{grid-template-columns:minmax(0,1fr) !important}
+.sanlyn-embedded .main,.sanlyn-embedded .content,.sanlyn-embedded .wrap{margin-left:0 !important;width:100% !important;max-width:100% !important}

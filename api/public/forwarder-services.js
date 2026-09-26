@@ -10,6 +10,7 @@ const CITY_ALIASES = {
   "锦州": "锦州", "JINZHOU": "锦州",
   "连云港": "连云港", "LIANYUNGANG": "连云港",
   "日照": "日照", "RIZHAO": "日照",
+  "蛇口": "蛇口", "SHEKOU": "蛇口",
   "南沙": "南沙", "NANSHA": "南沙",
 };
 const ZONES = {
@@ -20,11 +21,11 @@ const ZONES = {
   "锦州": { zone_name: "锦州关区", scope: "锦州港" },
   "连云港": { zone_name: "连云港关区", scope: "连云港港区" },
   "日照": { zone_name: "日照关区", scope: "日照港" },
+  "蛇口": { zone_name: "深圳关区", scope: "蛇口港区" },
   "南沙": { zone_name: "南沙关区", scope: "南沙港区" },
 };
 
 function clean(v) { return v == null ? "" : String(v).trim(); }
-function num(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
 function dateOnly(v) {
   if (!v) return "";
   const d = new Date(v);
@@ -33,9 +34,50 @@ function dateOnly(v) {
 }
 function bodyOf(req) { return req.body || {}; }
 
+let portAliasCache = null;
+let portAliasCacheLoading = null;
+let lastPortCacheWarnAt = 0;
+
+function portKey(v) { return clean(v).toUpperCase().replace(/\s+/g, ""); }
+
+// 与 _lane-weeks.js:ensureLocalPortCache 同源,改一处要改两处
+async function ensurePortCache(pool) {
+  if (portAliasCache) return portAliasCache;
+  if (!portAliasCacheLoading) {
+    portAliasCacheLoading = pool.query(
+      `SELECT name_cn, unlocode, code
+         FROM ports
+        WHERE COALESCE(name_cn, '') <> ''`
+    ).then(({ rows }) => {
+      const map = {};
+      rows.forEach(r => {
+        const name = clean(r.name_cn);
+        [r.unlocode, r.code, r.name_cn].forEach(v => {
+          const key = portKey(v);
+          if (name && key) map[key] = name;
+        });
+      });
+      portAliasCache = map;
+      portAliasCacheLoading = null;
+      return map;
+    }).catch(e => {
+      const now = Date.now();
+      if (now - lastPortCacheWarnAt > 60000) {
+        lastPortCacheWarnAt = now;
+        console.warn("[forwarder-services] ports cache unavailable; using static aliases", e && e.message);
+      }
+      portAliasCacheLoading = null;
+      return {};
+    });
+  }
+  return portAliasCacheLoading;
+}
+
 function normalizePort(raw) {
   const s = clean(raw);
   if (!s) return "";
+  const cached = portAliasCache && portAliasCache[portKey(s)];
+  if (cached) return cached;
   const direct = CITY_ALIASES[s] || CITY_ALIASES[s.toUpperCase()];
   if (direct) return direct;
   const compact = s.replace(/\s+/g, "").toUpperCase();
@@ -48,6 +90,34 @@ function normalizeBox(raw) {
   if (s.includes("20")) return "20GP";
   if (s.includes("40")) return "40HQ";
   return s || "40HQ";
+}
+
+function zoneFields(port) {
+  const zone = ZONES[port];
+  return zone ? { zone_name: zone.zone_name, scope: zone.scope } : {};
+}
+
+function upsertCustomsPort(map, row, source) {
+  const port = normalizePort(row.pol);
+  if (!port) return;
+  if (!map.has(port)) {
+    map.set(port, Object.assign({
+      port,
+      source,
+      last_clearance: { date: "", cargo: "", carrier: "" },
+      rate_cny: null, commodities: [],
+      meta: { inspection: true, advance_tax: false, permit: "如需许可证代办另议" },
+    }, zoneFields(port)));
+  } else {
+    const item = map.get(port);
+    if (item.source !== source) item.source = "both";
+  }
+  const item = map.get(port);
+  const cargo = cargoOf(row);
+  if (!item.last_clearance.date && (row.etd || cargo || row.carrier_code)) {
+    item.last_clearance = { date: dateOnly(row.etd), cargo, carrier: clean(row.carrier_code) };
+  }
+  if (cargo && !item.commodities.includes(cargo) && item.commodities.length < 5) item.commodities.push(cargo);
 }
 
 async function validateToken(pool, code) {
@@ -64,8 +134,7 @@ async function validateToken(pool, code) {
 
 async function getShipRows(pool, companyId) {
   const { rows } = await pool.query(
-    `SELECT sp.id, sp.etd, sp.pol, sp.container_type, sp.trucking_cost_total,
-            sp.customs_declare_fee, sp.carrier_code,
+    `SELECT sp.id, sp.etd, sp.pol, sp.container_type, sp.carrier_code,
             sp.raw,
             COALESCE(NULLIF(BTRIM(o.factory), ''), '未标注工厂') AS factory,
             o.category, o.products
@@ -81,6 +150,76 @@ async function getShipRows(pool, companyId) {
       ORDER BY COALESCE(sp.etd, sp.created_at::date) DESC, sp.id DESC`,
     [companyId]
   );
+  return rows;
+}
+
+async function getPaidCustomsRows(pool, companyId) {
+  const normSql = (expr) => (
+    `regexp_replace(lower(translate(COALESCE(${expr}, ''), '（）', '()')), '[[:space:]()]', '', 'g')`
+  );
+  const supplierNorm = normSql("b.supplier");
+  const nameCnNorm = normSql("c.name_cn");
+  const nameEnNorm = normSql("c.name_en");
+  const sql = `
+    WITH company AS (
+      SELECT id, code, name_cn, name_en, ${nameCnNorm} AS name_cn_norm, ${nameEnNorm} AS name_en_norm
+        FROM companies c
+       WHERE c.id = $1
+       LIMIT 1
+    )
+    SELECT sp.id, sp.etd, sp.pol, sp.container_type, sp.carrier_code,
+           sp.raw, '' AS factory, '' AS category, '[]'::jsonb AS products,
+           'paid_history' AS customs_port_source, sp.match_basis
+      FROM freight_supplier_bills b
+      JOIN company c ON true
+      JOIN LATERAL (
+        SELECT s.id, s.etd, s.pol, s.container_type, s.carrier_code, s.raw,
+               CASE
+                 WHEN NULLIF(BTRIM(b.link_plan_id::text), '') IS NOT NULL
+                  AND (s.id::text = BTRIM(b.link_plan_id::text) OR s._id::text = BTRIM(b.link_plan_id::text))
+                   THEN 'link_plan_id'
+                 WHEN NULLIF(BTRIM(b.bl_no), '') IS NOT NULL AND BTRIM(s.bl_no) = BTRIM(b.bl_no)
+                   THEN 'bl_no_exact'
+                 ELSE 'bl_no_strip_carrier_prefix'
+               END AS match_basis
+          FROM shipping_plans s
+         WHERE s.deleted_at IS NULL
+           AND (
+             (NULLIF(BTRIM(b.link_plan_id::text), '') IS NOT NULL
+              AND (s.id::text = BTRIM(b.link_plan_id::text) OR s._id::text = BTRIM(b.link_plan_id::text)))
+             OR (NULLIF(BTRIM(b.bl_no), '') IS NOT NULL AND BTRIM(s.bl_no) = BTRIM(b.bl_no))
+             OR (
+               NULLIF(regexp_replace(upper(BTRIM(COALESCE(b.bl_no, ''))), '^[A-Z]{4}', ''), '') IS NOT NULL
+               AND regexp_replace(upper(BTRIM(COALESCE(s.bl_no, ''))), '^[A-Z]{4}', '')
+                 = regexp_replace(upper(BTRIM(COALESCE(b.bl_no, ''))), '^[A-Z]{4}', '')
+             )
+           )
+         ORDER BY
+           CASE
+             WHEN NULLIF(BTRIM(b.link_plan_id::text), '') IS NOT NULL
+              AND (s.id::text = BTRIM(b.link_plan_id::text) OR s._id::text = BTRIM(b.link_plan_id::text)) THEN 0
+             WHEN NULLIF(BTRIM(b.bl_no), '') IS NOT NULL AND BTRIM(s.bl_no) = BTRIM(b.bl_no) THEN 1
+             ELSE 2
+           END,
+           s.id DESC
+         LIMIT 1
+      ) sp ON true
+     WHERE b.canonical_category = 'customs_declaration'
+       AND COALESCE(b.rebill_status, '') <> 'voided'
+       AND COALESCE(b.amount, 0) > 0
+       AND (
+         (${supplierNorm} <> '' AND (
+           ${supplierNorm} = c.name_cn_norm
+           OR ${supplierNorm} = c.name_en_norm
+           OR (${nameCnNorm} <> '' AND ${supplierNorm} LIKE '%' || c.name_cn_norm || '%')
+           OR (${nameCnNorm} <> '' AND c.name_cn_norm LIKE '%' || ${supplierNorm} || '%')
+           OR (${nameEnNorm} <> '' AND ${supplierNorm} LIKE '%' || c.name_en_norm || '%')
+           OR (${nameEnNorm} <> '' AND c.name_en_norm LIKE '%' || ${supplierNorm} || '%')
+         ))
+         OR (NULLIF(BTRIM(b.supplier_company_code), '') IS NOT NULL AND b.supplier_company_code = c.code)
+       )
+     ORDER BY sp.etd DESC NULLS LAST, sp.id DESC`;
+  const { rows } = await pool.query(sql, [companyId]);
   return rows;
 }
 
@@ -110,6 +249,7 @@ function cargoOf(row) {
 
 async function handleTruck(req, res, pool, token) {
   if (!token.company_id) return res.json({ ok: true, service: "truck", factories: [], tiers: TIERS, boxes: BOXES });
+  await ensurePortCache(pool);
   const rows = await getShipRows(pool, token.company_id);
   const rates = await getRates(pool, token.company_id, "truck");
   const map = new Map();
@@ -118,20 +258,16 @@ async function handleTruck(req, res, pool, token) {
     const factory = clean(row.factory) || "未标注工厂";
     const port = normalizePort(row.pol);
     if (!port) return;
-    const box = normalizeBox(row.container_type);
-    if (!map.has(factory)) map.set(factory, { factory, city: "", ports: [], history: {}, rates: {} });
+    if (!map.has(factory)) map.set(factory, { factory, city: "", ports: [], rates: {} });
     const item = map.get(factory);
     if (!item.ports.includes(port)) item.ports.push(port);
-    const cost = num(row.trucking_cost_total);
-    const key = `${port}|${box}`;
-    if (cost > 0 && !item.history[key]) item.history[key] = { rate_cny: cost, date: dateOnly(row.etd) };
   });
 
   rates.forEach(r => {
     const factory = clean(r.factory) || "未标注工厂";
     const port = normalizePort(r.port);
     const box = normalizeBox(r.container_type);
-    if (!map.has(factory)) map.set(factory, { factory, city: "", ports: [], history: {}, rates: {} });
+    if (!map.has(factory)) map.set(factory, { factory, city: "", ports: [], rates: {} });
     const item = map.get(factory);
     if (port && !item.ports.includes(port)) item.ports.push(port);
     item.rates[`${port}|${box}|${clean(r.tier)}`] = ratePayload(r);
@@ -147,43 +283,23 @@ async function handleTruck(req, res, pool, token) {
 
 async function handleCustoms(req, res, pool, token) {
   if (!token.company_id) return res.json({ ok: true, service: "customs", ports: [] });
+  await ensurePortCache(pool);
   const rows = await getShipRows(pool, token.company_id);
+  const paidRows = await getPaidCustomsRows(pool, token.company_id);
   const rates = await getRates(pool, token.company_id, "customs");
   const map = new Map();
 
   rows.forEach(row => {
-    const port = normalizePort(row.pol);
-    if (!port) return;
-    const zone = ZONES[port] || { zone_name: `${port}关区`, scope: `${port}港区` };
-    if (!map.has(port)) {
-      map.set(port, {
-        port, zone_name: zone.zone_name, scope: zone.scope,
-        last_clearance: { date: "", cargo: "", carrier: "" },
-        history_fee: null, rate_cny: null, commodities: [],
-        meta: { inspection: true, advance_tax: false, permit: "如需许可证代办另议" },
-      });
-    }
-    const item = map.get(port);
-    const cargo = cargoOf(row);
-    if (!item.last_clearance.date) item.last_clearance = { date: dateOnly(row.etd), cargo, carrier: clean(row.carrier_code) };
-    const fee = num(row.customs_declare_fee);
-    if (fee > 0 && item.history_fee == null) item.history_fee = Math.round(fee);
-    if (cargo && !item.commodities.includes(cargo) && item.commodities.length < 5) item.commodities.push(cargo);
+    upsertCustomsPort(map, row, "shipment");
+  });
+  paidRows.forEach(row => {
+    upsertCustomsPort(map, row, "paid_history");
   });
 
   rates.forEach(r => {
     const port = normalizePort(r.port);
     if (!port) return;
-    const zone = ZONES[port] || { zone_name: `${port}关区`, scope: `${port}港区` };
-    if (!map.has(port)) {
-      map.set(port, {
-        port, zone_name: zone.zone_name, scope: zone.scope,
-        last_clearance: { date: "", cargo: "", carrier: "" },
-        history_fee: null, rate_cny: null, commodities: [],
-        meta: { inspection: true, advance_tax: false, permit: "如需许可证代办另议" },
-      });
-    }
-    map.get(port).rate_cny = r.rate_cny == null ? null : Number(r.rate_cny);
+    if (map.has(port)) map.get(port).rate_cny = r.rate_cny == null ? null : Number(r.rate_cny);
   });
 
   return res.json({ ok: true, service: "customs", ports: Array.from(map.values()) });
@@ -191,9 +307,10 @@ async function handleCustoms(req, res, pool, token) {
 
 async function saveQuote(req, res, pool, token) {
   if (!token.company_id) return res.status(403).json({ ok: false, error: "token missing company_id" });
+  await ensurePortCache(pool);
   const body = bodyOf(req);
   const service = clean(body.service || body.svc);
-  if (service === "insurance") return res.json({ ok: true, saved: false, skipped: "insurance branch unchanged" });
+  if (service === "insurance") return res.json({ ok: true, saved: false, skipped: "保险暂未开放" });
   if (service !== "truck" && service !== "customs") return res.status(400).json({ ok: false, error: "service invalid" });
   const rate = body.rate_cny == null ? null : Number(body.rate_cny);
   if (!Number.isFinite(rate) || rate <= 0) return res.status(400).json({ ok: false, error: "rate_cny invalid" });
@@ -230,6 +347,9 @@ export default async function handler(req, res) {
     if (!token) return res.status(410).json({ ok: false, error: "链接已过期" });
     if (req.method === "GET" && service === "truck") return await handleTruck(req, res, pool, token);
     if (req.method === "GET" && service === "customs") return await handleCustoms(req, res, pool, token);
+    if (req.method === "GET" && service === "insurance") {
+      return res.json({ ok: true, service: "insurance", available: false, reason: "未开放", policies: [] });
+    }
     if (req.method === "POST" && segments[segments.length - 1] === "quote") return await saveQuote(req, res, pool, token);
     return res.status(404).json({ ok: false, error: "Not found" });
   } catch (e) {

@@ -208,7 +208,68 @@ tr.grand td{background:#111;color:#fff;font-weight:900;font-size:13px;padding:9p
 <script src="export-docs-template.js"></script>
 <script>
 (function(){
+  // 🔒 真值毛重/体积（锚 BL；服务端 documents?format=rows 那条已按 shipping_plans.actual_* 缩放过）
+  //    明细模式的逐行来自 OLI 经验值，这里按真值等比缩回，⛔ 不动 qty/nw/amt。
+  window._truthGW = window._truthGW || 0;
+  window._truthCBM = window._truthCBM || 0;
+  // 🔒 逐柜缩放（Damon 2026-09-21 定：按柜，客户要知道哪个柜装什么货）
+  //    detailRows 已按柜号分组，每个 isHeader 行带 ctnNos；柜级 BL 货重在 window._ctnMap。
+  //    ⚠️ container_bookings 数据质量差（48/100 无货重，最小值 3700 = 40HQ 空柜皮重误录），
+  //       所以两道护栏：柜级目标值必须 > 该组净重；任一组不可信就整体退回整票比例。
+  function ctnTruthFor(ctnNos){
+    var map = window._ctnMap || {}, seen = {}, tot = 0;
+    for (var k in map) {
+      (map[k] || []).forEach(function (c) {
+        var no = String((c && c.container_no) || '').trim();
+        if (!no || seen[no] || ctnNos.indexOf(no) < 0) return;
+        var w = Number(c && c.cargo_weight_kg) || 0;
+        if (w > 0) { seen[no] = 1; tot += w; }
+      });
+    }
+    return tot;
+  }
+  function scaleSeg(rows, key, target, digits){
+    var base = rows.reduce(function(a,r){return a+(Number(r[key])||0);},0);
+    if (base <= 0 || target <= 0) return false;
+    if (Math.abs(base-target) < Math.pow(10,-digits)) return true;
+    var acc = 0;
+    rows.forEach(function(r,i){
+      if (i === rows.length-1) { r[key] = Number((target-acc).toFixed(digits)); return; }
+      var v = Number(((Number(r[key])||0)*target/base).toFixed(digits));
+      r[key] = v; acc = Number((acc+v).toFixed(digits));
+    });
+    return true;
+  }
+  function applyTruthScale(){
+    var all = window._rows || [];
+    if (!all.length) return;
+    // 切段：每个 isHeader 起一段
+    var segs = [], cur = null;
+    all.forEach(function(r){
+      if (r && r.isHeader) { cur = { hdr: r, rows: [] }; segs.push(cur); return; }
+      if (r && cur) cur.rows.push(r);
+    });
+    // 先看能不能【全部】按柜缩 —— 有一组不可信就整体退回整票比例，⛔ 不做一半
+    var perCtnOK = segs.length > 0;
+    segs.forEach(function(sg){
+      var nos = (sg.hdr && sg.hdr.ctnNos) || [];
+      var target = nos.length ? ctnTruthFor(nos) : 0;
+      var segNw = sg.rows.reduce(function(a,r){return a+(Number(r.nw)||0);},0);
+      if (!(target > 0 && target > segNw)) perCtnOK = false;   // 护栏①：必须大于净重
+      sg.gwTarget = target;
+    });
+    if (perCtnOK) {
+      segs.forEach(function(sg){ scaleSeg(sg.rows, 'gw', sg.gwTarget, 2); });
+    } else if (Number(window._truthGW) > 0) {
+      scaleSeg(all.filter(function(r){return r && !r.isHeader;}), 'gw', Number(window._truthGW), 2);
+    }
+    // CBM 没有可靠的柜级源，仍按整票锚真值
+    if (Number(window._truthCBM) > 0) {
+      scaleSeg(all.filter(function(r){return r && !r.isHeader;}), 'cbm', Number(window._truthCBM), 3);
+    }
+  }
   function sumRows(){
+    if(!window._customsMode) applyTruthScale();
     var rows=window._customsMode?(window._agg&&window._agg.rows)||[]:(window._rows||[]).filter(function(r){return r&&!r.isHeader;});
     return rows.reduce(function(t,r){
       t.qty+=Number(r.qty)||0;t.nw+=Number(r.nw)||0;t.gw+=Number(r.gw)||0;t.cbm+=Number(r.cbm)||0;t.amt+=Number(r.amt)||0;
@@ -232,8 +293,44 @@ tr.grand td{background:#111;color:#fff;font-weight:900;font-size:13px;padding:9p
       if(foot)foot.innerHTML='<tr><td></td><td class="l">GRAND TOTAL:</td><td>'+Math.round(t.qty)+' CTN</td><td>'+(window._customsMode?esc(cur):'')+'</td><td>'+fmt(t.amt+freight)+'</td></tr>';
     });
   }
+  // 拉真值合计（⛔ 只在明细模式需要；报关模式本来就走已锚真值的那条路）
+  function loadTruthTotals(){
+    try{
+      if(window._customsMode)return Promise.resolve();
+      var q=new URLSearchParams(location.search);
+      var on=q.get('order_no')||'', ids=q.get('ids')||on, tk=q.get('token')||'';
+      if(!on)return Promise.resolve();
+      var u='/api/db/documents?type=pack&id='+encodeURIComponent(on)
+           +'&ids='+encodeURIComponent(ids)+'&audience=customer&customs=1&format=rows'
+           +'&token='+encodeURIComponent(tk);
+      return fetch(u).then(function(r){return r.ok?r.json():null;}).then(function(d){
+        var sheets=(d&&d.sheets)||[];
+        var pl=sheets.filter(function(x){return x&&x.sheetName==='Packing List';})[0];
+        var tot=pl&&pl.totals;           // ["","GRAND TOTAL:",qty,nw,gw,cbm]
+        if(!tot)return;
+        window._truthGW=Number(tot[4])||0;
+        window._truthCBM=Number(tot[5])||0;
+      }).catch(function(){});
+    }catch(e){ return Promise.resolve(); }
+  }
+
   var old=window.renderAll;
-  if(typeof old==='function')window.renderAll=function(){old.apply(this,arguments);writeFoot();};
+  if(typeof old==='function')window.renderAll=function(){
+    var self=this,args=arguments;
+    if(!window._customsMode && !window._truthGW && !window._truthPending){
+      // 真值还没到：先拿真值，回来后【重绘整张表】——缩放必须发生在渲染之前，
+      // 否则只有合计变、逐行还是 OLI 原值，行列对不上。
+      window._truthPending=1;
+      loadTruthTotals().then(function(){
+        window._truthPending=0;
+        window.renderAll.apply(self,args);         // 重绘（这次 applyTruthScale 会先缩放逐行）
+      });
+      return;
+    }
+    if(!window._customsMode) applyTruthScale();    // 渲染前把逐行缩到真值
+    old.apply(self,args);
+    writeFoot();
+  };
 })();
 </script>
 </body>

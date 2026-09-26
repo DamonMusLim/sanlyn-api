@@ -12,7 +12,6 @@ export default async function handler(req, res) {
   const { rows } = await pool.query(`
     SELECT DISTINCT ON (lower(btrim(pol)), lower(btrim(pod)), upper(COALESCE(carrier,'')))
            pol, pod, carrier,
-           customer_gp20, customer_hq40,
            COALESCE(sail_date::text, next_sailing) AS sailing,
            transit_days, valid_to
       FROM freight_rates
@@ -26,8 +25,9 @@ export default async function handler(req, res) {
     pol: r.pol,
     pod: r.pod,
     carrier: r.carrier || null,
-    price_gp20: r.customer_gp20 != null ? Number(r.customer_gp20) : null,
-    price_hq40: r.customer_hq40 != null ? Number(r.customer_hq40) : null,
+    price_gp20: null,
+    price_hq40: null,
+    price_locked: true,
     sailing: r.sailing || null,
     transit_days: r.transit_days || null,
     valid_to: r.valid_to || null,

@@ -79,6 +79,7 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   var orderIds = orders.map(function (o) { return Number(o.id); }).filter(Boolean);
   var lines = await loadLines(pool, orderIds);
   var _facNames=(orders||[]).map(function(_o){ return _o.factory||_o.factory_name||_o.factory_company_name; }).filter(Boolean);
+  var productionSalesUnit=Array.from(new Set(_facNames.map(clean).filter(Boolean))).join("/");
   var _areaMap=await _sourceAreaOf(pool, _facNames);
   var _srcProvs={}; _facNames.forEach(function(n){ var _p=_areaMap[n]; if(_p) _srcProvs[_p]=1; });
   var _pk=Object.keys(_srcProvs); var _sourceArea=_pk.length===1?_pk[0]:"";  // 多产地留空,不猜
@@ -123,7 +124,19 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   var _lineNet = lines.reduce(function (s, l) { var n = Number(l.net_weight_kg); return s + (Number.isFinite(n) ? n : 0); }, 0);
   var _lineGross = lines.reduce(function (s, l) { var n = Number(l.gross_weight_kg); return s + (Number.isFinite(n) ? n : 0); }, 0);
   var netWeight = _lineNet || pick(plan.net_weight_kg, plan.net_weight, praw.netWeight, praw.net_weight_kg) || "";
-  var grossWeight = _lineGross || pick(plan.gross_weight_kg, plan.gross_weight, praw.grossWeight, praw.gross_weight_kg) || "";
+  // 毛重优先工厂/场站真值(Damon 0709 真值优先; 0911 78-WP-1 实测), 再兜 OLI 汇总和旧字段。
+  // 🔒 毛重只认真值（工厂箱单 / 场站磅单 → shipping_plans.actual_gross_weight_kg）。
+  //    ⛔ 不再兜 OLI 的 Σgw_ctn×qty —— 那是包装规格推的经验常数，WP-52 虚高 62%、
+  //    78-WP-1 虚高 857kg 被报关行当场发现。Damon 0706/0807/0915/0918 说了四次。
+  var _grossIsEstimated = false;
+  var grossWeight = (function () {
+    var n = Number(plan.actual_gross_weight_kg);
+    if (Number.isFinite(n) && n > 0) return n;
+    var fb = (_lineGross > 0 ? _lineGross
+            : pick(plan.gross_weight_kg, plan.gross_weight, praw.grossWeight, praw.gross_weight_kg) || "");
+    if (fb) _grossIsEstimated = true;   // 有兜底值但不是真值 —— 只许出草稿，不许出正式件
+    return fb;
+  })();
   var totalCtn = lines.reduce(function (s, l) {
     var n = Number(l.qty_ctn);
     return s + (Number.isFinite(n) ? n : 0);
@@ -265,7 +278,7 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
     ${cell("提运单号", blNo, undefined, "bl_no")}
   </div>
   <div class="grid4 row3">
-    ${cell("生产销售单位", shipper, undefined, "production_sales_unit")}
+    ${cell("生产销售单位", productionSalesUnit, undefined, "production_sales_unit")}
     ${cell("监管方式", tradeMode, undefined, "trade_mode")}
     ${cell("征免性质", levyNature, undefined, "levy_nature")}
     ${cell("许可证号", "", undefined, "license_no")}

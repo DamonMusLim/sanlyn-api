@@ -51,6 +51,20 @@ const READ_FIELDS = [
   "pickup_submitted_at","return_submitted_at",
 ];
 
+// ⚠️ 2026-08-29:本接口在免登录白名单里,"授权"仅凭 QR 上印的 (bl_no, container_no)——
+//    这两个印在柜门和提单上,不是秘密。实测可用猜到的提单号+柜号拿到整柜数据。
+//    所以 GET 只返回司机填单必需的字段。
+//    ⛔ 新增字段前先想清楚:被人拿提单号猜到,泄露了要紧吗?
+//    司机姓名/电话/证件号、车牌、装货地址、合同号 一律不许加回来。
+const GET_FIELDS = [
+  "id","bl_no","container_no","container_type","seal_no",
+  "tare_weight_kg","cargo_weight_kg",
+  "pickup_yard","return_yard","pickup_time",
+  "evidence_photos","loading_photos","pickup_photos","return_photos",
+  "seal_photo_url","weight_ticket_url","loading_note",
+  "driver_submitted_at","pickup_submitted_at","return_submitted_at",
+];
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -62,28 +76,10 @@ export default async function handler(req, res) {
       var cno = (req.query.container || req.query.container_no || "").toUpperCase();
       if (!bl || !cno) return res.status(400).json({ error: "bl and container required" });
       var r = await pool.query(
-        "SELECT " + READ_FIELDS.join(",") + " FROM container_bookings WHERE bl_no=$1 AND container_no=$2 LIMIT 1",
+        "SELECT " + GET_FIELDS.join(",") + " FROM container_bookings WHERE bl_no=$1 AND container_no=$2 LIMIT 1",
         [bl, cno]
       );
       var row = r.rows[0] || null;
-      // Enrich with customer_po + customer name from orders, plus SO (booking_no) from plan
-      if (row && row.contract_no) {
-        try {
-          var oR = await pool.query(
-            "SELECT raw->>'customerPO' AS customer_po, customer FROM orders WHERE contract_no=$1 LIMIT 1",
-            [row.contract_no]
-          );
-          if (oR.rows.length) {
-            row.customer_po = oR.rows[0].customer_po || null;
-            row.customer = oR.rows[0].customer || null;
-          }
-          var sR = await pool.query(
-            "SELECT forwarder_booking_no FROM shipping_plans WHERE bl_no=$1 LIMIT 1",
-            [bl]
-          );
-          if (sR.rows.length) row.booking_no = sR.rows[0].forwarder_booking_no || null;
-        } catch (_) {}
-      }
       return res.json({ success: true, data: row });
     }
 

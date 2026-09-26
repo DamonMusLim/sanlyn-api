@@ -14,6 +14,9 @@ button.primary{border-color:#84adff;background:#eff4ff;color:var(--blue)}button.
 button.on{border-color:#16794c;background:#e9f7ef;color:var(--ok)}button.mini{padding:5px 9px}button:disabled{opacity:.5;cursor:not-allowed}
 select,input{border:1px solid var(--line);border-radius:7px;padding:7px 9px;background:#fff;font:inherit;min-width:0}.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;background:#fff;padding:4px 9px;font-weight:700;color:#344054}
 .card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:12px}.card.bill h3{margin:0 0 8px;font-size:14px}
+.card.selected{border-color:#84adff;background:#f8fbff}.select-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;color:#344054;font-weight:800}.select-head input{width:16px;height:16px}
+.bulk-head,.bulk-bar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:12px}.bulk-bar{position:sticky;top:0;z-index:5;background:#fff;border:1px solid #bfd0f7;border-radius:8px;padding:10px 12px;box-shadow:0 6px 16px rgba(23,92,211,.08)}.bulk-bar input{width:220px}.bulk-note{color:var(--muted);font-size:12px}
+.fill-wrap{display:flex;gap:4px;align-items:center}.fill-wrap>input,.fill-wrap>select{flex:1}.fill-actions{display:flex;gap:3px;opacity:0;transition:opacity .15s}.f:hover .fill-actions,.fill-actions:focus-within{opacity:1}.fill-actions button{padding:4px 6px;font-size:11px;white-space:nowrap}
 .bill-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:5px 18px}.bill-grid div{color:#344054}.bill-grid b{color:var(--muted);font-weight:600;margin-right:5px}
 .main-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:start}.identity{min-width:0}.name-line{font-size:18px;font-weight:850;line-height:1.3;overflow-wrap:anywhere}
 .parts{display:flex;gap:9px;flex-wrap:wrap;margin-top:5px;color:#344054;font-size:14px}.part{min-width:0;overflow-wrap:anywhere}.part:empty{display:none}
@@ -45,11 +48,18 @@ details.more{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}de
     </div>
   </div>
   <div class="card bill" id="bill" style="display:none"><h3>开票信息</h3><div class="bill-grid" id="bill-body"></div></div>
+  <div id="bulk-area"></div>
   <div id="list"><div class="empty">加载中...</div></div>
 </div>
 <script>
 const apiUrl = "/api/db/supplier-catalog";
-const state = { canEdit:false, editing:false, dirty:false, rows:[], brandFilter:"", supplier:null, role:"", plateProgress:{} };
+const batchableFields = [
+  ["spec","规格"], ["unit","单位"], ["material","材质"], ["dimensions","尺寸"], ["tax_point","税点"],
+  ["moq","起订量"], ["lead_time_days","交期"], ["quote_date","报价日期"], ["quote_valid_until","报价有效期"],
+  ["status","状态"], ["brand","系列"], ["supplier_item_code","供应商货号"], ["notes","备注"]
+];
+const batchable = new Map(batchableFields);
+const state = { canEdit:false, editing:false, dirty:false, rows:[], brandFilter:"", supplier:null, role:"", plateProgress:{}, selected:new Set() };
 function token(){
   const cand = [new URLSearchParams(location.search).get("token"), localStorage.getItem("sanlyn_jwt"), localStorage.getItem("sanlyn_token"), localStorage.getItem("token")];
   for(const t of cand){ if(t && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(t)) return t; }
@@ -63,6 +73,12 @@ function incTax(ex, pt){ if(ex===""||ex==null) return null; return Math.round(Nu
 function billRow(k,v){ return v ? `<div><b>${esc(k)}</b>${esc(v)}</div>` : ""; }
 function canEdit(){ return state.editing && state.canEdit; }
 function isInternal(){ return state.role==="sanlyn" || state.role==="admin"; }
+function rowId(r){ return String(r.id || ""); }
+function visibleRows(){ return state.brandFilter ? state.rows.filter(r=>r.brand===state.brandFilter) : state.rows; }
+function fillTools(r,f){
+  if(!canEdit() || !batchable.has(f)) return "";
+  return `<span class="fill-actions"><button class="mini" type="button" data-fill-prev="${esc(rowId(r))}" data-field="${esc(f)}">↓ 同上</button><button class="mini" type="button" data-fill-down="${esc(rowId(r))}" data-field="${esc(f)}">↓↓ 填充到底</button></span>`;
+}
 function fieldInput(r,f,kind){
   if(kind==="date") return `<input type="date" data-sku="${esc(r.sku_code)}" data-field="${f}" value="${esc(r[f]||"")}">`;
   if(kind==="status") return `<select data-sku="${esc(r.sku_code)}" data-field="status"><option value="active"${r.status!=="stopped"?" selected":""}>在产</option><option value="stopped"${r.status==="stopped"?" selected":""}>停产</option></select>`;
@@ -70,7 +86,7 @@ function fieldInput(r,f,kind){
   return `<input data-sku="${esc(r.sku_code)}" data-field="${f}" value="${esc(r[f]||"")}">`;
 }
 function fld(r,f,label,kind){
-  if(canEdit()) return `<div class="f"><label>${esc(label)}</label>${fieldInput(r,f,kind)}</div>`;
+  if(canEdit()) return `<div class="f"><label>${esc(label)}</label><div class="fill-wrap">${fieldInput(r,f,kind)}${fillTools(r,f)}</div></div>`;
   let v = r[f];
   if(kind==="num") v = (v==null||v==="") ? "" : num(v);
   if(kind==="status") v = r.status==="stopped" ? "停产" : "在产";
@@ -110,7 +126,9 @@ function flavorSection(r){
 function card(r){
   const refundTag = r.plate_fee_refunded ? `<span class="badge b-refund">已退</span>` : "";
   const del = canEdit() ? `<button class="danger" type="button" data-delete="${esc(r.sku_code)}">删除</button>` : "";
-  return `<div class="card" data-sku="${esc(r.sku_code)}">
+  const id = rowId(r), selected = id && state.selected.has(id);
+  return `<div class="card${selected?" selected":""}" data-sku="${esc(r.sku_code)}" data-id="${esc(id)}">
+    ${state.canEdit?`<label class="select-head"><input type="checkbox" data-row-select="${esc(id)}"${selected?" checked":""}> 选择此行</label>`:""}
     ${mainRow(r)}
     ${flavorSection(r)}
     <div class="common">
@@ -128,11 +146,25 @@ function card(r){
       ${fld(r,"quote_valid_until","报价有效期","date")}
       ${fld(r,"notes","备注")}
       ${fld(r,"unit","单位")}
+      ${fld(r,"dimensions","尺寸")}
       ${canEdit()?fld(r,"plate_fee_refund_qty","退版费返还量","num"):""}
       ${!canEdit()&&Number(r.cumulative_qty||0)>0?`<div class="f"><label>累计下单</label><span class="val">${num(r.cumulative_qty)}${r.plate_fee_refund_qty?` / 返还线 ${num(r.plate_fee_refund_qty)}`:""}</span></div>`:""}
     </div></details>
     ${del}
   </div>`;
+}
+function pruneSelection(rows){
+  const ids = new Set(rows.map(rowId).filter(Boolean));
+  for(const id of [...state.selected]) if(!ids.has(id)) state.selected.delete(id);
+}
+function renderBulk(rows){
+  const area = document.getElementById("bulk-area");
+  if(!state.canEdit){ area.innerHTML = ""; return; }
+  const selectedCount = rows.filter(r=>state.selected.has(rowId(r))).length;
+  const allChecked = rows.length > 0 && selectedCount === rows.length;
+  const options = batchableFields.map(([f,l])=>`<option value="${esc(f)}">${esc(l)}</option>`).join("");
+  area.innerHTML = `<div class="bulk-head"><label class="select-head"><input type="checkbox" id="select-all"${allChecked?" checked":""}> 全选</label><span class="pill">已选 ${selectedCount} 行</span></div>` +
+    (selectedCount ? `<div class="bulk-bar"><strong>已选 ${selectedCount} 行</strong><select id="batch-field">${options}</select><input id="batch-value" placeholder="填入值"><button class="primary" id="batch-apply">应用到选中行</button><button id="clear-selection">取消选择</button><span class="bulk-note">价格/版费不支持批量</span></div>` : "");
 }
 function fillBrandFilter(){
   const sel = document.getElementById("brand-filter");
@@ -150,7 +182,9 @@ function render(){
   eb.textContent = state.editing ? "✕ 退出编辑" : "✎ 编辑";
   eb.className = state.editing ? "on" : "";
   document.getElementById("save-all").style.display = canEdit() ? "" : "none";
-  const rows = state.brandFilter ? state.rows.filter(r=>r.brand===state.brandFilter) : state.rows;
+  const rows = visibleRows();
+  pruneSelection(rows);
+  renderBulk(rows);
   document.getElementById("list").innerHTML = rows.length ? rows.map(card).join("") : '<div class="empty">暂无款式</div>';
 }
 async function load(){
@@ -169,6 +203,41 @@ async function load(){
       bill.style.display="block"; } else bill.style.display="none";
     fillBrandFilter(); render();
   }catch(e){ root.innerHTML = `<div class="empty error">${esc(e.message)}</div>`; }
+}
+function valueFor(id, field){
+  const cardEl = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+  const input = cardEl?.querySelector(`[data-field="${CSS.escape(field)}"]`);
+  if(input) return input.value;
+  const row = state.rows.find(r=>rowId(r)===id);
+  return row ? (row[field] == null ? "" : row[field]) : "";
+}
+async function patchBatch(ids, field, value){
+  if(state.dirty && !confirmDirty()) return null;
+  const r = await fetch(apiUrl,{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({ids:ids.map(Number),field,value})}).then(x=>x.json());
+  if(!r.success && !r.ok) throw new Error(r.error||"批量更新失败");
+  state.dirty=false; await load();
+  return r;
+}
+async function applyBatch(){
+  const rows = visibleRows().filter(r=>state.selected.has(rowId(r)));
+  const ids = rows.map(rowId).filter(Boolean), field = document.getElementById("batch-field")?.value || "", value = document.getElementById("batch-value")?.value || "";
+  if(!ids.length || !batchable.has(field)) return;
+  if(!confirm(`将把 ${ids.length} 行的『${batchable.get(field)}』改成『${value}』，确定?`)) return;
+  try{ await patchBatch(ids, field, value); }catch(e){ alert(e.message); }
+}
+async function fillPrev(id, field){
+  const rows = visibleRows(), idx = rows.findIndex(r=>rowId(r)===id);
+  if(idx <= 0 || !batchable.has(field)) return;
+  const value = valueFor(rowId(rows[idx-1]), field);
+  try{ await patchBatch([id], field, value); }catch(e){ alert(e.message); }
+}
+async function fillDown(id, field){
+  const rows = visibleRows(), idx = rows.findIndex(r=>rowId(r)===id);
+  if(idx < 0 || !batchable.has(field)) return;
+  const ids = rows.slice(idx).map(rowId).filter(Boolean), value = valueFor(id, field);
+  if(!ids.length) return;
+  if(!confirm(`将从当前行往下 ${ids.length} 行的『${batchable.get(field)}』改成『${value}』，确定?`)) return;
+  try{ await patchBatch(ids, field, value); }catch(e){ alert(e.message); }
 }
 function collectRows(){
   return [...document.querySelectorAll(".card[data-sku]")].map(cardEl=>{
@@ -286,6 +355,10 @@ document.addEventListener("click", e=>{
   if(e.target.id==="create-btn") createRow();
   if(e.target.id==="edit-btn"){ if(state.editing && !confirmDirty()) return; state.editing=!state.editing; if(!state.editing) state.dirty=false; render(); }
   if(e.target.id==="import-btn"){ const inp=document.createElement("input"); inp.type="file"; inp.accept=".xlsx"; inp.onchange=()=>{ if(inp.files[0]) importExcel(inp.files[0]); }; inp.click(); }
+  if(e.target.id==="clear-selection"){ state.selected.clear(); render(); }
+  if(e.target.id==="batch-apply") applyBatch();
+  const fillPrevId = e.target.dataset && e.target.dataset.fillPrev; if(fillPrevId) fillPrev(fillPrevId, e.target.dataset.field);
+  const fillDownId = e.target.dataset && e.target.dataset.fillDown; if(fillDownId) fillDown(fillDownId, e.target.dataset.field);
   const up = e.target.dataset && e.target.dataset.upload;
   if(up){ const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*"; inp.onchange=()=>{ if(inp.files[0]) uploadImage(up, inp.files[0], "image_url"); }; inp.click(); }
   const upPlate = e.target.dataset && e.target.dataset.uploadPlate;
@@ -299,7 +372,12 @@ document.addEventListener("click", e=>{
   const add = e.target.dataset && e.target.dataset.flavorAdd; if(add) addFlavor(add);
   if(e.target.dataset && e.target.dataset.flavorDel !== undefined) delFlavor(e.target.dataset.sku, e.target.dataset.flavorDel);
 });
-document.addEventListener("change", e=>{ if(e.target.id==="brand-filter"){ state.brandFilter=e.target.value; render(); } if(e.target.dataset && e.target.dataset.field) state.dirty=true; });
+document.addEventListener("change", e=>{
+  if(e.target.id==="brand-filter"){ state.brandFilter=e.target.value; render(); }
+  if(e.target.id==="select-all"){ const rows = visibleRows(); rows.forEach(r=>{ const id=rowId(r); if(id){ if(e.target.checked) state.selected.add(id); else state.selected.delete(id); } }); render(); }
+  const sel = e.target.dataset && e.target.dataset.rowSelect; if(sel){ if(e.target.checked) state.selected.add(sel); else state.selected.delete(sel); render(); }
+  if(e.target.dataset && e.target.dataset.field) state.dirty=true;
+});
 document.addEventListener("keydown", e=>{ const sku = e.target.dataset && e.target.dataset.flavorInput; if(sku && e.key==="Enter"){ e.preventDefault(); addFlavor(sku); } });
 document.addEventListener("input", e=>{
   if(e.target.dataset && e.target.dataset.field) state.dirty=true;

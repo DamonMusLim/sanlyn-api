@@ -49,6 +49,9 @@
 <script>
 var COLS = [
   {k:'shipment_no', t:'CY号'},   {k:'bl_no', t:'提单号'},
+  {k:'process_cn', t:'进程'},
+  {k:'business_type', t:'业务类型', render:bizCell},
+  {k:'exception', t:'异常', render:excCell},
   {k:'customer',    t:'客户'},   {k:'issuing_company', t:'出单人', render:issuerCell},
   {k:'etd', t:'ETD'},            {k:'eta', t:'ETA'},
   {k:'pol', t:'起运港', render:polCell},   {k:'pod', t:'目的港', render:podCell},
@@ -71,6 +74,20 @@ function issuerCell(v){
   for (var i=0;i<ISSUER_SHORT.length;i++){ if (t.indexOf(ISSUER_SHORT[i][0])>=0)
     return '<span title="'+esc(t)+'">'+esc(ISSUER_SHORT[i][1])+'</span>'; }
   return '<span title="'+esc(t)+'">'+esc(t.length>10 ? t.slice(0,10)+'…' : t)+'</span>';
+}
+
+var BIZ_TXT = {SE:'海运出口', SI:'海运进口', AE:'空运出口', AI:'空运进口', NM:'铁路', RT:'内贸水运', TR:'陆运', LP:'物流园报关', LCL:'自拼'};
+function bizCell(v,row){
+  var t = (v||'').trim();
+  return t ? esc(BIZ_TXT[t] || t) : '<span class="na">—</span>';
+}
+
+var EXC_TXT = {rolled:'甩柜', customs_returned:'退关', reschedule:'改配', port_congestion:'滞港', doc_issue:'单证问题', cargo_damage:'货损', other:'其他'};
+function excCell(v,row){
+  if (!row || !row.exception_flag) return '<span class="k k-linked">正常</span>';
+  var t = (row.exception_type||'').trim();
+  var txt = t ? (EXC_TXT[t] || t) : '异常';
+  return '<span class="k k-missing" title="'+esc(row.exception_note||'')+'">'+esc(txt)+'</span>';
 }
 
 // 数据质量:只标真问题。
@@ -158,6 +175,8 @@ function draw(){
   document.getElementById('body').innerHTML = html || '<tr><td colspan="'+(COLS.length+1)+'" class="na" style="padding:16px">没有符合条件的票</td></tr>';
   document.getElementById('stat').innerHTML =
     '共 <b>'+ROWS.length+'</b> 票 · 其中 <b>'+bad+'</b> 票有数据质量问题';
+  document.getElementById('stat').innerHTML +=
+    ' · 数据质量问题=字段没填全;业务异常=这票货出事了(甩柜/退关等),两者不同';
 }
 
 async function load(){
