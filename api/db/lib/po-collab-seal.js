@@ -12,7 +12,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import puppeteer from "puppeteer-core";
 import { PDFDocument } from "pdf-lib";
-import { generateToken } from "../../auth.js";
+import crypto from "node:crypto";
 import { ossUploadBuffer } from "../../oss-direct.js";
 
 const UPLOAD_ROOT = "/opt/sanlyn-uploads/po-collab";
@@ -24,6 +24,18 @@ const MM = 96 / 25.4, PAGE_W = 210 * MM, PAGE_H = 297 * MM, M_TOP = 10 * MM, M_B
 
 // 在生成好的 PDF 里找「（盖章）」那几个字的真实位置（页 + 坐标，左上为原点，0–1）。
 // ⛔ 别再按屏幕高度推算页码：多页合同分页跟屏幕排版对不上，0926 全流程测试章盖进了第 1 页表格中间
+// 调 DAS 用的短命服务令牌：只活 2 分钟（Damon 0926 GPT 复核）。
+// ⛔ 别用 generateToken —— 它把 exp 固定成 10 年，这个 admin 头一旦进了日志/报错/代理就是十年管理员令牌。
+// 格式与 api/auth.js 完全一致（HS256 + JWT_SECRET），verifyToken 照常校验 exp。
+function shortServiceToken(payload, ttlSec = 120) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("JWT_SECRET 未设置");
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+  const now = Math.floor(Date.now() / 1000);
+  const head = b64({ alg: "HS256", typ: "JWT" }) + "." + b64({ ...payload, iat: now, exp: now + ttlSec });
+  return head + "." + crypto.createHmac("sha256", secret).update(head).digest("base64url");
+}
+
 async function locateSealInPdf(pdf) {
   const tmp = path.join(os.tmpdir(), `po-seal-${process.pid}-${Date.now()}.pdf`);
   try {
@@ -106,7 +118,7 @@ async function handleSeal(req, res, pool, sheet, maybeConfirm) {
   const srcUrl = await ossUploadBuffer(`documents/po-collab/${sheet.id}/unsigned-${stamp8}.pdf`, pdf, "application/pdf");
   // ③ DAS 盖章：只盖本厂默认公章，不带签名，不盖骑缝
   // DAS 要求调用账号在 accounts 里真实存在（ACCOUNT_NOT_FOUND）；用现成服务账号 svc-agent(id 90)，操作人另记 operator
-  const svc = generateToken({ uid: 90, username: "svc-agent", role: "admin", company_code: null });
+  const svc = shortServiceToken({ uid: 90, username: "svc-agent", role: "admin", company_code: null });
   const r = await fetch(`${DAS_ORIGIN()}/api/stamp/straddle-confirm`, {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${svc}` },
     body: JSON.stringify({
