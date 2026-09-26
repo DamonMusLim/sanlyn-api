@@ -11,10 +11,18 @@
 //   POST /submit      工厂：提交回填（价格/箱规/条码/HS建议/交货日/开户行）
 //   POST /upload      工厂：传文件（产品图 / QC报告 / 自己的合同模板）
 
-import { requireAuth } from "../../auth.js";
+import { requireAuth, extractUser } from "../../auth.js";
+import { sealStatus } from "./po-collab-seal.js";
 import { APP_BASE, genRaw, rawToHash } from "./collab-shared.js";
 
 const ROLE = "factory_po";
+// 🔴 白名单（0926 部署会话复核抓到：原来是「外部角色黑名单、其余当内部放行」，
+//    logistics(9个货代)/trader/petstore/staff/disabled 都会被当成内部员工直接放行）
+const INTERNAL_ROLES = ["admin"];                 // 只有这些不查公司
+// 按账号 id 单独放行的内部人（不按角色放，免得同角色的别人跟着进来）：91 = damon（Damon 本人，role=petstore）
+const INTERNAL_UIDS = [91];
+const isInternal = (u) => INTERNAL_ROLES.includes(String(u?.role || "").toLowerCase()) || INTERNAL_UIDS.includes(Number(u?.uid));
+const FACTORY_ROLES = ["factory", "supplier"];    // 这些必须 companyCode 命中本单工厂
 const LINK_DAYS = 14; // 工厂链接有效期。⚠️ booking 那套给 7 天，结果 217 条全过期没人用，这里放宽
 
 // 工厂能改的字段白名单。⛔ 只认这些 key，别的一律丢弃
@@ -24,9 +32,9 @@ const FIELD_WL = ["qty", "pbag", "cprice", "barcode", "box_l", "box_w", "box_h",
 // ── 内部：建协同单 + 发链接 ────────────────────────────────
 async function handleSendLink(req, res, pool) {
   if (!requireAuth(req, res)) return;
-  // 0926：签发工厂链接 = 内部动作，只许 admin（否则任何登录账号都能给任意订单签链接再读单）
-  if (String(req.user?.role || "").toLowerCase() !== "admin")
-    return res.status(403).json({ ok: false, error: "仅限内部账号" });
+  // 🔴 只有内部管理员能签发工厂链接（0926 部署会话复核：原来任何登录账号——客户/工厂/货代——都能给任意订单签链接读数据）
+  if (!isInternal(req.user))
+    return res.status(403).json({ ok: false, error: "仅限内部管理员账号" });
   const { order_no, qc_required } = req.body || {};
   if (!order_no) return res.status(400).json({ ok: false, error: "order_no 必填" });
 
@@ -98,7 +106,28 @@ async function handleSendLink(req, res, pool) {
 }
 
 // ── token → sheet（工厂侧统一入口，⛔ 不接受任何内部 JWT）────
-async function resolveToken(pool, raw) {
+// ── 工厂登录闸（Damon 0926：链接之外还要登录）──────────────
+// 链接(magic token)决定看哪张单；登录决定是谁。工厂账号必须属于本单工厂（companyCode/companyCodes 命中），
+// 内部员工账号放行（预览/代办）。⛔ 只认 Authorization 头，不认 ?token=（那是协同链接的 token）
+async function factoryGate(req, res, pool, sheet) {
+  const h = req.headers.authorization || "";
+  const u = h.startsWith("Bearer ") ? extractUser(req) : null;
+  if (!u) { res.status(401).json({ ok: false, valid: false, need_login: true, error: "请先登录贵司账号" }); return false; }
+  const role = String(u.role || "").toLowerCase();
+  if (isInternal(u)) return true;
+  if (!FACTORY_ROLES.includes(role)) {
+    res.status(403).json({ ok: false, valid: false, need_login: true, forbidden: true, error: "当前登录的账号不能查看这张采购单，请用贵司工厂账号登录" });
+    return false;
+  }
+  const code = (await pool.query(`SELECT code FROM companies WHERE id=$1`, [sheet.factory_company_id])).rows[0]?.code;
+  const codes = [u.companyCode, ...(Array.isArray(u.companyCodes) ? u.companyCodes : [])].filter(Boolean);
+  if (code && codes.includes(code)) return true;
+  res.status(403).json({ ok: false, valid: false, need_login: true, forbidden: true, error: "当前登录的账号不属于本单工厂，请用贵司工厂账号登录" });
+  return false;
+}
+
+// 切换采购单（Damon 0926「可以切换看到订单」）：同一家工厂的链接可以看本厂其它协同单；⛔ 别家工厂的一律拒
+async function resolveToken(pool, raw, wantSheet) {
   if (!raw) return { err: "token 缺失" };
   const r = await pool.query(
     `SELECT meta, expires_at FROM magic_links
@@ -111,6 +140,14 @@ async function resolveToken(pool, raw) {
   const s = await pool.query(
     `SELECT * FROM collab.po_sheet WHERE id = $1 AND status <> 'void' LIMIT 1`, [meta.sheet_id]);
   if (!s.rows.length) return { err: "这张协同单已作废" };
+  const want = parseInt(wantSheet, 10);
+  if (want && want !== Number(s.rows[0].id)) {
+    const o = await pool.query(
+      `SELECT * FROM collab.po_sheet WHERE id = $1 AND factory_company_id = $2 AND status <> 'void' LIMIT 1`,
+      [want, s.rows[0].factory_company_id]);
+    if (!o.rows.length) return { err: "这张采购单不在贵司名下，或已作废" };
+    return { sheet: o.rows[0] };
+  }
   return { sheet: s.rows[0] };
 }
 
@@ -148,7 +185,7 @@ async function createReviewTask(pool, sheetId, rawToken) {
        FROM collab.po_sheet s LEFT JOIN orders o ON o.order_no = s.order_no
       WHERE s.id=$1`, [sheetId]);
   const t = r.rows[0]; if (!t) return;
-  const dno = t.customer_po || t.contract_no || `协同单#${t.id}`;
+  const dno = t.contract_no || t.customer_po || `协同单#${t.id}`;
   const dd = t.factory_delivery_date ? new Date(new Date(t.factory_delivery_date).getTime() + 8 * 3600e3).toISOString().slice(0, 10) : "?";
   // 深链 = 我方审核页（要登录），不是工厂那张免登录链接
   const deepLink = (process.env.PO_REVIEW_BASE || `${APP_BASE}/po-review?sheet=`) + t.id;
@@ -175,8 +212,9 @@ async function createReviewTask(pool, sheetId, rawToken) {
 
 // ── 工厂：打开页面 ────────────────────────────────────────
 async function handleValidate(req, res, pool) {
-  const { sheet, err } = await resolveToken(pool, req.query?.token);
+  const { sheet, err } = await resolveToken(pool, req.query?.token, req.query?.sheet);
   if (err) return res.status(200).json({ valid: false, error: err });
+  if (!(await factoryGate(req, res, pool, sheet))) return;
 
   if (!sheet.opened_at) {
     await pool.query(`UPDATE collab.po_sheet SET opened_at=NOW(), status=CASE WHEN status='sent' THEN 'opened' ELSE status END, updated_at=NOW() WHERE id=$1`, [sheet.id]);
@@ -239,7 +277,8 @@ async function handleValidate(req, res, pool) {
     ...nonEmpty({ tax_id: oi.tax_id, bank_name: oi.bank_name || b0.bank, bank_account: oi.bank_account || b0.account }),
     ...nonEmpty(sheet.factory_profile),
   };
-  const displayNo = oi.customer_po || oi.contract_no || oi.fs_no || "";
+  // 对外单号统一用我们给工厂的采购合同号（Damon 0926「单号不一致」：原来有PO号的显示PO号、没有的显示合同号，两种混着）
+  const displayNo = oi.contract_no || oi.fs_no || oi.customer_po || "";
   const orderDate = oi.order_date ? new Date(new Date(oi.order_date).getTime() + 8 * 3600e3).toISOString().slice(0, 10) : null;
 
   // 产品图 + 库存（Damon 0925「还有产品图片,还有库存表,都要显示上」）
@@ -286,6 +325,17 @@ async function handleValidate(req, res, pool) {
       factory_remarks: sheet.factory_remarks,
       factory_profile: profile,
       display_no: displayNo, order_date: orderDate,
+      has_seal: !!(await pool.query(`SELECT 1 FROM customer_stamps cs JOIN companies c ON c.code = cs.company_code
+                                      WHERE c.id=$1 AND cs.is_default AND cs.is_active LIMIT 1`, [sheet.factory_company_id])).rows.length,
+      seal: await sealStatus(pool, sheet.factory_company_id),
+      siblings: (await pool.query(
+        `SELECT s.id, s.status, s.sent_at, s.adopted_at,
+                to_char(s.factory_delivery_date, 'YYYY-MM-DD') AS delivery_date,
+                COALESCE(NULLIF(o.contract_no,''), NULLIF(o.fs_no,''), NULLIF(o.customer_po,''), '协同单#' || s.id) AS no,
+                o.total_qty
+           FROM collab.po_sheet s LEFT JOIN orders o ON o.order_no = s.order_no
+          WHERE s.factory_company_id = $1 AND s.status <> 'void'
+          ORDER BY s.sent_at DESC NULLS LAST, s.id DESC LIMIT 100`, [sheet.factory_company_id])).rows,
       return_reason: sheet.status === "returned"
         ? ((await pool.query(`SELECT detail->>'reason' AS r FROM collab.po_event WHERE sheet_id=$1 AND kind='returned'
                                ORDER BY created_at DESC LIMIT 1`, [sheet.id])).rows[0]?.r || null) : null,
@@ -333,8 +383,9 @@ function countMissing(lines, sheet) {
 
 // ── 工厂：提交 ───────────────────────────────────────────
 async function handleSubmit(req, res, pool) {
-  const { sheet, err } = await resolveToken(pool, req.body?.token);
+  const { sheet, err } = await resolveToken(pool, req.body?.token, req.body?.sheet);
   if (err) return res.status(403).json({ ok: false, error: err });
+  if (!(await factoryGate(req, res, pool, sheet))) return;
   if (sheet.status === "adopted")
     return res.status(409).json({ ok: false, error: "这单我们已经采纳过了，如需改动请联系我们" });
 
@@ -343,7 +394,7 @@ async function handleSubmit(req, res, pool) {
   if (!delivery_date && !sheet.factory_delivery_date)
     return res.status(400).json({ ok: false, error: "请先填「可交货日期」再提交", need: "delivery_date" });
   // 经办人：工厂自己填的名字；⛔ 不强制，没填就落工厂名（Damon：缺的也不影响）
-  const actorName = String(contact_name || sheet.factory_contact_name || '').slice(0, 40) || null;
+  const actorName = String(contact_name || sheet.factory_contact_name || req.user?.username || '').slice(0, 40) || null;
   let histN = 0;
   const bagSkipped = [];
   const facCode = (await pool.query(`SELECT code FROM companies WHERE id = $1`, [sheet.factory_company_id])).rows[0]?.code || null;
@@ -474,9 +525,12 @@ async function handleSubmit(req, res, pool) {
 
 // ── 工厂：传文件 ─────────────────────────────────────────
 async function handleUpload(req, res, pool) {
-  const { sheet, err } = await resolveToken(pool, req.body?.token);
+  const { sheet, err } = await resolveToken(pool, req.body?.token, req.body?.sheet);
   if (err) return res.status(403).json({ ok: false, error: err });
 
+  if (!(await factoryGate(req, res, pool, sheet))) return;
+  if (sheet.status === "adopted")
+    return res.status(409).json({ ok: false, error: "这单我们已经采纳过了，如需改动请联系我们" });
   const { filename, mime, data_base64, kind, line_id, product_id } = req.body || {};
   if (!filename || !data_base64)
     return res.status(400).json({ ok: false, error: "filename / data_base64 必填" });
@@ -513,4 +567,4 @@ async function handleUpload(req, res, pool) {
   return res.json({ ok: true, file_id: ins.rows[0].id, file_url: url, kind: k, status });
 }
 
-export { handleSendLink, handleValidate, handleSubmit, handleUpload };
+export { handleSendLink, handleValidate, handleSubmit, handleUpload, resolveToken, factoryGate, maybeConfirm };

@@ -11,9 +11,10 @@
 // ⛔ 工厂提交的东西只进 collab.*，orders / products 一个字段都不写。
 
 import { getPool, setCors } from "../db.js";
-import { handleSendLink, handleValidate, handleSubmit, handleUpload }
+import { handleSendLink, handleValidate, handleSubmit, handleUpload, resolveToken, factoryGate, maybeConfirm }
   from "./lib/po-collab-handlers.js";
-import { handleReview, handleAdopt, handleReturn, handleFile }
+import { handleContractPdf, handleSeal, handleContract, handleSealUpload } from "./lib/po-collab-seal.js";
+import { handleReview, handleAdopt, handleReturn, handleFile, handleSealApprove }
   from "./lib/po-collab-review.js";
 
 export default async function handler(req, res) {
@@ -29,11 +30,23 @@ export default async function handler(req, res) {
     if (req.method === "GET"  && sub === "validate")  return await handleValidate(req, res, pool);
     if (req.method === "POST" && sub === "submit")    return await handleSubmit(req, res, pool);
     if (req.method === "POST" && sub === "upload")    return await handleUpload(req, res, pool);
+    // 采购合同 PDF / 工厂一键盖公章 / 看回签合同 —— 都要：协同链接 + 登录（本厂工厂账号或内部员工）
+    if (["contract-pdf", "seal", "contract", "seal-upload"].includes(sub)) {
+      const src = req.method === "GET" ? req.query : (req.body || {});
+      const { sheet, err } = await resolveToken(pool, src.token, src.sheet);
+      if (err) return res.status(403).json({ ok: false, error: err });
+      if (!(await factoryGate(req, res, pool, sheet))) return;
+      if (req.method === "GET"  && sub === "contract-pdf") return await handleContractPdf(req, res, pool, sheet);
+      if (req.method === "POST" && sub === "seal")         return await handleSeal(req, res, pool, sheet, maybeConfirm);
+      if (req.method === "GET"  && sub === "contract")     return await handleContract(req, res, pool, sheet);
+      if (req.method === "POST" && sub === "seal-upload")  return await handleSealUpload(req, res, pool, sheet);
+    }
     // 我方审核采纳（要登录，handler 里 staffOnly 拦外部账号）
     if (req.method === "GET"  && sub === "review")    return await handleReview(req, res, pool);
     if (req.method === "POST" && sub === "adopt")     return await handleAdopt(req, res, pool);
     if (req.method === "POST" && sub === "return")    return await handleReturn(req, res, pool);
     if (req.method === "GET"  && sub === "file")      return await handleFile(req, res, pool);
+    if (req.method === "POST" && sub === "seal-approve") return await handleSealApprove(req, res, pool);
     return res.status(404).json({ ok: false, error: "unknown endpoint: " + sub });
   } catch (err) {
     console.error("[po-collab]", err);

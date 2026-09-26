@@ -52,6 +52,16 @@ a{color:var(--accent)}
       <div class="meta" id="remarkRow" style="margin-top:4px"></div>
     </div>
 
+    <div class="card" id="sealCard" style="display:none">
+      <div style="font-weight:600;margin-bottom:6px">工厂上传了新公章 · 待审核</div>
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <img id="sealImg" alt="" style="width:150px;height:150px;object-fit:contain;border:1px solid var(--line);border-radius:4px;background:#fff">
+        <div style="flex:1;min-width:220px"><div id="sealInfo" style="color:var(--ink2);font-size:12px;margin-bottom:8px"></div>
+          <button class="ok" id="bSealOk">✅ 通过，设为本厂默认章</button>
+          <input id="sealWhy" placeholder="驳回原因" style="margin:8px 0 4px;width:100%;padding:7px;border:1px solid var(--line);border-radius:4px;background:var(--page);color:var(--ink)">
+          <button class="no" id="bSealNo">驳回</button></div>
+      </div>
+    </div>
     <div class="card">
       <div style="font-weight:600;margin-bottom:6px">工厂更改记录</div>
       <div id="chg"></div>
@@ -121,12 +131,23 @@ function render(){
   $("cf").innerHTML=cf?'<a href="#" data-fid="'+cf.id+'">'+esc(cf.file_name)+'</a>':"未上传";
   $("remarkRow").textContent=s.remarks?("工厂备注："+s.remarks):"";
   $("chg").innerHTML=changeList();
+  var ps=D.pending_seal; $("sealCard").style.display=ps?"":"none";
+  if(ps){$("sealImg").src=ps.url;$("sealInfo").textContent="公章 #"+ps.id+" · 上传人 "+(ps.username||"")+" · "+new Date(ps.uploaded_at).toLocaleString("zh-CN",{hour12:false})+"（通过后才能用来盖章）"}
   var can=s.status==="confirmed";
   $("bAdopt").disabled=!can;
   $("bReturn").disabled=!(s.status==="confirmed"||s.status==="submitted");
   $("doneMsg").textContent=s.status==="adopted"?("✅ 已由 "+(s.adopted_by||"")+" 采纳。下一步：给客户发正式 PI")
     :s.status==="returned"?"↩ 已退回工厂，等工厂改完重交":s.status==="void"?"这张单已作废":(!can?"工厂还没回签完（要交货期 + 上传合同），暂时不能采纳":"");
 }
+function sealDecide(ok){
+  var ps=D.pending_seal; if(!ps)return; var why=$("sealWhy").value.trim();
+  if(!ok&&!why){toast("驳回请写原因",true);$("sealWhy").focus();return}
+  if(ok&&!confirm("通过后这枚章会成为该工厂的默认公章，工厂之后一键盖章都用它。确定？"))return;
+  api("/seal-approve",{method:"POST",body:JSON.stringify({stamp_id:ps.id,approve:ok,reason:why})})
+    .then(function(){toast(ok?"已通过，设为默认章":"已驳回");load()}).catch(function(e){toast(e.message,true)});
+}
+$("bSealOk").onclick=function(){sealDecide(true)};
+$("bSealNo").onclick=function(){sealDecide(false)};
 $("bAdopt").onclick=function(){
   if(!confirm("确认采纳？\n会写订单确认交期、工厂确认时间，并以工厂为准覆盖产品库的箱规/毛净重/条码。"))return;
   var b=this;b.disabled=true;b.textContent="⏳ 采纳中…";

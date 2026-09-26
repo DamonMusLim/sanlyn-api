@@ -86,13 +86,37 @@ tfoot td{background:var(--line2);font-weight:700}
 .bagtd.bag-ok{color:var(--ok)}.bagtd.bag-ok::after{color:var(--dim)}
 .bagtd.bag-short{color:var(--miss);font-weight:700}.bagtd.bag-short::after{color:var(--miss)}
 .btn.pri{background:var(--accent,#1F4B7A);border-color:var(--accent,#1F4B7A);color:#fff}
-.steps{margin-top:8px;text-align:left;font-size:11.5px;line-height:1.7;max-width:300px;margin-left:auto}
-.stp{padding:3px 0;border-top:1px dashed var(--line)}.stp em{display:block;font-style:normal;font-size:10.5px;color:var(--dim)}
+.steps{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:-4px 0 14px;text-align:left;font-size:12px;line-height:1.7}
+@media(max-width:700px){.steps{grid-template-columns:1fr}}
+.steps .stp{border:1px solid var(--line);border-radius:4px;padding:8px 12px}
+.steps .alldone{grid-column:1/-1}
+.sealrow{display:flex;align-items:center;gap:10px;margin:6px 0}
+.sealrow img{width:64px;height:64px;object-fit:contain;border:1px solid var(--line);border-radius:4px;background:#fff}
+.sealrow small{color:var(--dim);font-size:10.5px}
+.sealspot{position:relative}.sealspot img{position:absolute;width:120px;height:120px;object-fit:contain;opacity:.35}
+@media print{.sealspot img{display:none}}body.pdfmode .sealspot img{display:none}
+.stp{padding:3px 0}.stp em{display:block;font-style:normal;font-size:10.5px;color:var(--dim)}
 .stp .st{font-size:10.5px;padding:0 6px;border-radius:8px;background:var(--miss-bg,#FDF0EF);color:var(--miss)}
 .stp.done .st{background:var(--ok-bg,#EDF6F1);color:var(--ok)}
 .stp .btn{font-size:11px;padding:2px 8px;margin-left:4px}
 .steps .alldone{margin-top:4px;font-weight:700;color:var(--ok)}
 input.need{outline:2px solid var(--miss)}
+.swbar{max-width:1300px;margin:10px auto 0;padding:0 16px}
+.swtabs{display:flex;gap:6px;margin-bottom:6px}.swtabs button{font:inherit;font-size:12px;padding:4px 12px;border:1px solid var(--line);border-radius:14px;background:var(--page);color:var(--ink2);cursor:pointer}
+.swtabs button.on{background:var(--head,#2C3E50);border-color:var(--head,#2C3E50);color:#fff}.swtabs button.red{color:var(--miss)}.swtabs button.red.on{background:var(--miss);border-color:var(--miss);color:#fff}
+.swlist{display:flex;gap:8px;flex-wrap:wrap}.swchip{font-size:12px;padding:6px 10px;border:1px solid var(--line);border-radius:4px;background:var(--page);cursor:pointer;line-height:1.5}
+.swchip.todo{border-color:var(--miss);color:var(--miss)}.swchip.cur{box-shadow:0 0 0 2px var(--accent,#1F4B7A)}.swchip small{display:block;font-size:10.5px;opacity:.85}
+.loginbox{max-width:320px;margin:40px auto;background:var(--page);border:1px solid var(--line);border-radius:6px;padding:20px}
+.loginbox input{display:block;width:100%;margin:6px 0 10px;padding:8px;border:1px solid var(--line);border-radius:4px;font:inherit}
+.loginbox button{width:100%;padding:9px;border:0;border-radius:4px;background:var(--accent,#1F4B7A);color:#fff;font:inherit;font-weight:700;cursor:pointer}
+.signrow{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-top:0;font-size:11.5px;page-break-inside:avoid}
+.signrow>div{padding:10px 12px}.signrow>div+div{border-left:1px solid var(--line)}
+.sealspot{width:170px;height:130px;margin-top:6px;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px}
+body.pdfmode .sealspot{border-color:transparent;color:transparent}
+/* PDF：去掉外层留白/边框，表格按页宽排，不溢出右边（0926 实测右边被裁） */
+html.pdfmode .layout,body.pdfmode .layout{display:block!important;padding:0!important;max-width:none!important;margin:0!important}
+html.pdfmode .sheet,body.pdfmode .sheet{border:0!important;padding:0!important;width:100%!important;max-width:100%!important;box-sizing:border-box}
+body.pdfmode table.items{width:100%!important}
 .tplbox{border:1px solid var(--line);border-top:0;padding:11px 12px;background:var(--line2);
  display:grid;grid-template-columns:minmax(150px,auto) minmax(0,1fr);gap:14px;align-items:center}
 .tplbox>div{min-width:0}
@@ -164,6 +188,7 @@ input.need{outline:2px solid var(--miss)}
   <span class="tag" id="tag">加载中…</span>
 </div>
 
+<div class="swbar no-print" id="swBar" style="display:none"><div class="swtabs" id="swTabs"></div><div class="swlist" id="swList"></div></div>
 <div id="state">正在读取采购单…</div>
 <div class="layout" id="wrap" style="display:none">
   <div class="sheet" id="sheet">
@@ -171,16 +196,22 @@ input.need{outline:2px solid var(--miss)}
       <div class="t-mid"><div class="cn">采 购 合 同</div><div class="en">PURCHASE ORDER</div></div>
       <div class="t-act no-print">
         <button class="savebtn" id="bSave" disabled>💾 保存并提交</button>
-        <div class="steps no-print" id="steps">
-          <div class="stp" id="stp1"><b>①</b> 填「可交货日期」并提交 <span class="st" id="st1">未完成</span></div>
-          <div class="stp" id="stp2"><b>②</b> 上传确认后的采购合同 <span class="st" id="st2">未上传</span>
-            <button class="btn" id="bSigned" type="button">📎 上传合同</button>
-            <em>先点左上「下载采购合同 PDF」，签字或盖章后上传；PDF / 图片均可</em></div>
-        </div>
         <span class="savehint" id="saveHint"></span>
       </div>
     </div>
 
+    <div class="steps no-print" id="steps">
+          <div class="stp" id="stp1"><b>①</b> 填「可交货日期」并提交 <span class="st" id="st1">未完成</span></div>
+          <div class="stp" id="stp2"><b>②</b> 上传确认后的采购合同 <span class="st" id="st2">未上传</span>
+            <div class="sealrow" id="sealRow" style="display:none"><img id="sealImg" alt="公章"><span>贵司已登记公章<br><small>点右边按钮，盖在合同「乙方（盖章）」处</small></span></div>
+            <button class="btn" id="bSeal" type="button" style="display:none">🔏 用贵司公章确认</button>
+            <button class="btn" id="bSealUp" type="button" style="display:none">📤 上传贵司公章</button>
+            <input type="file" id="sealFile" accept="image/png,image/jpeg" style="display:none">
+            <em id="sealMsg" style="display:none"></em>
+            <button class="btn" id="bSigned" type="button">📎 上传合同</button>
+            <span id="cfLinks" style="display:none;margin-left:4px"><a href="#" id="cfView">预览</a> · <a href="#" id="cfDl">下载</a></span>
+            <em>先点左上「下载采购合同 PDF」，签字或盖章后上传；PDF / 图片均可</em></div>
+        </div>
     <div class="party">
       <div>
         <b class="t">买方开票资料 · Buyer</b>
@@ -192,7 +223,7 @@ input.need{outline:2px solid var(--miss)}
         </div>
       </div>
       <div>
-        <b class="t">卖方账户信息 · Vendor（请贵司补齐）</b>
+        <b class="t">卖方账户信息 · Vendor<span id="facNeed">（请贵司补齐）</span></b>
         <div class="kv">
           <span>公司名称：</span><i class="fill" id="facName"></i>
           <span>税号：</span><i class="fill" id="facTax"></i>
@@ -246,6 +277,10 @@ input.need{outline:2px solid var(--miss)}
       <div id="terms"></div>
     </div>
 
+    <div class="signrow">
+      <div><b>甲方（买方）</b><br>厦门巴匕进出口有限公司</div>
+      <div><b>乙方（卖方）</b><br><span id="sigFac"></span><div class="sealspot" id="sealSpot">（盖章）</div></div>
+    </div>
     <div class="tplbox no-print">
       <div>
         <b style="font-size:12px">以上为我方标准采购合同模板</b>
@@ -301,6 +336,11 @@ input.need{outline:2px solid var(--miss)}
 var BASE=(location.pathname.indexOf("/po-test/")===0)?"/po-test":"";
 var API=BASE+"/api/db/po-collab";
 var TOKEN=new URLSearchParams(location.search).get("token")||new URLSearchParams(location.search).get("c")||"";
+var SHEETQ=new URLSearchParams(location.search).get("sheet")||"";
+if(new URLSearchParams(location.search).get("pdf")==="1")document.documentElement.classList.add("pdfmode"),document.addEventListener("DOMContentLoaded",function(){document.body.classList.add("pdfmode")});
+function lsGet(k){try{return localStorage.getItem(k)||""}catch(e){return ""}}
+var FJWT=lsGet("po_factory_jwt")||lsGet("sanlyn_jwt");
+function AH(h){h=h||{};if(FJWT)h.Authorization="Bearer "+FJWT;return h}
 var D=null, dirty=false, uploadCtx=null;
 
 function $(id){return document.getElementById(id)}
@@ -324,9 +364,10 @@ function p4(v){var n=num(v);return n?n.toFixed(4):""}
 // ── 载入 ──────────────────────────────────────
 function load(){
   if(!TOKEN){$("state").innerHTML="<b>链接缺少 token</b><br>请用我们发给您的完整链接打开。";return}
-  fetch(API+"/validate?token="+encodeURIComponent(TOKEN))
+  fetch(API+"/validate?token="+encodeURIComponent(TOKEN)+(SHEETQ?"&sheet="+encodeURIComponent(SHEETQ):""),{headers:AH()})
     .then(function(r){return r.json()})
     .then(function(j){
+      if(j.need_login){showLogin(j.forbidden?j.error:"");return}
       if(!j.valid){$("state").innerHTML="<b>"+esc(j.error||"链接无效")+"</b>";return}
       D=j; $("state").style.display="none"; $("wrap").style.display="";
       render();
@@ -343,7 +384,8 @@ function render(){
   var s=D.sheet;
   var NO=s.display_no||"—";   // 对外单号：PO号→合同号；⛔ 不显示 order_no（开头是客户编号）
   document.title="采购单 "+NO+" · 请确认";
-  $("tag").textContent="协同 · "+s.factory_name+" · 免登录";
+  var who="";try{var pl=JSON.parse(atob((FJWT.split(".")[1]||"").replace(/-/g,"+").replace(/_/g,"/")));who=pl.username||""}catch(e){}
+  $("tag").innerHTML="协同 · "+esc(s.factory_name)+(who?" · 已登录 "+esc(who)+' · <a href="#" id="bLogout">退出</a>':"");
   $("orderNo").textContent=NO;
   $("orderDate").textContent=s.order_date||"—";
   $("buyerName").textContent="厦门巴匕进出口有限公司";
@@ -351,13 +393,18 @@ function render(){
   $("buyerBank").textContent="中国银行厦门文灶支行";
   $("buyerAcct").textContent="431279918006";
   $("facName").textContent=s.factory_name||"";
+  var fp=s.factory_profile||{}; $("facNeed").style.display=(fp.tax_id&&fp.bank_name&&fp.bank_account)?"none":"";
   $("facTax").textContent=(s.factory_profile&&s.factory_profile.tax_id)||"";
   $("facBank").textContent=(s.factory_profile&&s.factory_profile.bank_name)||"";
   $("facAcct").textContent=(s.factory_profile&&s.factory_profile.bank_account)||"";
   if(s.factory_delivery_date)$("dlvDate").value=String(s.factory_delivery_date).slice(0,10);
   $("remarks").textContent=s.factory_remarks||"";
 
-  initColLabels(); renderLines(); renderTerms(); recount(); paintSteps();
+  initColLabels(); renderLines(); renderTerms(); recount(); paintSteps(); renderSwitch();
+  $("sigFac").textContent=s.factory_name||"";
+  // 屏幕上把本厂公章淡淡地放在盖章位预览；打印/PDF 不出（真章只由 DAS 盖）
+  var su=(s.seal||{}).url, sp=$("sealSpot"), pi=sp.querySelector("img"); if(pi)pi.remove();
+  if(su){var im=document.createElement("img");im.src=su;im.alt="";sp.appendChild(im);sp.title="盖章位置预览（打印时不显示）"}
   if(s.return_reason&&!$("retBanner")){var rb=document.createElement("div");rb.id="retBanner";
     rb.style.cssText="margin:0 0 12px;padding:10px 14px;border:2px solid var(--miss);border-radius:4px;background:var(--miss-bg,#FDF0EF);color:var(--miss);font-weight:600";
     rb.innerHTML="↩ 我们退回了这张采购单，请按下面修改后重新「保存并提交」：<div style='font-weight:400;color:var(--ink);margin-top:4px;white-space:pre-wrap'>"+esc(s.return_reason)+"</div>";
@@ -504,8 +551,8 @@ function recount(){
   $("gate").className="gate"+(gate?"":" ok");
   $("gate").innerHTML=gate? "还差 <b>"+gate+"</b> 项（可以先提交，之后再补；条码/图片/HS 不算）"
                           : "✅ 必填都齐了，点右上角「保存并提交」";
-  $("bSave").disabled=false;   // ⛔ 不再拦：缺项只提醒
-  $("bSave").className="savebtn on";
+  $("bSave").disabled=!!window.READONLY;   // ⛔ 缺项不拦；只读的历史单才灰
+  $("bSave").className="savebtn"+(window.READONLY?"":" on");
   $("saveHint").textContent=gate? ("还差 "+gate+" 项，可以先提交，之后再补") : (dirty?"有改动未提交":"");
   $("saveHint").style.color=gate?"var(--miss)":"var(--warn)";
 
@@ -541,6 +588,7 @@ var PLACEHOLDER={"缺条码":1,"没有可空着":1,"缺":1,"请建议":1,"（请
 // 单元格默认【只读】，点一下才进编辑态（蓝框+黄底，明确知道自己在改哪一格），
 // 失焦自动退回只读。防手滑改数、防滚动误触。
 function enterEdit(td){
+  if(window.READONLY)return;   // 已采纳的历史单只读
   if(!td||td.isContentEditable)return;
   td.contentEditable="true";
   td.classList.add("editing");
@@ -748,16 +796,70 @@ $("bAddRow").onclick=function(){
 
 // 服务端 PDF（puppeteer）还没接，先用浏览器打印出 PDF —— 效果一样，右栏会自动隐藏。
 // TODO: 接 _html-to-pdf.js 出服务端 PDF，这样能直接当附件发邮件。
-$("bPdf").onclick=function(){
-  toast("即将打开打印窗口，选「另存为 PDF」即可");
-  setTimeout(function(){window.print()},700);
-};
+$("bPdf").onclick=function(){toast("正在生成采购合同 PDF…");openPdf("/contract-pdf"+sq())};
 $("bQc").onclick=function(){
   var qc=(D.download_pack||[]).filter(function(a){return a.kind==="qc_standard"});
   if(!qc.length){toast("这单还没有挂 QC 要求文件",true);return}
   qc.forEach(function(a){window.open(BASE+a.file_url,"_blank")});
 };
 
+var SW_ST={sent:"待确认",opened:"待确认",submitted:"已提交·待传合同",confirmed:"已回签·待我方审核",returned:"被退回·请修改",adopted:"已采纳"};
+var SW_TODO={sent:1,opened:1,submitted:1,returned:1};
+var SW_ST={sent:"待确认",opened:"待确认",submitted:"待传合同",returned:"被退回·请修改",confirmed:"已确认·待我方审核",adopted:"已采纳"};
+var swTab=null;
+function daysLeft(x){ if(!x.sent_at)return null; var dl=new Date(x.sent_at).getTime()+7*864e5; return (dl-Date.now())/864e5 }   // 发出后 7 天截止
+function renderSwitch(){
+  var list=D.siblings||(D.sheet&&D.sheet.siblings)||[];
+  var todo=list.filter(function(x){return SW_TODO[x.status]}), done=list.filter(function(x){return !SW_TODO[x.status]});
+  if(!swTab)swTab=todo.length?"todo":"all";
+  var tabs=[["todo","待确认",todo.length],["done","已确认",done.length],["all","全部",list.length]];
+  $("swTabs").innerHTML=tabs.map(function(t){return '<button data-tab="'+t[0]+'" class="'+(t[0]===swTab?"on ":"")+(t[0]==="todo"&&t[2]?"red":"")+'">'+t[1]+' '+t[2]+'</button>'}).join("");
+  var show=swTab==="todo"?todo:swTab==="done"?done:list;
+  $("swList").innerHTML=show.map(function(x){
+    var isTodo=!!SW_TODO[x.status], d=isTodo?daysLeft(x):null;
+    var dtxt=d==null?"":(d>=1?"还剩 "+Math.floor(d)+" 天":d>=0?"今天截止":"已超期 "+Math.ceil(-d)+" 天");
+    return '<div class="swchip'+(isTodo?" todo":"")+(String(x.id)===String(D.sheet.id)?" cur":"")+'" data-sheet="'+x.id+'">'
+      +'<b>'+esc(x.no)+'</b>'+(x.total_qty?(' · '+x.total_qty+'箱'):'')
+      +'<small>'+esc(SW_ST[x.status]||x.status)+(dtxt?(' · '+dtxt):'')+(x.delivery_date?(' · 交货 '+x.delivery_date):'')+'</small></div>'}).join("")
+    ||'<span style="color:var(--dim);font-size:12px">没有</span>';
+  $("swBar").style.display=list.length?"":"none";
+  window.READONLY=(D.sheet.status==="adopted");
+  if(window.READONLY){
+    ["bSave","bImp","bAddRow","bSigned"].forEach(function(i){var b=$(i);if(b){b.disabled=true;b.classList.remove("on")}});
+    $("saveHint").textContent="这张已采纳，是历史记录，只能查看";$("saveHint").style.color="var(--dim)";
+    if(!$("roBanner")){var rb=document.createElement("div");rb.id="roBanner";
+      rb.style.cssText="margin:0 0 12px;padding:8px 14px;border:1px solid var(--line);border-radius:4px;background:var(--line2);color:var(--ink2)";
+      rb.textContent="已采纳 · 历史记录（只读）";var sh=document.querySelector(".sheet");if(sh)sh.insertBefore(rb,sh.firstChild)}
+  }
+}
+document.addEventListener("click",function(e){
+  if(e.target.id==="bLogout"){e.preventDefault();try{localStorage.removeItem("po_factory_jwt")}catch(x){};FJWT="";showLogin();return}
+  var t=e.target.closest("#swTabs button[data-tab]"); if(t){swTab=t.getAttribute("data-tab");renderSwitch();return}
+  var c=e.target.closest(".swchip[data-sheet]"); if(!c||String(c.getAttribute("data-sheet"))===String(D.sheet.id))return;
+  if(dirty&&!confirm("这张有改动还没提交，切换会丢掉。确定切换？"))return;
+  var q=new URLSearchParams(location.search); q.set("sheet",c.getAttribute("data-sheet")); location.search=q.toString();
+});
+// ── 登录（用贵司账号）──
+function showLogin(msg){
+  $("wrap").style.display="none"; $("swBar").style.display="none";
+  $("state").style.display="";
+  $("state").innerHTML='<div class="loginbox"><b style="font-size:15px">请登录贵司账号查看采购单</b>'
+    +(msg?'<div style="font-size:12px;color:var(--miss);margin-top:6px">'+esc(msg)+'</div>':'')
+    +'<div style="font-size:11.5px;color:var(--dim);margin-top:4px">账号和密码请向厦门巴匕索取</div>'
+    +'<input id="lgU" placeholder="账号" autocomplete="username"><input id="lgP" type="password" placeholder="密码" autocomplete="current-password">'
+    +'<button id="lgBtn">登录</button><div id="lgErr" style="color:var(--miss);font-size:12px;margin-top:8px"></div></div>';
+  var go=function(){
+    var u=$("lgU").value.trim(), pw=$("lgP").value; if(!u||!pw){$("lgErr").textContent="请填账号和密码";return}
+    $("lgBtn").disabled=true;
+    fetch(BASE+"/api/db/auth-login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:pw})})
+      .then(function(r){return r.json()}).then(function(j){
+        if(!j.token){$("lgErr").textContent=j.error||"登录失败";$("lgBtn").disabled=false;return}
+        try{localStorage.setItem("po_factory_jwt",j.token)}catch(e){}
+        FJWT=j.token; $("state").innerHTML="正在读取采购单…"; load();
+      }).catch(function(e){$("lgErr").textContent="登录失败："+e.message;$("lgBtn").disabled=false});
+  };
+  $("lgBtn").onclick=go; $("lgP").onkeydown=function(e){if(e.key==="Enter")go()};
+}
 $("bSigned").onclick=function(){uploadCtx={kind:"signed_back"};$("fileInput").accept=".pdf,image/*";$("fileInput").click()};
 $("dlvDate").addEventListener("change",function(){this.classList.remove("need")});
 function paintSteps(){
@@ -765,10 +867,57 @@ function paintSteps(){
   $("stp1").classList.toggle("done",ok1); $("st1").textContent=ok1?("✓ 交货 "+String(s.factory_delivery_date).slice(0,10)):"未完成";
   $("stp2").classList.toggle("done",!!cf); $("st2").textContent=cf?("✓ "+cf.file_name):"未上传";
   $("bSigned").textContent=cf?"重新上传":"📎 上传合同";
+  var sl=(s.seal||{}).status||(s.has_seal?"active":"none");
+  $("bSeal").style.display=(sl==="active"&&!window.READONLY)?"":"none";
+  $("sealRow").style.display=(sl==="active"&&(s.seal||{}).url)?"flex":"none"; if((s.seal||{}).url)$("sealImg").src=s.seal.url;
+  $("bSealUp").style.display=((sl==="none"||sl==="rejected")&&!window.READONLY)?"":"none";
+  $("sealMsg").style.display=(sl==="pending"||sl==="rejected")?"block":"none";
+  $("sealMsg").style.color=sl==="rejected"?"var(--miss)":"var(--warn)";
+  $("sealMsg").textContent=sl==="pending"?"公章已上传，我方审核通过后即可一键盖章确认（也可先用「上传合同」）"
+    :sl==="rejected"?("公章未通过审核："+((s.seal||{}).reason||"")+"，请重新上传"):"";
+  $("cfLinks").style.display=cf?"":"none";
   var old=$("steps").querySelector(".alldone"); if(old)old.remove();
   if(s.status==="confirmed"||(ok1&&cf)){var d=document.createElement("div");d.className="alldone";
     d.textContent="✅ 已确认，谢谢！我们接着安排下一步。";$("steps").appendChild(d)}
 }
+function openPdf(path,dl){
+  var w=dl?null:window.open("","_blank");
+  fetch(API+path,{headers:AH()}).then(function(r){if(!r.ok)return r.json().then(function(j){throw new Error(j.error||("HTTP "+r.status))});return r.blob()})
+    .then(function(b){var u=URL.createObjectURL(b);
+      if(dl){var a=document.createElement("a");a.href=u;a.download=(D.sheet.display_no||"PO")+"-采购合同.pdf";document.body.appendChild(a);a.click();a.remove()}
+      else w.location=u})
+    .catch(function(e){if(w)w.close();toast(e.message,true)});
+}
+function sq(){return "?token="+encodeURIComponent(TOKEN)+"&sheet="+encodeURIComponent(D.sheet.id)}
+$("cfView").onclick=function(e){e.preventDefault();openPdf("/contract"+sq())};
+$("cfDl").onclick=function(e){e.preventDefault();openPdf("/contract"+sq()+"&dl=1",true)};
+$("bSeal").onclick=function(){
+  if(!(D.sheet.submitted_at&&D.sheet.factory_delivery_date)){toast("请先填「可交货日期」并点「保存并提交」，再盖章确认",true);return}
+  if(!confirm("用贵司在我方系统登记的公章，盖在本采购合同「乙方（盖章）」处，作为贵司的确认。确定？"))return;
+  var b=this;b.disabled=true;b.textContent="⏳ 盖章中…（约20秒）";
+  fetch(API+"/seal",{method:"POST",headers:AH({"Content-Type":"application/json"}),body:JSON.stringify({token:TOKEN,sheet:D.sheet.id})})
+    .then(function(r){return r.json()}).then(function(j){
+      b.disabled=false;b.textContent="🔏 用贵司公章确认";
+      if(!j.ok){toast(j.error||"盖章失败",true);return}
+      D.sheet.contract_file={file_name:"采购合同（盖章）.pdf"}; if(j.status)D.sheet.status=j.status; paintSteps();
+      toast("已盖章确认，可以预览或下载");
+    }).catch(function(e){b.disabled=false;b.textContent="🔏 用贵司公章确认";toast("盖章失败："+e.message,true)});
+};
+$("bSealUp").onclick=function(){$("sealFile").value="";$("sealFile").click()};
+$("sealFile").onchange=function(){
+  var f=this.files&&this.files[0]; if(!f)return;
+  if(f.size>2*1024*1024){toast("公章图片不能超过 2MB",true);return}
+  var fr=new FileReader();
+  fr.onload=function(){
+    fetch(API+"/seal-upload",{method:"POST",headers:AH({"Content-Type":"application/json"}),
+      body:JSON.stringify({token:TOKEN,sheet:D.sheet.id,filename:f.name,mime:f.type,data_base64:String(fr.result).split(",")[1]})})
+      .then(function(r){return r.json()}).then(function(j){
+        if(!j.ok){toast(j.error||"上传失败",true);return}
+        D.sheet.seal={status:"pending"}; paintSteps(); toast("公章已上传，等我方审核");
+      }).catch(function(e){toast("上传失败："+e.message,true)});
+  };
+  fr.readAsDataURL(f);
+};
 $("bTpl").onclick=function(){uploadCtx={kind:"their_contract"};$("fileInput").accept=".pdf,.doc,.docx,image/*";$("fileInput").click()};
 
 $("fileInput").onchange=function(){
@@ -776,8 +925,8 @@ $("fileInput").onchange=function(){
   if(f.size>8*1024*1024){toast("文件不能超过 8MB",true);this.value="";return}
   var fr=new FileReader();
   fr.onload=function(){
-    fetch(API+"/upload",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({token:TOKEN,filename:f.name,mime:f.type,
+    fetch(API+"/upload",{method:"POST",headers:AH({"Content-Type":"application/json"}),
+      body:JSON.stringify({token:TOKEN,sheet:D.sheet.id,filename:f.name,mime:f.type,
         data_base64:String(fr.result).split(",")[1],kind:uploadCtx.kind,
         line_id:(uploadCtx.line_id&&String(uploadCtx.line_id).indexOf("new")<0)?uploadCtx.line_id:null})})
       .then(function(r){return r.json()}).then(function(j){
@@ -815,8 +964,8 @@ $("bSave").onclick=function(){
     if(parts.length===3&&parts[0]&&parts[1]&&parts[2]){o.box_l=parts[0];o.box_w=parts[1];o.box_h=parts[2]}
     lines.push(o);
   });
-  fetch(API+"/submit",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({token:TOKEN,lines:lines,
+  fetch(API+"/submit",{method:"POST",headers:AH({"Content-Type":"application/json"}),
+    body:JSON.stringify({token:TOKEN,sheet:D.sheet.id,lines:lines,
       delivery_date:$("dlvDate").value||null,
       remarks:$("remarks").textContent.trim(),
       factory_profile:{bank_name:$("facBank").textContent.trim(),

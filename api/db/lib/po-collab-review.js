@@ -14,16 +14,16 @@ const UPLOAD_ROOT = "/opt/sanlyn-uploads/po-collab";
 
 const ROLE = "factory_po";
 const LINK_DAYS = 14;
-const OUTSIDE_ROLES = ["customer", "factory", "supplier", "portal", "external", "forwarder", "driver"];
+// 🔴 白名单：只有内部管理员能审核/采纳/退回（原黑名单会放行 logistics/trader/petstore/staff/disabled）
 const INTERNAL_ROLES = ["admin"];
+const INTERNAL_UIDS = [91];   // damon（Damon 本人，role=petstore），按账号 id 放行
 // 工厂字段 → products 列（⛔ hs_code 不在里面）
 const PRODUCT_MAP = { box_l: "box_l", box_w: "box_w", box_h: "box_h", gw_ctn: "gross_weight", nw_ctn: "net_weight", barcode: "barcode" };
 
 function staffOnly(req, res) {
   if (!requireAuth(req, res)) return false;
-  // 0926 改白名单：accounts.role 还有 logistics/trader/petstore/staff/disabled，黑名单会漏放
-  if (!INTERNAL_ROLES.includes(String(req.user?.role || "").toLowerCase())) {
-    res.status(403).json({ ok: false, error: "仅限内部账号" });
+  if (!INTERNAL_ROLES.includes(String(req.user?.role || "").toLowerCase()) && !INTERNAL_UIDS.includes(Number(req.user?.uid))) {
+    res.status(403).json({ ok: false, error: "仅限内部管理员账号" });
     return false;
   }
   return true;
@@ -67,18 +67,23 @@ async function handleReview(req, res, pool) {
     `SELECT kind, actor_side, COALESCE(NULLIF(actor_name,''), actor_org) AS who, detail, created_at
        FROM collab.po_event WHERE sheet_id = $1 ORDER BY created_at DESC LIMIT 50`, [id]);
   const task = await pool.query(`SELECT id, status, progress_label FROM tasks WHERE id = $1`, [`po-confirm-${id}`]);
+  const pendingSeal = (await pool.query(
+    `SELECT cs.id, cs.url, cs.username, cs.uploaded_at FROM customer_stamps cs JOIN companies c ON c.code = cs.company_code
+      WHERE c.id = $1 AND NOT cs.is_active AND cs.name LIKE '%待审核%' ORDER BY cs.uploaded_at DESC LIMIT 1`,
+    [s.factory_company_id])).rows[0] || null;
 
   return res.json({
     ok: true,
     sheet: {
       id: s.id, order_no: s.order_no, status: s.status, factory_name: s.factory_name,
-      display_no: s.customer_po || s.contract_no || s.fs_no || "",
+      display_no: s.contract_no || s.fs_no || s.customer_po || "",
       customer: s.customer, delivery_date: ymd(s.factory_delivery_date), remarks: s.factory_remarks,
       submitted_at: s.submitted_at, adopted_at: s.adopted_at, adopted_by: s.adopted_by,
       order_now: { confirmed_delivery: ymd(s.confirmed_delivery), factory_confirmed_at: s.factory_confirmed_at,
                    factory_confirmed_by: s.factory_confirmed_by, confirmed_qty: s.confirmed_qty },
     },
     lines: lines.rows, history: hist.rows, files: files.rows, events: evts.rows, task: task.rows[0] || null,
+    pending_seal: pendingSeal,
   });
 }
 
@@ -201,7 +206,7 @@ async function handleReturn(req, res, pool) {
   // 给工厂的通知 → 发件台草稿（⛔ AI/系统不发，Damon 审核后发）；抄送由 companies.cc_emails 触发器补
   let draftId = null;
   if (s.factory_email) {
-    const dno = s.customer_po || s.contract_no || s.fs_no || `协同单#${id}`;
+    const dno = s.contract_no || s.fs_no || s.customer_po || `协同单#${id}`;
     const esc = (t) => String(t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
     const d = await pool.query(
       `INSERT INTO mail_outbox (tpl_key, sender_key, entity_type, entity_id, prepared_by, to_emails, cc_emails, subject, body_html, status)
@@ -234,4 +239,33 @@ async function handleFile(req, res, pool) {
   } catch { return res.status(404).json({ ok: false, error: "文件不在服务器上" }); }
 }
 
-export { handleReview, handleAdopt, handleReturn, handleFile };
+// ── POST /seal-approve {stamp_id, approve, reason} —— 审核工厂上传的公章（仅内部管理员）
+async function handleSealApprove(req, res, pool) {
+  if (!staffOnly(req, res)) return;
+  const id = parseInt(req.body?.stamp_id, 10);
+  const approve = req.body?.approve === true;
+  const reason = String(req.body?.reason || "").trim().slice(0, 200);
+  const st = (await pool.query(`SELECT * FROM customer_stamps WHERE id=$1`, [id])).rows[0];
+  if (!st || st.is_active || !/待审核/.test(st.name || "")) return res.status(409).json({ ok: false, error: "这枚公章不在待审核状态" });
+  if (!approve && !reason) return res.status(400).json({ ok: false, error: "驳回请写原因" });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    if (approve) {
+      // 设为本厂默认章：同公司其它默认章让位（只改 is_default，不删不停用，可回退）
+      await client.query(`UPDATE customer_stamps SET is_default=false WHERE company_code=$1 AND id<>$2 AND is_default`, [st.company_code, id]);
+      await client.query(`UPDATE customer_stamps SET is_active=true, is_default=true,
+                            name=replace(name,'待审核','已审核·'||$2) WHERE id=$1`, [id, who(req)]);
+    } else {
+      await client.query(`UPDATE customer_stamps SET name=replace(name,'待审核','已驳回：'||$2) WHERE id=$1`, [id, reason]);
+    }
+    await client.query(
+      `UPDATE tasks SET status=$2, closed_at=NOW(), result_summary=$3, updated_at=NOW() WHERE id=$1`,
+      [`seal-approve-${id}`, approve ? "done" : "done", approve ? `已通过，设为默认章（${who(req)}）` : `已驳回：${reason}（${who(req)}）`]);
+    await client.query("COMMIT");
+  } catch (e) { await client.query("ROLLBACK"); return res.status(500).json({ ok: false, error: e.message }); }
+  finally { client.release(); }
+  return res.json({ ok: true, approved: approve });
+}
+
+export { handleReview, handleAdopt, handleReturn, handleFile, handleSealApprove };
