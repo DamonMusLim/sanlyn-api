@@ -94,6 +94,7 @@ tfoot td{background:var(--line2);font-weight:700}
 .sealpic{flex:none;width:72px;height:72px;border:1px solid var(--line);border-radius:4px;background:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:10.5px;color:var(--dim);line-height:1.4}
 .sealpic img{width:100%;height:100%;object-fit:contain}
 .sealtxt{flex:1;min-width:0}.sealtxt em{font-size:10.5px}.sealtxt .sealflow{color:var(--dim)}
+.sealinner{margin:4px 0 6px;padding:6px 8px;border-radius:4px;background:#FFF6E0;border:1px solid #E8C66A;color:#7A5A00;font-size:11.5px;line-height:1.5}
 .sealbtns{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}.sealbtns .btn{margin-left:0}
 .orline{display:flex;align-items:center;gap:8px;color:var(--dim);font-size:10.5px;margin:6px 0}
 .orline::before,.orline::after{content:"";flex:1;border-top:1px dashed var(--line)}
@@ -927,7 +928,10 @@ function paintSeal(se){
   $("bSealUp").textContent=st==="active"?"🔄 更换公章":rej?"📤 重新上传公章":"📤 上传公章";
   // 我方账号只能看：盖章/换章必须工厂本人（后端也拦），按钮置灰并说明，免得点了像坏了
   var inner=!window.IS_FACTORY; $("bSeal").disabled=inner; $("bSealUp").disabled=inner;
-  if(inner)$("sealDesc").textContent+="（你现在是我方账号，只能查看；盖章、换章要工厂账号登录）";
+  var tip=inner?"你现在登录的是我方账号，只能查看。盖章、换章要工厂账号登录（右上角「退出」→ 用工厂账号登录）":"";
+  $("bSeal").title=tip; $("bSealUp").title=tip;
+  var nb=$("sealInner"); if(!nb){nb=document.createElement("div");nb.id="sealInner";nb.className="sealinner";$("sealDesc").parentNode.insertBefore(nb,$("sealDesc"))}
+  nb.textContent="🔒 "+tip; nb.style.display=inner?"block":"none";
 }
 $("bGoDate").onclick=function(){var d=$("dlvDate");d.scrollIntoView({block:"center"});d.focus();try{d.showPicker&&d.showPicker()}catch(e){}};
 function openPdf(path,dl){
