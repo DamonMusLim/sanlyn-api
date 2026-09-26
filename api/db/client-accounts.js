@@ -16,6 +16,7 @@ const PROFILE_COMPANY_COLUMNS = ["company_code", "tenant_id"];
 const PROFILE_ROLE_COLUMNS = ["role_key", "role_code", "role", "role_id"];
 const MENU_ROLE_COLUMNS = ["role_key", "role_code", "role", "role_id"];
 const INVITE_BASE_URL = "https://client.sanlyn.cn/set-password.html";
+const INVITE_HOST_RE = /^[a-z0-9-]+\.sanlyn\.cn$/i;
 const TTL_HOURS = 24;
 
 function sha256(raw) {
@@ -32,6 +33,11 @@ function clean(value, max = 200) {
 
 function validEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function inviteBaseUrl(req) {
+  const host = String((req && req.headers && req.headers.host) || "").replace(/:\d+$/, "");
+  return INVITE_HOST_RE.test(host) ? `https://${host}/set-password/` : INVITE_BASE_URL;
 }
 
 function parseRaw(raw) {
@@ -373,7 +379,7 @@ async function createAccount(pool, req, actor, body) {
     );
     const account = created.rows[0];
     await upsertProfile(db, account, actor.companyCode, role);
-    const invite = await createInviteLink(db, actor, account);
+    const invite = await createInviteLink(db, req, actor, account);
     await db.query("COMMIT");
     writeAudit(pool, req, {
       action: "client_account.create",
@@ -391,7 +397,7 @@ async function createAccount(pool, req, actor, body) {
   }
 }
 
-async function createInviteLink(db, actor, account) {
+async function createInviteLink(db, req, actor, account) {
   const token = crypto.randomBytes(24).toString("hex");
   const tokenHash = sha256(token);
   const expiresAt = new Date(Date.now() + TTL_HOURS * 3600 * 1000).toISOString();
@@ -409,7 +415,7 @@ async function createInviteLink(db, actor, account) {
      VALUES ($1, 'customer_set_password', $2::jsonb, $3, '[]'::jsonb, NOW(), $4)`,
     [tokenHash, JSON.stringify({ account_id: String(account.id), email: account.email || account.username, company_code: actor.companyCode }), expiresAt, actor.username || actor.account.username || ""]
   );
-  return { url: `${INVITE_BASE_URL}?token=${token}`, expiresAt };
+  return { url: `${inviteBaseUrl(req)}?token=${token}`, expiresAt };
 }
 
 async function setRole(pool, req, actor, body) {
@@ -449,7 +455,7 @@ async function inviteLink(pool, req, actor, body) {
   if (!account) return { status: 404, json: { error: "account_not_found" } };
   const db = await pool.connect();
   try {
-    const invite = await createInviteLink(db, actor, account);
+    const invite = await createInviteLink(db, req, actor, account);
     writeAudit(pool, req, { action: "client_account.invite_link", entity_type: "account", entity_id: account.id, after: { email: account.email || account.username } }).catch(() => {});
     return { status: 200, json: { ok: true, invite_link: invite.url, expires_at: invite.expiresAt } };
   } finally {
