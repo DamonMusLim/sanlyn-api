@@ -38,7 +38,7 @@ async function detail(code) {
               FROM public.gdc_product_supplier_terms p
              WHERE p.product_code = s.product_code)                       AS supplier_terms
       FROM public.petstore_skus s
-      LEFT JOIN public.petstore_product_status_current c ON c.product_code = s.product_code
+      LEFT JOIN public.petstore_product_status_current c ON c.product_code = s.product_code AND c.store_code = '63350001'  -- 0926 泉州(63350002)入表后必须限定金枋,否则一品两行
       LEFT JOIN public.petstore_sku_supp sup ON sup.product_code = s.product_code
      WHERE s.product_code = $1
      LIMIT 1`;
