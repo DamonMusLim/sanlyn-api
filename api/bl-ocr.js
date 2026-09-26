@@ -1,6 +1,13 @@
 // /api/bl-ocr.js — MiniMax M3 提单/报关单 OCR 提取
 // POST { image_base64: "...", media_type: "image/jpeg", doc_type: "bl"|"customs" }
-// Returns { success, fields, raw_text, model }
+// Returns { success, fields, raw_text, model, bl_date_recorded }
+// 0926：读到提单时顺手把提单日（装船日）按提单号记进 bl_dates —— 应收尾款到期日从它起算（Damon「提单日让录提单流程自动带上」）
+
+import { getPool } from "./db.js";
+import { extractUser } from "./auth.js";
+import { recordBlDate } from "./db/lib/bl-dates.js";
+// 只有内部员工识别的提单才记提单日（这个接口本身没验登录；⛔ 不能让任何人都能写到期日的起算点）
+const BL_DATE_WRITER_ROLES = ["admin", "staff"];
 
 const ALLOWED = [
   "https://damon.sanlyn.cn", "https://ai.sanlyn.cn",
@@ -24,6 +31,7 @@ const BL_PROMPT = `这是一张提单（Bill of Lading / Sea Waybill）图片。
   "pol": "起运港英文，如 XIAMEN, CHINA",
   "pod": "目的港英文，如 PORT KLANG, MALAYSIA",
   "etd": "装船日期 YYYY-MM-DD，On Board Date",
+  "bl_date": "提单日 YYYY-MM-DD：Shipped on Board Date / Laden on Board 日期；没有就填 Date of Issue（签发日）",
   "eta": "预计到港 YYYY-MM-DD，如有",
   "container_no": "柜号，多柜用逗号分隔，如 MSDU1234567,MSDU7654321",
   "seal_no": "封签号，多个用逗号分隔",
@@ -118,10 +126,23 @@ export default async function handler(req, res) {
       fields = { _parse_error: true, raw: rawText.slice(0, 500) };
     }
 
+    // 提单日 → bl_dates（失败不影响识别结果返回）
+    let blDateRecorded = null;
+    if (doc_type !== "customs" && fields && fields.bl_no && (fields.bl_date || fields.etd)) {
+      const u = extractUser(req);
+      if (u && BL_DATE_WRITER_ROLES.includes(String(u.role || "").toLowerCase())) {
+        blDateRecorded = await recordBlDate(getPool(), {
+          bl_no: fields.bl_no, bl_date: fields.bl_date || fields.etd, source: "ocr",
+          note: fields.bl_date ? "bl-ocr: bl_date" : "bl-ocr: etd(On Board Date)", by: u.username || String(u.uid || ""),
+        });
+      } else blDateRecorded = { ok: false, written: false, reason: "not_internal_user" };
+    }
+
     return res.json({
       success: true,
       doc_type,
       fields,
+      bl_date_recorded: blDateRecorded,
       raw_text: rawText.slice(0, 1000),
       model: "MiniMax-M3",
       usage: data.usage,
