@@ -5,6 +5,12 @@ import { getPool, setCors } from "../db.js";
 import { generateToken, extractUser } from "../auth.js";
 import { writeAudit } from "./audit-helper.js";
 import bcrypt from "bcryptjs";
+import { checkLoginLock, recordLoginAttempt, clientIp } from "./lib/login-guard.js";
+
+// 账号不存在时也跑一次 bcrypt，让「账号不存在」和「密码错」耗时一样，没法靠响应快慢试出哪些账号存在
+const DUMMY_HASH = "$2a$12$ARFnkbY2Ozx6Z3Aa0.qLxu0deU0OQwnj8uUIJOLqV8xPIb/ZBHVDO";   // 随机串的哈希，对应的原文没人知道
+// 对外只说这一句，⛔ 不再分「账号不存在 / 密码错误」（会被用来先摸清有哪些账号）
+const BAD_LOGIN = "账号或密码错误";
 
 // ── compat: supports both legacy plaintext and bcrypt hashed passwords ──
 // If stored value starts with "$2b$" it is a bcrypt hash → use bcrypt.compare
@@ -107,6 +113,18 @@ export default async function handler(req, res) {
     var { username, password } = req.body || {};
     if (!username || !password) return res.status(400).json({ error: "username 和 password 必填" });
 
+    // ── 防暴力破解：先看这个账号/IP 是不是错太多次了（lib/login-guard.js）──
+    var ip = clientIp(req);
+    var lock = await checkLoginLock(pool, username, ip);
+    if (lock) {
+      var mins = Math.ceil(lock.retry_after_s / 60);
+      writeAudit(pool, req, { action: "account.login_locked", entity_type: "account", entity_id: null,
+        diff_summary: `login locked (${lock.reason}) for username=${String(username).slice(0, 60)}`,
+        detail: { username: String(username).slice(0, 60), reason: lock.reason, ip } }).catch(() => {});
+      res.setHeader("Retry-After", String(lock.retry_after_s));
+      return res.status(429).json({ error: `尝试次数太多，请 ${mins} 分钟后再试`, locked: true, retry_after_s: lock.retry_after_s });
+    }
+
     var result = await queryAccount(pool,
       `SELECT a.id, a.username, a.password, a.role, a.company, a.supplier_role,
               a.company_code, a.company_codes, a.raw, a.token_version,
@@ -131,14 +149,24 @@ export default async function handler(req, res) {
       [username.trim()]
     );
 
-    if (!result.rows[0]) return res.status(401).json({ error: "账号不存在" });
+    if (!result.rows[0]) {
+      await bcrypt.compare(String(password), DUMMY_HASH).catch(() => {});
+      await recordLoginAttempt(pool, username, ip, false);
+      writeAudit(pool, req, { action: "account.login_failed", entity_type: "account", entity_id: null,
+        diff_summary: `login failed: unknown username=${String(username).slice(0, 60)}`,
+        detail: { username: String(username).slice(0, 60), unknown: true } }).catch(() => {});
+      return res.status(401).json({ error: BAD_LOGIN });
+    }
     var u = result.rows[0];
-    if (u.is_active === false) return res.status(401).json({ error: "ACCOUNT_INACTIVE" });
-    if (u.has_inactive_employee) return res.status(401).json({ error: "EMPLOYEE_INACTIVE" });
 
     const { ok: passwordOk, upgraded } = await verifyPassword(pool, u.id, password, u.password);
 
+    // 停用账号：密码对了才告诉他是停用（密码错一律只说「账号或密码错误」）
+    if (passwordOk && u.is_active === false) return res.status(401).json({ error: "ACCOUNT_INACTIVE" });
+    if (passwordOk && u.has_inactive_employee) return res.status(401).json({ error: "EMPLOYEE_INACTIVE" });
+
     if (!passwordOk) {
+      await recordLoginAttempt(pool, username, ip, false);
       // 登录失败审计
       writeAudit(pool, req, {
         action: "account.login_failed",
@@ -147,7 +175,7 @@ export default async function handler(req, res) {
         diff_summary: `login failed for username=${u.username}`,
         detail: { username: u.username, role: u.role },
       }).catch(() => {});
-      return res.status(401).json({ error: "密码错误" });
+      return res.status(401).json({ error: BAD_LOGIN });
     }
 
     // 明文→bcrypt 自动升级日志
@@ -193,6 +221,8 @@ export default async function handler(req, res) {
       access: access,
       tv: u.token_version || 1
     });
+
+    await recordLoginAttempt(pool, username, ip, true).catch(() => {});
 
     // 登录成功审计
     writeAudit(pool, req, {
