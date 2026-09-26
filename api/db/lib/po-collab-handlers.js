@@ -52,7 +52,7 @@ async function handleSendLink(req, res, pool) {
   // 同一票只留一张活的协同单，旧的作废
   await pool.query(
     `UPDATE collab.po_sheet SET status='void', updated_at=NOW()
-      WHERE order_no=$1 AND status NOT IN ('void','adopted')`, [order_no]);
+      WHERE order_no=$1 AND side='factory' AND status NOT IN ('void','adopted')`, [order_no]);   // ⛔ 只作废工厂那张，别碰客户版
 
   const sheet = await pool.query(
     `INSERT INTO collab.po_sheet
@@ -138,12 +138,12 @@ async function resolveToken(pool, raw, wantSheet) {
   const meta = r.rows[0].meta || {};
   if (!meta.sheet_id) return { err: "链接数据不完整" };
   const s = await pool.query(
-    `SELECT * FROM collab.po_sheet WHERE id = $1 AND status <> 'void' LIMIT 1`, [meta.sheet_id]);
+    `SELECT * FROM collab.po_sheet WHERE id = $1 AND side = 'factory' AND status <> 'void' LIMIT 1`, [meta.sheet_id]);
   if (!s.rows.length) return { err: "这张协同单已作废" };
   const want = parseInt(wantSheet, 10);
   if (want && want !== Number(s.rows[0].id)) {
     const o = await pool.query(
-      `SELECT * FROM collab.po_sheet WHERE id = $1 AND factory_company_id = $2 AND status <> 'void' LIMIT 1`,
+      `SELECT * FROM collab.po_sheet WHERE id = $1 AND factory_company_id = $2 AND side = 'factory' AND status <> 'void' LIMIT 1`,
       [want, s.rows[0].factory_company_id]);
     if (!o.rows.length) return { err: "这张采购单不在贵司名下，或已作废" };
     return { sheet: o.rows[0] };
@@ -335,7 +335,7 @@ async function handleValidate(req, res, pool) {
                 COALESCE(NULLIF(o.contract_no,''), NULLIF(o.fs_no,''), NULLIF(o.customer_po,''), '协同单#' || s.id) AS no,
                 o.total_qty
            FROM collab.po_sheet s LEFT JOIN orders o ON o.order_no = s.order_no
-          WHERE s.factory_company_id = $1 AND s.status <> 'void'
+          WHERE s.factory_company_id = $1 AND s.side = 'factory' AND s.status <> 'void'
           ORDER BY s.sent_at DESC NULLS LAST, s.id DESC LIMIT 100`, [sheet.factory_company_id])).rows,
       return_reason: sheet.status === "returned"
         ? ((await pool.query(`SELECT detail->>'reason' AS r FROM collab.po_event WHERE sheet_id=$1 AND kind='returned'
@@ -568,4 +568,4 @@ async function handleUpload(req, res, pool) {
   return res.json({ ok: true, file_id: ins.rows[0].id, file_url: url, kind: k, status });
 }
 
-export { handleSendLink, handleValidate, handleSubmit, handleUpload, resolveToken, factoryGate, maybeConfirm };
+export { handleSendLink, handleValidate, handleSubmit, handleUpload, resolveToken, factoryGate, maybeConfirm, isInternal };

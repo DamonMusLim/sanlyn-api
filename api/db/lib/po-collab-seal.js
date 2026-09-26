@@ -53,17 +53,17 @@ async function locateSealInPdf(pdf) {
 }
 
 // 用工厂看到的那一页，在打印版式下出 PDF；顺便量「乙方（盖章）」格子落在第几页、什么位置
-async function renderContract(token, sheetId, bearer) {
+async function renderContract(token, sheetId, bearer, pageFile = "collab-po.html") {
   const browser = await puppeteer.launch({
     executablePath: "/usr/bin/google-chrome", headless: "new",
     args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
   });
   try {
     const page = await browser.newPage();
-    await page.evaluateOnNewDocument((t) => { try { localStorage.setItem("po_factory_jwt", t); } catch (e) {} }, bearer);
+    await page.evaluateOnNewDocument((t) => { try { localStorage.setItem("po_factory_jwt", t); localStorage.setItem("order_collab_jwt", t); } catch (e) {} }, bearer);
     await page.setViewport({ width: Math.round(PAGE_W - 2 * M_SIDE), height: 1200 });
     await page.emulateMediaType("print");
-    const url = `${RENDER_ORIGIN()}/public/collab-po.html?c=${encodeURIComponent(token)}&sheet=${encodeURIComponent(sheetId)}&pdf=1`;
+    const url = `${RENDER_ORIGIN()}/public/${pageFile}?c=${encodeURIComponent(token)}&sheet=${encodeURIComponent(sheetId)}&pdf=1`;
     await page.goto(url, { waitUntil: "networkidle0", timeout: 30000 });
     await page.waitForFunction(() => document.getElementById("wrap") && document.getElementById("wrap").style.display !== "none"
       && document.querySelectorAll("#tb tr[data-id]").length > 0, { timeout: 20000 });
@@ -89,28 +89,37 @@ async function renderContract(token, sheetId, bearer) {
 
 function bearerOf(req) { const h = req.headers.authorization || ""; return h.startsWith("Bearer ") ? h.slice(7) : ""; }
 
-async function handleContractPdf(req, res, pool, sheet) {
-  const { pdf } = await renderContract(req.query?.token, sheet.id, bearerOf(req));
+// opts 不传 = 工厂版原行为（采购合同）；客户版由 po-collab-customer.js 传 PI 的页面和文件名
+async function handleContractPdf(req, res, pool, sheet, opts = {}) {
+  const { pdf } = await renderContract(req.query?.token, sheet.id, bearerOf(req), opts.page);
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(`采购合同-${sheet.id}.pdf`)}`);
+  res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(`${opts.fileName || "采购合同"}-${sheet.id}.pdf`)}`);
   return res.end(pdf);
 }
 
-async function handleSeal(req, res, pool, sheet, maybeConfirm) {
+const FACTORY_SEAL = {
+  roles: ["factory", "supplier"], requireSubmitted: true, page: "collab-po.html", docName: "采购合同", actorSide: "factory",
+  msg: { role: "只能由工厂账号用本厂公章确认", adopted: "这单已经采纳过了",
+         needSubmit: "请先填「可交货日期」并点「保存并提交」，再盖章确认",
+         noStamp: "贵司还没有在我们系统登记公章，请改用「上传合同」", noSpot: "合同上找不到盖章位置" },
+};
+async function handleSeal(req, res, pool, sheet, maybeConfirm, opts = {}) {
+  const o = { ...FACTORY_SEAL, companyId: sheet.factory_company_id, party: sheet.factory_name, ...opts,
+              msg: { ...FACTORY_SEAL.msg, ...(opts.msg || {}) } };
   const role = String(req.user?.role || "").toLowerCase();
-  if (!["factory", "supplier"].includes(role))
-    return res.status(403).json({ ok: false, error: "只能由工厂账号用本厂公章确认" });
-  if (sheet.status === "adopted") return res.status(409).json({ ok: false, error: "这单已经采纳过了" });
-  if (!sheet.submitted_at || !sheet.factory_delivery_date)
-    return res.status(409).json({ ok: false, error: "请先填「可交货日期」并点「保存并提交」，再盖章确认" });
-  const co = (await pool.query(`SELECT code FROM companies WHERE id=$1`, [sheet.factory_company_id])).rows[0];
+  if (!o.roles.includes(role))
+    return res.status(403).json({ ok: false, error: o.msg.role });
+  if (sheet.status === "adopted") return res.status(409).json({ ok: false, error: o.msg.adopted });
+  if (o.requireSubmitted && (!sheet.submitted_at || !sheet.factory_delivery_date))
+    return res.status(409).json({ ok: false, error: o.msg.needSubmit });
+  const co = (await pool.query(`SELECT code FROM companies WHERE id=$1`, [o.companyId])).rows[0];
   const stamp = co && (await pool.query(
     `SELECT id FROM customer_stamps WHERE company_code=$1 AND is_default AND is_active LIMIT 1`, [co.code])).rows[0];
-  if (!stamp) return res.status(409).json({ ok: false, error: "贵司还没有在我们系统登记公章，请改用「上传合同」" });
+  if (!stamp) return res.status(409).json({ ok: false, error: o.msg.noStamp });
 
   // ① 出合同 PDF + 量章位
-  const { pdf, sig } = await renderContract(req.body?.token, sheet.id, bearerOf(req));
-  if (!sig) return res.status(500).json({ ok: false, error: "合同上找不到盖章位置" });
+  const { pdf, sig } = await renderContract(req.body?.token, sheet.id, bearerOf(req), o.page);
+  if (!sig) return res.status(500).json({ ok: false, error: o.msg.noSpot });
   const nPages = (await PDFDocument.load(pdf)).getPageCount();
   if (sig.page >= nPages) sig.page = nPages - 1;
   // ② 原件上 OSS（DAS 按 URL 取）
@@ -122,8 +131,8 @@ async function handleSeal(req, res, pool, sheet, maybeConfirm) {
   const r = await fetch(`${DAS_ORIGIN()}/api/stamp/straddle-confirm`, {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${svc}` },
     body: JSON.stringify({
-      pdfUrl: srcUrl, companyCode: co.code, operator: `po-collab:${req.user?.username || "factory"}`,
-      documentId: `po-sheet-${sheet.id}`, documentName: `采购合同 协同单#${sheet.id} · ${sheet.factory_name}`,
+      pdfUrl: srcUrl, companyCode: co.code, operator: `po-collab:${req.user?.username || o.actorSide}`,
+      documentId: `po-sheet-${sheet.id}`, documentName: `${o.docName} 协同单#${sheet.id} · ${o.party}`,
       // ⛔ DAS 的 page 从 1 数（传 0 起的下标会盖到前一页；0926 两页合同章盖进了第 1 页）
       gaps: [], signature: { page: sig.page + 1, x: sig.x, y: sig.y, withSignature: false },
     }),
@@ -136,17 +145,17 @@ async function handleSeal(req, res, pool, sheet, maybeConfirm) {
   const buf = Buffer.from(await got.arrayBuffer());
   const dir = path.join(UPLOAD_ROOT, String(sheet.id));
   await fs.mkdir(dir, { recursive: true });
-  const name = `${stamp8}_采购合同-盖章.pdf`;
+  const name = `${stamp8}_${o.docName}-盖章.pdf`;
   await fs.writeFile(path.join(dir, name), buf);
   await pool.query(
     `INSERT INTO collab.po_file (sheet_id, kind, file_name, file_url, mime, size_bytes)
      VALUES ($1,'signed_back',$2,$3,'application/pdf',$4)`,
-    [sheet.id, "采购合同（盖章）.pdf", `/uploads/po-collab/${sheet.id}/${name}`, buf.length]);
+    [sheet.id, `${o.docName}（盖章）.pdf`, `/uploads/po-collab/${sheet.id}/${name}`, buf.length]);
   await pool.query(
     `INSERT INTO collab.po_event (sheet_id, kind, actor_side, actor_name, actor_org, detail)
-     VALUES ($1,'sealed','factory',$2,$3,$4::jsonb)`,
-    [sheet.id, req.user?.username || null, sheet.factory_name,
-     JSON.stringify({ stamp_id: stamp.id, stamp_log_id: j.logId || null, stamped_url: j.stampedUrl, position: sig })]);
+     VALUES ($1,'sealed',$5,$2,$3,$4::jsonb)`,
+    [sheet.id, req.user?.username || null, o.party,
+     JSON.stringify({ stamp_id: stamp.id, stamp_log_id: j.logId || null, stamped_url: j.stampedUrl, position: sig }), o.actorSide]);
   const status = maybeConfirm ? await maybeConfirm(pool, sheet.id, req.body?.token) : null;
   return res.json({ ok: true, status });
 }
@@ -168,38 +177,40 @@ async function handleContract(req, res, pool, sheet) {
 // ── POST /seal-upload {token, sheet, filename, mime, data_base64} ──
 // 工厂上传本厂公章 → customer_stamps 里先存【未启用】（⛔ 没审核不能盖）→ 给艾莎建「审核公章」任务
 // 审核通过才设为默认章（po-collab-review.js handleSealApprove）。Damon 0926「新增上传公章…帮我闭环」
-async function handleSealUpload(req, res, pool, sheet) {
+async function handleSealUpload(req, res, pool, sheet, opts = {}) {
+  const o = { roles: ["factory", "supplier"], companyId: sheet.factory_company_id, party: sheet.factory_name,
+              actorSide: "factory", who: "工厂", roleMsg: "只能由工厂账号上传本厂公章", ...opts };
   const role = String(req.user?.role || "").toLowerCase();
-  if (!["factory", "supplier"].includes(role)) return res.status(403).json({ ok: false, error: "只能由工厂账号上传本厂公章" });
+  if (!o.roles.includes(role)) return res.status(403).json({ ok: false, error: o.roleMsg });
   const { filename, mime, data_base64 } = req.body || {};
   if (!/^image\/(png|jpe?g)$/i.test(String(mime || ""))) return res.status(400).json({ ok: false, error: "公章请上传 PNG 或 JPG 图片（透明底 PNG 最好）" });
   let buf; try { buf = Buffer.from(String(data_base64 || ""), "base64"); } catch { buf = null; }
   if (!buf || !buf.length) return res.status(400).json({ ok: false, error: "图片是空的" });
   if (buf.length > 2 * 1024 * 1024) return res.status(413).json({ ok: false, error: "公章图片不能超过 2MB" });
-  const co = (await pool.query(`SELECT code, name_cn FROM companies WHERE id=$1`, [sheet.factory_company_id])).rows[0];
+  const co = (await pool.query(`SELECT code, name_cn, name_en FROM companies WHERE id=$1`, [o.companyId])).rows[0];
   if (!co) return res.status(404).json({ ok: false, error: "找不到本厂档案" });
   const ext = /png/i.test(mime) ? "png" : "jpg";
-  const url = await ossUploadBuffer(`stamps/customer/${co.code}/factory-upload-${Date.now()}.${ext}`, buf, mime);
+  const url = await ossUploadBuffer(`stamps/customer/${co.code}/${o.actorSide}-upload-${Date.now()}.${ext}`, buf, mime);
   const ins = await pool.query(
     `INSERT INTO customer_stamps (username, company_code, name, url, uploaded_at, is_active, shape, is_default)
      VALUES ($1,$2,$3,$4,NOW(),false,'circle',false) RETURNING id`,
-    [req.user?.username || "factory", co.code, `${co.name_cn || co.code}公章（工厂上传·待审核）`, url]);
+    [req.user?.username || o.actorSide, co.code, `${co.name_cn || co.name_en || co.code}公章（${o.who}上传·待审核）`, url]);
   const stampId = ins.rows[0].id;
   await pool.query(
     `INSERT INTO collab.po_event (sheet_id, kind, actor_side, actor_name, actor_org, detail)
-     VALUES ($1,'seal_uploaded','factory',$2,$3,$4::jsonb)`,
-    [sheet.id, req.user?.username || null, sheet.factory_name, JSON.stringify({ stamp_id: stampId, file: String(filename || "").slice(0, 120) })]);
+     VALUES ($1,'seal_uploaded',$5,$2,$3,$4::jsonb)`,
+    [sheet.id, req.user?.username || null, o.party, JSON.stringify({ stamp_id: stampId, file: String(filename || "").slice(0, 120) }), o.actorSide]);
   const reviewBase = process.env.PO_REVIEW_BASE || `${process.env.APP_BASE || "https://ai.sanlyn.cn"}/po-review?sheet=`;
   await pool.query(
     `INSERT INTO tasks (id, title, task_type, level, status, domain, priority, assigned_staff_no, related_order_no, source,
                         dedupe_key, due_at, reason, next_action, raw, created_at, updated_at)
      VALUES ($1,$2,'公章审核','L3','open','外贸','p1','WM-01',$3,'po-collab',$4,NOW()+interval '1 day',$5,$6,$7::jsonb,NOW(),NOW())
      ON CONFLICT (id) DO NOTHING`,
-    [`seal-approve-${stampId}`, `${sheet.factory_name}上传了新公章，请审核`.slice(0, 100), sheet.order_no, `company:seal_approve:${co.code}:${stampId}`,
+    [`seal-approve-${stampId}`, `${o.party}上传了新公章，请审核`.slice(0, 100), sheet.order_no, `company:seal_approve:${co.code}:${stampId}`,
      `公章 #${stampId}（${co.code}）· 上传人 ${req.user?.username || "?"} · 来自协同单#${sheet.id}`,
      "打开审核页看公章图片 → 通过（设为本厂默认章）或驳回（写原因）",
      JSON.stringify({ task_class: "业务", subclass: "公章审核", canonical_domain: "order", owner: "WM-01 艾莎", reviewer: "D-00",
-       deep_link: reviewBase + sheet.id, event: `${sheet.factory_name}上传了新公章，等我方审核后才能用来盖章`,
+       deep_link: reviewBase + sheet.id, event: `${o.party}上传了新公章，等我方审核后才能用来盖章`,
        facts: `customer_stamps #${stampId} · ${url}`, severity: "P2", stamp_id: stampId, sheet_id: sheet.id })]);
   return res.json({ ok: true, stamp_id: stampId, status: "pending" });
 }

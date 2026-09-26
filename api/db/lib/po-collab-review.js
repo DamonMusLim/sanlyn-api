@@ -8,6 +8,7 @@
 import { requireAuth } from "../../auth.js";
 import { APP_BASE, genRaw, rawToHash } from "./collab-shared.js";
 import fs from "node:fs/promises";
+import { customerReview, customerAdopt, customerReturn } from "./po-collab-customer.js";
 import path from "node:path";
 
 const UPLOAD_ROOT = "/opt/sanlyn-uploads/po-collab";
@@ -35,7 +36,7 @@ const num = (v) => { if (v == null || String(v).trim() === "") return null; cons
 
 async function loadSheet(pool, sheetId) {
   const s = await pool.query(
-    `SELECT s.*, o.id AS oid, o.customer, o.customer_po, o.contract_no, o.fs_no,
+    `SELECT s.*, o.id AS oid, o.customer, o.customer_po, o.contract_no, o.fs_no, o.pi_no, o.customer_confirmed_at,
             o.confirmed_delivery, o.confirmed_qty, o.factory_confirmed_at, o.factory_confirmed_by,
             c.code AS factory_code, c.contact_email AS factory_email
        FROM collab.po_sheet s
@@ -52,6 +53,7 @@ async function handleReview(req, res, pool) {
   if (!id) return res.status(400).json({ ok: false, error: "sheet 必填" });
   const s = await loadSheet(pool, id);
   if (!s) return res.status(404).json({ ok: false, error: "没有这张协同单" });
+  if (s.side === "customer") return await customerReview(req, res, pool, s);   // 订单协同·客户版
 
   const lines = await pool.query(
     `SELECT l.id, l.seq, l.product_id, l.product_name, l.ours, l.theirs, l.diff_keys,
@@ -93,6 +95,7 @@ async function handleAdopt(req, res, pool) {
   const id = parseInt(req.body?.sheet_id, 10);
   const s = id && await loadSheet(pool, id);
   if (!s) return res.status(404).json({ ok: false, error: "没有这张协同单" });
+  if (s.side === "customer") return await customerAdopt(req, res, pool, s, who(req));
   if (s.status !== "confirmed")
     return res.status(409).json({ ok: false, error: `这张单现在是「${s.status}」，工厂回签(交期+合同)齐了才能采纳` });
   if (!s.oid) return res.status(409).json({ ok: false, error: "找不到对应订单" });
@@ -185,6 +188,7 @@ async function handleReturn(req, res, pool) {
   if (!s) return res.status(404).json({ ok: false, error: "没有这张协同单" });
   if (!["submitted", "confirmed"].includes(s.status))
     return res.status(409).json({ ok: false, error: `这张单现在是「${s.status}」，不能退回` });
+  if (s.side === "customer") return await customerReturn(req, res, pool, s, who(req), reason);
 
   // 新发一个链接放进邮件（旧链接照样能用；只存 hash，原文只在这一刻有）
   const raw = genRaw();
