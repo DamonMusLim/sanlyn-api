@@ -56,7 +56,7 @@ export function bankCard(bk,curr){
 
 export function termsCard(ts){
   // Strip Chinese + " / " separators from terms. Keep English portion only.
-  function _en(t){ var s=String(t||""); if(s.indexOf("/")>=0) s=s.split("/").pop(); return s.replace(/[\u4e00-\u9fff:：]/g,"").trim(); }
+  function _en(t){ var s=String(t||""); if(s.indexOf(" / ")>=0) s=s.split(" / ").pop(); return s.replace(/[\u4e00-\u9fff:：]/g,"").trim(); }
   return`<div class="details-box"><h4>TERMS &amp; CONDITIONS</h4>${ts.map(function(t,i){return(i+1)+". "+esc(_en(t));}).join("<br>")}</div>`;
 }
 

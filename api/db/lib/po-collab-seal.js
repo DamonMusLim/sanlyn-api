@@ -54,7 +54,9 @@ async function renderTemplatePdf(docType, sheet) {
   const id = String(sheet.order_id || sheet.order_no || "");
   if (!id) throw new Error("协同单没有关联订单");
   const svc = shortServiceToken({ uid: 90, username: "svc-agent", role: "admin", company_code: null });
-  const r = await fetch(`${DAS_ORIGIN()}/api/db/documents?type=${encodeURIComponent(docType)}&id=${encodeURIComponent(id)}&format=pdf`,
+  // PI 给客户看 → audience=customer（模板自带：按 SKU 逐行、用商品英文名；不传则按报关品名合并成一行「猫砂」）
+  const aud = docType === "pi" ? "&audience=customer" : "";
+  const r = await fetch(`${DAS_ORIGIN()}/api/db/documents?type=${encodeURIComponent(docType)}&id=${encodeURIComponent(id)}&format=pdf${aud}`,
     { headers: { Authorization: `Bearer ${svc}` } });
   const buf = Buffer.from(await r.arrayBuffer());
   if (!r.ok || !/pdf/i.test(r.headers.get("content-type") || "") || buf.slice(0, 4).toString() !== "%PDF")

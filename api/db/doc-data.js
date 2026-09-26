@@ -91,6 +91,12 @@ export async function loadSellerCfg(pool, raw, qco, opts) {
       : "SELECT * FROM seller_profiles WHERE is_default=TRUE LIMIT 1";
     var p = code ? [code] : [];
     var r = await pool.query(q, p);
+    // 2026-09-26 Damon 批：companies.code(BABI) 在 seller_profiles 里没有同名行 → 以前直接退回只有抬头的 companyCfg，
+    //   146 张巴匕单的 PI/SC/IV 银行、条款全空。按开票主体 company_id 再找一次。
+    if (!r.rows.length && issuingId > 0 && !opts.shipping) {
+      var byCo = await pool.query("SELECT * FROM seller_profiles WHERE company_id=$1 ORDER BY is_default DESC LIMIT 1", [issuingId]);
+      if (byCo.rows.length) r = byCo;
+    }
     // ⚠️2026-07-24 护栏：companies.code 与 seller_profiles.code 不是一套编码——
     //   companies id=37 的 code 是 'BABI'，而真正在用的 profile 是 'petbaby'(128/132 单，is_default，银行齐全)；
     //   'BABI' 那条 profile 银行字段全空。若拿 company code 撞到一条**没有银行**的 profile，
@@ -221,15 +227,18 @@ export async function loadDocColConfig(pool, docType) {
   }
 }
 
-export function buildColsFromConfig(dbCols, fnMap, fallback) {
+export function buildColsFromConfig(dbCols, fnMap, fallback, curr) {
   if (!dbCols || !dbCols.length) return fallback;
+  // 2026-09-26 Damon 批：表头里的币种按订单币种显示（配置里写死 "(USD)"，142 张人民币单印成 USD）
+  var _cur = String(curr || "").trim().toUpperCase();
+  var _lbl = function(l) { return _cur ? String(l || "").replace(/\((USD|CNY|RMB|EUR)\)/i, "(" + _cur + ")") : l; };
   return dbCols.map(function(row) {
     var def = fnMap[row.col_key] || {};
     return {
       k:   row.col_key,
       al:  row.col_align || def.defaultAlign || "",
       w:   row.col_width || def.defaultWidth || undefined,
-      lbl: row.label,
+      lbl: _lbl(row.label),
       fn:  def.fn || undefined,
     };
   });

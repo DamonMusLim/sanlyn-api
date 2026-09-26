@@ -45,7 +45,7 @@ export async function renderPi(ctx){
           {k:"price",al:"right",w:"95px",fn:_piFnMap.price.fn,lbl:"Unit Price ("+curr+")"},
           {k:"amt",al:"right",w:"110px",fn:_piFnMap.amt.fn,lbl:"Amount ("+curr+")"},
         ];
-        var colsPI=buildColsFromConfig(await loadDocColConfig(pool,"pi"),_piFnMap,_fbColsPI);
+        var colsPI=buildColsFromConfig(await loadDocColConfig(pool,"pi"),_piFnMap,_fbColsPI,curr);
         totRow=mkTotRow(colsPI.length+1);
         var _fsNoPI = (raw.fs_no || raw.internal_no || (ordNo||noPI)) + "-PI";
         html=wrap((ordNo||noPI)+"_PI",`

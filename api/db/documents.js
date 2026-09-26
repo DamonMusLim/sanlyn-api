@@ -363,6 +363,15 @@ export default async function handler(req, res) {
         factory_company_id: o.factory_company_id || raw.factory_company_id,
       });
       var cfg=await loadSellerCfg(pool,raw,qco);
+      // 2026-09-26 Damon 批「按订单走」：订单写了付款条款 → PI/SC 条款里的 PAYMENT 一条用订单的，其余条款不动
+      if (o.payment_terms && cfg && cfg.terms && Array.isArray(cfg.terms.sc) && cfg.terms.sc.length) {
+        var _pt = String(o.payment_terms).trim().replace(/\.?$/, ".");
+        cfg = Object.assign({}, cfg, { terms: Object.assign({}, cfg.terms, { sc: cfg.terms.sc.map(function(t){
+          if (!/^\s*PAYMENT\s*:/i.test(String(t))) return t;
+          var tail = String(t).match(/\s(Title retained[\s\S]*)$/);
+          return "PAYMENT: " + _pt + (tail ? " " + tail[1] : "");
+        }) }) });
+      }
       var cust=pick(o.company_name_en,raw.companyNameEN,raw.companyNameCN,o.customer);
       var caddr=resolveAddr(cust,pick(raw.customerAddress,raw.deliveryAddress));
       var ctel=raw.phone||"";
@@ -1243,8 +1252,8 @@ export default async function handler(req, res) {
                   ];
 
                   var v2ColsPL = buildColsFromConfig(_v2DbColsPL, _v2PLFnMap, _v2FallbackColsPL);
-                  var v2ColsIV = buildColsFromConfig(_v2DbColsIV, _v2AmtFnMap, _v2FallbackColsAmt);
-                  var v2ColsSC = buildColsFromConfig(_v2DbColsSC, _v2AmtFnMap, _v2FallbackColsAmt);
+                  var v2ColsIV = buildColsFromConfig(_v2DbColsIV, _v2AmtFnMap, _v2FallbackColsAmt, curr);
+                  var v2ColsSC = buildColsFromConfig(_v2DbColsSC, _v2AmtFnMap, _v2FallbackColsAmt, curr);
 
                   function v2ColStyle(c){
                     var s = [];
@@ -1484,7 +1493,7 @@ export default async function handler(req, res) {
           {k:"price",al:"right",w:"95px",fn:_scFnMap.price.fn,lbl:"Unit Price ("+curr+")"},
           {k:"amt",al:"right",w:"110px",fn:_scFnMap.amt.fn,lbl:"Amount"},
         ];
-        var colsSC=buildColsFromConfig(await loadDocColConfig(pool,"sc"),_scFnMap,_fbColsSC);
+        var colsSC=buildColsFromConfig(await loadDocColConfig(pool,"sc"),_scFnMap,_fbColsSC,curr);
         totRow=mkTotRow(colsSC.length+1);
         var _fsNoSC = (raw.fs_no || raw.internal_no || (ordNo||no)) + "-SC";
         _packBodies.sc=`
@@ -1542,7 +1551,7 @@ export default async function handler(req, res) {
           {k:"price",al:"right",w:"95px",fn:_ivFnMap.price.fn,lbl:"Unit Price ("+curr+")"},
           {k:"amt",al:"right",w:"110px",fn:_ivFnMap.amt.fn,lbl:"Amount"},
         ];
-        var colsIV=buildColsFromConfig(await loadDocColConfig(pool,"iv"),_ivFnMap,_fbColsIV);
+        var colsIV=buildColsFromConfig(await loadDocColConfig(pool,"iv"),_ivFnMap,_fbColsIV,curr);
         totRow=mkTotRow(colsIV.length+1);
         var _fsNoIV = (raw.fs_no || raw.internal_no || (ordNo||noIV)) + "-IV";
         _packBodies.iv=`
