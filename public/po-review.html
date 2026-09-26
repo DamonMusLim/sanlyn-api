@@ -39,6 +39,11 @@ textarea{width:100%;min-height:70px;font:inherit;padding:8px;border:1px solid va
 .hist div{padding:2px 0;border-bottom:1px dotted var(--line2)}
 a{color:var(--accent)}
 @media (max-width:700px){.wrap{padding:10px}.tbl{overflow-x:auto}}
+.askmask{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px}
+.askbox{background:#fff;border-radius:6px;max-width:420px;width:100%;padding:18px 18px 14px;box-shadow:0 8px 30px rgba(0,0,0,.25);font-size:13.5px;line-height:1.7;white-space:pre-line;color:#222}
+.askbtns{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.askbtns button{font:inherit;font-size:13px;padding:6px 16px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer}
+.askbtns button.ok{background:#1F4B7A;border-color:#1F4B7A;color:#fff}
 </style></head><body>
 <div class="wrap">
   <div id="state" class="card">正在读取…</div>
@@ -139,29 +144,43 @@ function render(){
   $("doneMsg").textContent=s.status==="adopted"?("✅ 已由 "+(s.adopted_by||"")+" 采纳。下一步：给客户发正式 PI")
     :s.status==="returned"?"↩ 已退回工厂，等工厂改完重交":s.status==="void"?"这张单已作废":(!can?"工厂还没回签完（要交货期 + 上传合同），暂时不能采纳":"");
 }
+// 页内确认框（别用原生 confirm：内嵌浏览器里会直接返回「取消」）；fn 在「确定」的点击里同步执行，能继续开文件选择框
+function ask(msg,fn,okText){
+  var m=document.createElement("div");m.className="askmask no-print";
+  m.innerHTML='<div class="askbox" role="dialog"><div class="askmsg"></div><div class="askbtns"><button type="button" class="no">取消</button><button type="button" class="ok"></button></div></div>';
+  m.querySelector(".askmsg").textContent=msg; m.querySelector(".ok").textContent=okText||"确定";
+  var close=function(){m.remove()};
+  m.querySelector(".no").onclick=close; m.onclick=function(e){if(e.target===m)close()};
+  m.querySelector(".ok").onclick=function(){close();fn()};
+  document.body.appendChild(m); m.querySelector(".ok").focus();
+}
 function sealDecide(ok){
   var ps=D.pending_seal; if(!ps)return; var why=$("sealWhy").value.trim();
   if(!ok&&!why){toast("驳回请写原因",true);$("sealWhy").focus();return}
-  if(ok&&!confirm("通过后这枚章会成为该工厂的默认公章，工厂之后一键盖章都用它。确定？"))return;
-  api("/seal-approve",{method:"POST",body:JSON.stringify({stamp_id:ps.id,approve:ok,reason:why})})
-    .then(function(){toast(ok?"已通过，设为默认章":"已驳回");load()}).catch(function(e){toast(e.message,true)});
+  var go=function(){api("/seal-approve",{method:"POST",body:JSON.stringify({stamp_id:ps.id,approve:ok,reason:why})})
+    .then(function(){toast(ok?"已通过，设为默认章":"已驳回");load()}).catch(function(e){toast(e.message,true)})};
+  if(ok)ask("通过后这枚章会成为该工厂的默认公章，工厂之后一键盖章都用它。确定？",go,"通过"); else go();
 }
 $("bSealOk").onclick=function(){sealDecide(true)};
 $("bSealNo").onclick=function(){sealDecide(false)};
 $("bAdopt").onclick=function(){
-  if(!confirm("确认采纳？\n会写订单确认交期、工厂确认时间，并以工厂为准覆盖产品库的箱规/毛净重/条码。"))return;
-  var b=this;b.disabled=true;b.textContent="⏳ 采纳中…";
+  var b=this;
+  ask("确认采纳？\n会写订单确认交期、工厂确认时间，并以工厂为准覆盖产品库的箱规/毛净重/条码。",function(){
+  b.disabled=true;b.textContent="⏳ 采纳中…";
   api("/adopt",{method:"POST",body:JSON.stringify({sheet_id:+SHEET})}).then(function(j){
     toast("已采纳：数量差异 "+j.qty_diffs+" 行，产品库更新 "+j.product_changes+" 款");b.textContent="✅ 采纳";load();
   }).catch(function(e){toast(e.message,true);b.disabled=false;b.textContent="✅ 采纳"});
+  },"采纳");
 };
 $("bReturn").onclick=function(){
   var r=$("reason").value.trim(); if(!r){toast("请先写退回原因",true);$("reason").focus();return}
-  if(!confirm("确认退回工厂修改？\n会生成一封给工厂的邮件草稿（在发件台，你审核后发）。"))return;
-  var b=this;b.disabled=true;
+  var b=this;
+  ask("确认退回工厂修改？\n会生成一封给工厂的邮件草稿（在发件台，你审核后发）。",function(){
+  b.disabled=true;
   api("/return",{method:"POST",body:JSON.stringify({sheet_id:+SHEET,reason:r})}).then(function(j){
     toast("已退回"+(j.draft_id?("，邮件草稿 #"+j.draft_id+" 在发件台"):"（工厂没有邮箱，没建草稿）"));$("reason").value="";load();
   }).catch(function(e){toast(e.message,true);b.disabled=false});
+  },"退回");
 };
 // 合同要登录才能看：带 token 取回来再打开
 document.addEventListener("click",function(e){var a=e.target.closest("a[data-fid]");if(!a)return;e.preventDefault();

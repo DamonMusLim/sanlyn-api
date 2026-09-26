@@ -176,6 +176,11 @@ body.pdfmode table.items{width:100%!important}
   .fill.empty{background:transparent;border-bottom-color:var(--line);color:transparent}
   .title-wrap{display:block;text-align:center}
 }
+.askmask{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px}
+.askbox{background:#fff;border-radius:6px;max-width:420px;width:100%;padding:18px 18px 14px;box-shadow:0 8px 30px rgba(0,0,0,.25);font-size:13.5px;line-height:1.7;white-space:pre-line;color:#222}
+.askbtns{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.askbtns button{font:inherit;font-size:13px;padding:6px 16px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer}
+.askbtns button.ok{background:#1F4B7A;border-color:#1F4B7A;color:#fff}
 </style>
 </head>
 <body>
@@ -402,7 +407,7 @@ function render(){
   var s=D.sheet;
   var NO=s.display_no||"—";   // 对外单号：PO号→合同号；⛔ 不显示 order_no（开头是客户编号）
   document.title="采购单 "+NO+" · 请确认";
-  var who="";try{var pl=JSON.parse(atob((FJWT.split(".")[1]||"").replace(/-/g,"+").replace(/_/g,"/")));who=pl.username||""}catch(e){}
+  var who="";try{var pl=JSON.parse(atob((FJWT.split(".")[1]||"").replace(/-/g,"+").replace(/_/g,"/")));who=pl.username||"";window.IS_FACTORY=["factory","supplier"].indexOf(String(pl.role||"").toLowerCase())>=0}catch(e){}
   $("tag").innerHTML="协同 · "+esc(s.factory_name)+(who?" · 已登录 "+esc(who)+' · <a href="#" id="bLogout">退出</a>':"");
   $("orderNo").textContent=NO;
   $("orderDate").textContent=s.order_date||"—";
@@ -854,8 +859,9 @@ document.addEventListener("click",function(e){
   if(e.target.id==="bLogout"){e.preventDefault();try{localStorage.removeItem("po_factory_jwt")}catch(x){};FJWT="";showLogin();return}
   var t=e.target.closest("#swTabs button[data-tab]"); if(t){swTab=t.getAttribute("data-tab");renderSwitch();return}
   var c=e.target.closest(".swchip[data-sheet]"); if(!c||String(c.getAttribute("data-sheet"))===String(D.sheet.id))return;
-  if(dirty&&!confirm("这张有改动还没提交，切换会丢掉。确定切换？"))return;
-  var q=new URLSearchParams(location.search); q.set("sheet",c.getAttribute("data-sheet")); location.search=q.toString();
+  var sid=c.getAttribute("data-sheet");
+  var go=function(){var q=new URLSearchParams(location.search); q.set("sheet",sid); location.search=q.toString()};
+  if(dirty)ask("这张有改动还没提交，切换会丢掉。确定切换？",go,"切换"); else go();
 });
 // ── 登录（用贵司账号）──
 function showLogin(msg){
@@ -893,6 +899,16 @@ function paintSteps(){
   if(s.status==="confirmed"||(ok1&&cf)){var d=document.createElement("div");d.className="alldone";
     d.textContent="✅ 已确认，谢谢！我们接着安排下一步。";$("steps").appendChild(d)}
 }
+// 页内确认框（别用原生 confirm：内嵌浏览器里会直接返回「取消」）；fn 在「确定」的点击里同步执行，能继续开文件选择框
+function ask(msg,fn,okText){
+  var m=document.createElement("div");m.className="askmask no-print";
+  m.innerHTML='<div class="askbox" role="dialog"><div class="askmsg"></div><div class="askbtns"><button type="button" class="no">取消</button><button type="button" class="ok"></button></div></div>';
+  m.querySelector(".askmsg").textContent=msg; m.querySelector(".ok").textContent=okText||"确定";
+  var close=function(){m.remove()};
+  m.querySelector(".no").onclick=close; m.onclick=function(e){if(e.target===m)close()};
+  m.querySelector(".ok").onclick=function(){close();fn()};
+  document.body.appendChild(m); m.querySelector(".ok").focus();
+}
 function paintSeal(se){
   var st=se.status, ro=!!window.READONLY, pic=$("sealPic"), pend=se.pending||(st==="pending"?{url:se.url}:null);
   var showUrl=st==="active"?se.url:(pend&&pend.url);
@@ -909,6 +925,9 @@ function paintSeal(se){
   $("bSeal").style.display=(st==="active"&&!ro)?"":"none";
   $("bSealUp").style.display=(ro||st==="pending"||(st==="active"&&pend))?"none":"";
   $("bSealUp").textContent=st==="active"?"🔄 更换公章":rej?"📤 重新上传公章":"📤 上传公章";
+  // 我方账号只能看：盖章/换章必须工厂本人（后端也拦），按钮置灰并说明，免得点了像坏了
+  var inner=!window.IS_FACTORY; $("bSeal").disabled=inner; $("bSealUp").disabled=inner;
+  if(inner)$("sealDesc").textContent+="（你现在是我方账号，只能查看；盖章、换章要工厂账号登录）";
 }
 $("bGoDate").onclick=function(){var d=$("dlvDate");d.scrollIntoView({block:"center"});d.focus();try{d.showPicker&&d.showPicker()}catch(e){}};
 function openPdf(path,dl){
@@ -924,8 +943,9 @@ $("cfView").onclick=function(e){e.preventDefault();openPdf("/contract"+sq())};
 $("cfDl").onclick=function(e){e.preventDefault();openPdf("/contract"+sq()+"&dl=1",true)};
 $("bSeal").onclick=function(){
   if(!(D.sheet.submitted_at&&D.sheet.factory_delivery_date)){toast("请先填「可交货日期」并点「保存并提交」，再盖章确认",true);return}
-  if(!confirm("用贵司在我方系统登记的公章，盖在本采购合同「乙方（盖章）」处，作为贵司的确认。确定？"))return;
-  var b=this;b.disabled=true;b.textContent="⏳ 盖章中…（约20秒）";
+  var b=this;
+  ask("用贵司在我方系统登记的公章，盖在本采购合同「乙方（盖章）」处，作为贵司的确认。确定？",function(){
+  b.disabled=true;b.textContent="⏳ 盖章中…（约20秒）";
   fetch(API+"/seal",{method:"POST",headers:AH({"Content-Type":"application/json"}),body:JSON.stringify({token:TOKEN,sheet:D.sheet.id})})
     .then(function(r){return r.json()}).then(function(j){
       b.disabled=false;b.textContent="🔏 用贵司公章确认";
@@ -933,10 +953,13 @@ $("bSeal").onclick=function(){
       D.sheet.contract_file={file_name:"采购合同（盖章）.pdf"}; if(j.status)D.sheet.status=j.status; paintSteps();
       toast("已盖章确认，可以预览或下载");
     }).catch(function(e){b.disabled=false;b.textContent="🔏 用贵司公章确认";toast("盖章失败："+e.message,true)});
+  },"盖章确认");
 };
 $("bSealUp").onclick=function(){
-  if((D.sheet.seal||{}).status==="active"&&!confirm("上传新公章替换现在的公章？\n我方审核通过后才替换，期间现在的公章照常能用。"))return;
-  $("sealFile").value="";$("sealFile").click()};
+  var pick=function(){$("sealFile").value="";$("sealFile").click()};
+  if((D.sheet.seal||{}).status==="active")ask("上传新公章替换现在的公章？\n我方审核通过后才替换，期间现在的公章照常能用。",pick,"选择公章图片");
+  else pick();
+};
 $("sealFile").onchange=function(){
   var f=this.files&&this.files[0]; if(!f)return;
   if(f.size>2*1024*1024){toast("公章图片不能超过 2MB",true);return}
