@@ -15,12 +15,14 @@ const UPLOAD_ROOT = "/opt/sanlyn-uploads/po-collab";
 const ROLE = "factory_po";
 const LINK_DAYS = 14;
 const OUTSIDE_ROLES = ["customer", "factory", "supplier", "portal", "external", "forwarder", "driver"];
+const INTERNAL_ROLES = ["admin"];
 // 工厂字段 → products 列（⛔ hs_code 不在里面）
 const PRODUCT_MAP = { box_l: "box_l", box_w: "box_w", box_h: "box_h", gw_ctn: "gross_weight", nw_ctn: "net_weight", barcode: "barcode" };
 
 function staffOnly(req, res) {
   if (!requireAuth(req, res)) return false;
-  if (OUTSIDE_ROLES.includes(String(req.user?.role || "").toLowerCase())) {
+  // 0926 改白名单：accounts.role 还有 logistics/trader/petstore/staff/disabled，黑名单会漏放
+  if (!INTERNAL_ROLES.includes(String(req.user?.role || "").toLowerCase())) {
     res.status(403).json({ ok: false, error: "仅限内部账号" });
     return false;
   }

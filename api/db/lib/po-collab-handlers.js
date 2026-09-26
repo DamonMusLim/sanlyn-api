@@ -24,6 +24,9 @@ const FIELD_WL = ["qty", "pbag", "cprice", "barcode", "box_l", "box_w", "box_h",
 // ── 内部：建协同单 + 发链接 ────────────────────────────────
 async function handleSendLink(req, res, pool) {
   if (!requireAuth(req, res)) return;
+  // 0926：签发工厂链接 = 内部动作，只许 admin（否则任何登录账号都能给任意订单签链接再读单）
+  if (String(req.user?.role || "").toLowerCase() !== "admin")
+    return res.status(403).json({ ok: false, error: "仅限内部账号" });
   const { order_no, qc_required } = req.body || {};
   if (!order_no) return res.status(400).json({ ok: false, error: "order_no 必填" });
 
