@@ -1786,7 +1786,10 @@ document.addEventListener("click", function(e){
     show("rival");
     return;
   }
-  var a = e.target.closest(".snav[data-p]"); if(a) show(a.dataset.p);
+  var a = e.target.closest(".snav[data-p]");
+  // 0926 Damon「采购建议还是黑色的」:侧栏带 data-tab 的直达竞品子页(采购建议=机会商品 补货/新品)
+  if(a && a.dataset.tab){ window.__rivalTab = a.dataset.tab; try { localStorage.setItem("dataops_rival_tab", a.dataset.tab); } catch(err){} }
+  if(a) show(a.dataset.p);
 });
 $("bsub").textContent = new Date().toISOString().slice(0,16).replace("T"," ")+" UTC";
 $("ft").innerHTML = "数据源：腾讯 PG · petstore-api:9010 · 三个接口只读<br>" +
