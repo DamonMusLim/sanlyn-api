@@ -17,9 +17,21 @@ import { getPool, setCors } from "./db.js";
 const TOKEN_DAYS = 90;          // 员工自己登录的，比店长发的长效链接短
 const MAX_FAIL = 5;
 const LOCK_MIN = 15;
+const STAFF_URL = "https://pet.sanlyn.cn/m/staff";
+const OIDC_DEFAULT_ISSUER = "https://id.sanlyn.cn/oidc";
+const OIDC_DEFAULT_REDIRECT = "https://api.sanlyn.cn/api/db/hr-staff-auth?action=oidc_callback";
+const OIDC_STATE_TTL_MS = 10 * 60 * 1000;
+const OIDC_COOKIE = "staff_oidc_state";
+let oidcDiscoveryCache = null;
+let oidcJwksCache = null;
 
 function b64url(buf) {
   return Buffer.from(buf).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+function b64urlDecode(str) {
+  str = String(str || "").replace(/-/g, "+").replace(/_/g, "/");
+  while (str.length % 4) str += "=";
+  return Buffer.from(str, "base64");
 }
 function signStaffToken(employeeId, name) {
   const SECRET = process.env.JWT_SECRET;
@@ -56,9 +68,186 @@ function verifyPw(pw, stored) {
 }
 export { hashPw };
 
+function oidcConfig() {
+  const cfg = {
+    issuer: process.env.STAFF_OIDC_ISSUER || OIDC_DEFAULT_ISSUER,
+    clientId: process.env.STAFF_OIDC_CLIENT_ID,
+    clientSecret: process.env.STAFF_OIDC_CLIENT_SECRET,
+    redirectUri: process.env.STAFF_OIDC_REDIRECT_URI || OIDC_DEFAULT_REDIRECT,
+    map: parseOidcMap(process.env.STAFF_OIDC_MAP || ""),
+  };
+  if (!cfg.clientId || !cfg.clientSecret || !Object.keys(cfg.map).length) return null;
+  return cfg;
+}
+function parseOidcMap(raw) {
+  const out = {};
+  String(raw || "").split(",").forEach((part) => {
+    const [sub, id] = part.split(":").map((x) => String(x || "").trim());
+    if (sub && /^\d+$/.test(id)) out[sub] = Number(id);
+  });
+  return out;
+}
+function signState(payload) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("JWT_SECRET 未配置");
+  const body = b64url(JSON.stringify(payload));
+  const sig = b64url(crypto.createHmac("sha256", secret).update(body).digest());
+  return body + "." + sig;
+}
+function verifyStateToken(token) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || !token) return null;
+  const parts = String(token).split(".");
+  if (parts.length !== 2) return null;
+  const sig = b64url(crypto.createHmac("sha256", secret).update(parts[0]).digest());
+  if (sig.length !== parts[1].length) return null;
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(parts[1]))) return null;
+  const payload = JSON.parse(b64urlDecode(parts[0]).toString());
+  if (!payload.exp || payload.exp < Date.now()) return null;
+  return payload;
+}
+function getCookie(req, name) {
+  const raw = req.headers.cookie || "";
+  const hit = raw.split(";").map((x) => x.trim()).find((x) => x.startsWith(name + "="));
+  return hit ? decodeURIComponent(hit.slice(name.length + 1)) : "";
+}
+function setOidcCookie(res, value) {
+  res.setHeader("Set-Cookie", `${OIDC_COOKIE}=${encodeURIComponent(value)}; Max-Age=600; Path=/api/db/hr-staff-auth; HttpOnly; Secure; SameSite=Lax`);
+}
+function clearOidcCookie(res) {
+  res.setHeader("Set-Cookie", `${OIDC_COOKIE}=; Max-Age=0; Path=/api/db/hr-staff-auth; HttpOnly; Secure; SameSite=Lax`);
+}
+function redirect(res, url) {
+  res.statusCode = 302;
+  res.setHeader("Location", url);
+  return res.end();
+}
+function staffError(res, code) {
+  clearOidcCookie(res);
+  return redirect(res, `${STAFF_URL}?sso_error=${encodeURIComponent(code)}`);
+}
+async function oidcDiscovery(issuer) {
+  if (oidcDiscoveryCache && oidcDiscoveryCache.issuer === issuer && oidcDiscoveryCache.exp > Date.now()) return oidcDiscoveryCache.doc;
+  const r = await fetch(`${issuer.replace(/\/$/, "")}/.well-known/openid-configuration`);
+  if (!r.ok) throw new Error("OIDC discovery failed");
+  const doc = await r.json();
+  oidcDiscoveryCache = { issuer, doc, exp: Date.now() + 10 * 60 * 1000 };
+  return doc;
+}
+async function oidcJwks(jwksUri) {
+  if (oidcJwksCache && oidcJwksCache.uri === jwksUri && oidcJwksCache.exp > Date.now()) return oidcJwksCache.keys;
+  const r = await fetch(jwksUri);
+  if (!r.ok) throw new Error("OIDC JWKS failed");
+  const doc = await r.json();
+  oidcJwksCache = { uri: jwksUri, keys: doc.keys || [], exp: Date.now() + 10 * 60 * 1000 };
+  return oidcJwksCache.keys;
+}
+function verifyJwtSignature(token, jwk) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 3) return false;
+  const data = Buffer.from(parts[0] + "." + parts[1]);
+  const sig = b64urlDecode(parts[2]);
+  const key = crypto.createPublicKey({ key: jwk, format: "jwk" });
+  const alg = JSON.parse(b64urlDecode(parts[0]).toString()).alg;
+  if (alg === "RS256") return crypto.verify("sha256", data, key, sig);
+  if (alg === "ES256") return crypto.verify("sha256", data, { key, dsaEncoding: "ieee-p1363" }, sig);
+  // 0926 实测 id.sanlyn.cn jwks = EC P-384 / ES384(Logto 默认),不加这行验签永远失败
+  if (alg === "ES384") return crypto.verify("sha384", data, { key, dsaEncoding: "ieee-p1363" }, sig);
+  return false;
+}
+async function verifyIdToken(token, cfg, jwksUri) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 3) throw new Error("bad id_token");
+  const header = JSON.parse(b64urlDecode(parts[0]).toString());
+  const keys = await oidcJwks(jwksUri);
+  const jwk = keys.find((k) => (!header.kid || k.kid === header.kid) && k.alg === header.alg) ||
+    keys.find((k) => !header.kid || k.kid === header.kid);
+  if (!jwk || !verifyJwtSignature(token, jwk)) throw new Error("bad id_token signature");
+  const claims = JSON.parse(b64urlDecode(parts[1]).toString());
+  const now = Math.floor(Date.now() / 1000);
+  const audOk = Array.isArray(claims.aud) ? claims.aud.includes(cfg.clientId) : claims.aud === cfg.clientId;
+  if (claims.iss !== cfg.issuer || !audOk || !claims.exp || claims.exp <= now) throw new Error("bad id_token claims");
+  if (claims.nbf && claims.nbf > now) throw new Error("id_token not active");
+  return claims;
+}
+async function oidcStart(req, res) {
+  const cfg = oidcConfig();
+  if (!cfg) return res.status(503).send("统一登录未配置");
+  const doc = await oidcDiscovery(cfg.issuer);
+  const verifier = b64url(crypto.randomBytes(32));
+  const challenge = b64url(crypto.createHash("sha256").update(verifier).digest());
+  const nonce = b64url(crypto.randomBytes(18));
+  const state = signState({ nonce, exp: Date.now() + OIDC_STATE_TTL_MS });
+  setOidcCookie(res, signState({ nonce, verifier, exp: Date.now() + OIDC_STATE_TTL_MS }));
+  const u = new URL(doc.authorization_endpoint);
+  u.searchParams.set("client_id", cfg.clientId);
+  u.searchParams.set("redirect_uri", cfg.redirectUri);
+  u.searchParams.set("response_type", "code");
+  u.searchParams.set("scope", "openid profile email");
+  u.searchParams.set("state", state);
+  u.searchParams.set("code_challenge", challenge);
+  u.searchParams.set("code_challenge_method", "S256");
+  return redirect(res, u.toString());
+}
+async function oidcCallback(req, res) {
+  const cfg = oidcConfig();
+  if (!cfg) return staffError(res, "not_configured");
+  const state = verifyStateToken(req.query?.state);
+  const cookie = verifyStateToken(getCookie(req, OIDC_COOKIE));
+  if (!state || !cookie || state.nonce !== cookie.nonce || !cookie.verifier) return staffError(res, "bad_state");
+  if (!req.query?.code) return staffError(res, "login_failed");
+  const doc = await oidcDiscovery(cfg.issuer);
+  const body = new URLSearchParams({
+    grant_type: "authorization_code",
+    code: String(req.query.code),
+    redirect_uri: cfg.redirectUri,
+    client_id: cfg.clientId,
+    client_secret: cfg.clientSecret,
+    code_verifier: cookie.verifier,
+  });
+  const tr = await fetch(doc.token_endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  if (!tr.ok) return staffError(res, "login_failed");
+  const tokens = await tr.json();
+  const claims = await verifyIdToken(tokens.id_token, cfg, doc.jwks_uri);
+  const employeeId = cfg.map[claims.sub];
+  if (!employeeId) return staffError(res, "not_mapped");
+  const pool = getPool();
+  const r = await pool.query("SELECT id,name,employment_status FROM hr_employees WHERE id=$1", [employeeId]);
+  if (!r.rows.length) return staffError(res, "not_mapped");
+  const e = r.rows[0];
+  if (e.employment_status !== "active") return staffError(res, "inactive");
+  await pool.query("UPDATE hr_employees SET last_login_at=now() WHERE id=$1", [e.id]);
+  clearOidcCookie(res);
+  return redirect(res, `${STAFF_URL}?t=${encodeURIComponent(signStaffToken(e.id, e.name))}`);
+}
+export const __test = {
+  b64url,
+  b64urlDecode,
+  parseOidcMap,
+  signState,
+  verifyStateToken,
+  verifyIdToken,
+  oidcStart,
+};
+
 export default async function handler(req, res) {
-  setCors(req, res, "POST, OPTIONS");
+  setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method === "GET") {
+    try {
+      if (req.query?.action === "oidc_start") return await oidcStart(req, res);
+      if (req.query?.action === "oidc_callback") return await oidcCallback(req, res);
+      return res.status(400).json({ success: false, error: "action 只能是 oidc_start / oidc_callback" });
+    } catch (err) {
+      console.error("[hr-staff-auth:oidc]", err.message);
+      if (req.query?.action === "oidc_start") return res.status(503).send("统一登录未配置");
+      return staffError(res, "login_failed");
+    }
+  }
   if (req.method !== "POST") return res.status(405).json({ success: false, error: "仅支持 POST" });
 
   const pool = getPool();
