@@ -214,6 +214,12 @@ body.pdfmode input,body.pdfmode textarea{border:0!important;background:transpare
 .retmsg{background:var(--miss-bg);border:1px solid var(--miss-line);color:var(--miss);padding:8px 12px;border-radius:4px;margin-bottom:12px;font-size:12px}
 .histbox{margin-top:14px;font-size:11.5px}.histbox summary{cursor:pointer;color:var(--ink2)}
 .histbox li{color:var(--ink2)}
+.duebar{background:#FFF8E6;border:1px solid #E8C66A;color:#7A5A00;padding:8px 12px;border-radius:4px;margin-bottom:12px;font-size:12.5px}
+.duebar.done{background:var(--ok-bg,#EDF6F1);border-color:var(--ok,#2E7D5B);color:var(--ok,#2E7D5B)}
+.s1f{margin-top:8px}.s1f label{display:block;font-size:11px;color:var(--ink2);font-weight:600}
+.s1f input{font:inherit;font-size:12px;padding:4px 6px;border:1px solid var(--line);border-radius:3px}
+.s1row{display:flex;gap:6px}.s1row input{flex:1;min-width:0}
+#piTerms{margin:4px 0 0;padding-left:18px}#piTerms li{margin:2px 0}
 .pdfval{font-size:12px;padding:2px 0;white-space:pre-wrap}
 #tb td:nth-child(2){min-width:230px}body.pdfmode #tb td:nth-child(2){min-width:0}
 /* 数字列按内容收窄、不换行；剩下的宽度全给品名 */
@@ -241,6 +247,7 @@ body.pdfmode .reqnote.on{display:block}
 <div class="layout" id="wrap" style="display:none">
   <div class="sheet" id="sheet">
     <div id="retMsg" class="retmsg no-print" style="display:none"></div>
+    <div id="dueBar" class="duebar no-print" style="display:none"></div>
     <div class="title-wrap">
       <div class="t-mid"><div class="cn" data-t="title"></div><div class="en" data-t="subtitle"></div></div>
       <div class="t-act no-print">
@@ -250,7 +257,11 @@ body.pdfmode .reqnote.on{display:block}
     </div>
     <div class="steps no-print" id="steps">
       <div class="stp" id="stp1"><b>①</b> <span data-t="s1"></span> <span class="st" id="st1"></span>
-        <em data-t="s1a"></em><em data-t="s1b"></em></div>
+        <em data-t="s1a"></em><em data-t="s1b"></em>
+        <div class="s1f"><label data-t="req_delivery"></label><input type="date" id="rqDelivery"></div>
+        <div class="s1f"><label data-t="notify_emails"></label>
+          <div class="s1row"><input id="ntEmails" placeholder="name@company.com, name2@company.com"><button class="btn" id="bNt" type="button" data-t="save"></button></div>
+          <em id="ntHint"></em></div></div>
       <div class="stp" id="stp2"><b>②</b> <span data-t="s2"></span> <span class="st" id="st2"></span>
         <div class="sealbox">
           <div class="sealpic" id="sealPic"></div>
@@ -279,7 +290,7 @@ body.pdfmode .reqnote.on{display:block}
     </div>
     <div class="meta2" id="meta"></div>
     <div class="reqrow">
-      <div><label data-t="req_delivery"></label><input type="date" id="rqDelivery"></div>
+      <div><label data-t="req_delivery"></label><div class="pdfval" id="rqDeliveryTxt">—</div></div>
       <div><label data-t="marks"></label><textarea id="rqMarks"></textarea></div>
     </div>
 
@@ -300,6 +311,7 @@ body.pdfmode .reqnote.on{display:block}
       <div><b class="t" data-t="payee"></b><div id="payee"></div></div>
     </div>
     <div class="reqrow"><div><label data-t="remarks"></label></div><div><textarea id="rqRemarks"></textarea></div></div>
+    <div class="terms" id="piTermsBox"><b data-t="terms_title"></b><ol id="piTerms"></ol></div>
 
     <div class="signrow">
       <div><b data-t="seller_sign"></b><br><span id="sigSeller"></span></div>

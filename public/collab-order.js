@@ -42,6 +42,11 @@ en:{dl_pdf:"Download PI PDF",print:"Print",title:"PROFORMA INVOICE",subtitle:"OR
  ship_on:"Shipment collaboration →",ship_off:"Shipment collaboration opens after booking",returned:"We sent this order back for changes: ",
  inner:"You are logged in with an internal account (view only). Confirming and seal changes need the customer's account.",
  req_note:"* Changes requested by the buyer, subject to the seller's confirmation.",
+ notify_emails:"Notification emails",save:"Save",emails_saved:"Notification emails saved",terms_title:"Terms",
+ nt_profile:"We currently send notices to: ",nt_custom:"Notices go to: ",nt_none:"No email on file yet — please add one.",
+ due_left:"Please confirm or request changes by {d} ({n} left). If we receive no reply by then, this PI is deemed accepted.",
+ due_over:"The reply deadline ({d}) has passed.",deemed_on:"This PI was deemed accepted on {d} (no reply within the reply period).",
+ days:"days",hours:"hours",
  no_link:"Link is missing. Please open the full link we sent you.",bad_link:"Invalid link",err:"Error: ",unsaved:"Unsaved changes will be lost. Switch?",
  max8:"The file must be 8 MB or smaller.",max2:"The seal image must be 2 MB or smaller.",login_fail:"Login failed",page_title:"Order Collaboration",readonly:"This order has been confirmed by us and is read-only."},
 zh:{dl_pdf:"下载 PI PDF",print:"打印",title:"形 式 发 票",subtitle:"订单协同 · PROFORMA INVOICE",submit:"提交修改",
@@ -67,6 +72,11 @@ zh:{dl_pdf:"下载 PI PDF",print:"打印",title:"形 式 发 票",subtitle:"订�
  ship_on:"发货协同 →",ship_off:"订舱后开放发货协同",returned:"我方已退回，请修改：",
  inner:"你现在是我方账号，只能查看；确认和换章要客户账号登录。",
  req_note:"* 为买方申请的修改，以卖方确认为准。",
+ notify_emails:"通知邮箱",save:"保存",emails_saved:"通知邮箱已保存",terms_title:"条款",
+ nt_profile:"目前通知发到：",nt_custom:"通知发到：",nt_none:"还没有邮箱，请填写。",
+ due_left:"请在 {d} 前确认或提出修改（还剩 {n}）。逾期未回复，本 PI 视同接受。",
+ due_over:"回复期限（{d}）已过。",deemed_on:"本 PI 已于 {d} 视同接受（回复期内未回复）。",
+ days:"天",hours:"小时",
  no_link:"链接不完整，请用我们发给您的完整链接打开。",bad_link:"链接无效",err:"出错了：",unsaved:"还有修改没提交，切换会丢掉。确定切换？",
  max8:"文件不能超过 8MB",max2:"公章图片不能超过 2MB",login_fail:"登录失败",page_title:"订单协同",readonly:"这张单我方已确认，只读。"},
 ms:{dl_pdf:"Muat turun PDF PI",print:"Cetak",title:"INVOIS PROFORMA",subtitle:"KERJASAMA PESANAN",submit:"Hantar perubahan",
@@ -92,6 +102,11 @@ ms:{dl_pdf:"Muat turun PDF PI",print:"Cetak",title:"INVOIS PROFORMA",subtitle:"K
  ship_on:"Kerjasama penghantaran →",ship_off:"Kerjasama penghantaran dibuka selepas tempahan",returned:"Kami menghantar balik pesanan ini untuk diubah: ",
  inner:"Akaun dalaman (lihat sahaja).",
  req_note:"* Perubahan yang diminta oleh pembeli, tertakluk kepada pengesahan penjual.",
+ notify_emails:"E-mel pemberitahuan",save:"Simpan",emails_saved:"E-mel pemberitahuan disimpan",terms_title:"Terma",
+ nt_profile:"Notis kini dihantar ke: ",nt_custom:"Notis dihantar ke: ",nt_none:"Belum ada e-mel — sila tambah.",
+ due_left:"Sila sahkan atau minta perubahan sebelum {d} ({n} lagi). Jika tiada jawapan, PI ini dianggap diterima.",
+ due_over:"Tarikh akhir jawapan ({d}) telah lepas.",deemed_on:"PI ini dianggap diterima pada {d} (tiada jawapan dalam tempoh).",
+ days:"hari",hours:"jam",
  no_link:"Pautan tidak lengkap. Sila buka pautan penuh yang kami hantar.",bad_link:"Pautan tidak sah",err:"Ralat: ",unsaved:"Perubahan belum dihantar akan hilang. Tukar?",
  max8:"Fail mesti 8 MB atau kurang.",max2:"Imej cop mesti 2 MB atau kurang.",login_fail:"Log masuk gagal",page_title:"Kerjasama Pesanan",readonly:"Pesanan ini telah disahkan oleh kami (baca sahaja)."}
 };
@@ -149,6 +164,8 @@ function render(){
   $("meta").innerHTML=[["pi_no",s.display_no],["date",s.order_date],["currency",s.currency],["terms",s.trade_terms],["port",s.destination_port],["cf_delivery",s.confirmed_delivery]]
     .map(function(r){return "<div><span>"+esc(t(r[0]))+"</span><b>"+esc(r[1]||"—")+"</b></div>"}).join("");
   var rq=s.request||{};
+  $("rqDeliveryTxt").textContent=(rq.delivery||"—")+(PDF&&rq.delivery?" *":"");
+  paintDue(s);paintNotify(s);paintTerms(s);
   if($("rqDelivery")){$("rqDelivery").value=rq.delivery||"";$("rqMarks").value=rq.marks!=null?rq.marks:(s.marks||"");$("rqRemarks").value=rq.remarks||"";
   $("rqDelivery").classList.toggle("edited",!!rq.delivery);$("rqMarks").classList.toggle("edited",rq.marks!=null);$("rqRemarks").classList.toggle("edited",!!rq.remarks);}
   $("thPrice").textContent=t("price")+(s.currency?" ("+s.currency+")":"");$("thAmt").textContent=t("amount")+(s.currency?" ("+s.currency+")":"");
@@ -173,7 +190,7 @@ function render(){
   [].forEach.call(document.querySelectorAll(".col-note"),function(el){el.classList.toggle("empty",!anyNote)});
   var anyReq=D.lines.some(function(l){return (l.theirs||{}).qty!=null})||!!(rq.delivery||rq.marks!=null||rq.remarks);
   $("reqNote").classList.toggle("on",anyReq);
-  if(PDF&&!window._pdfFlat){window._pdfFlat=1;[["rqDelivery",rq.delivery],["rqMarks",rq.marks!=null?rq.marks:s.marks],["rqRemarks",rq.remarks]].forEach(function(x){
+  if(PDF&&!window._pdfFlat){window._pdfFlat=1;[["rqMarks",rq.marks!=null?rq.marks:s.marks],["rqRemarks",rq.remarks]].forEach(function(x){
     var el=$(x[0]),d=document.createElement("div");d.className="pdfval";d.textContent=(x[1]||"—")+((x[0]==="rqMarks"?rq.marks!=null:!!x[1])?" *":"");el.replaceWith(d)})}
   var pm=s.payment||{};
   $("payTerms").innerHTML=(pm.terms||pm.schedule||pm.days!=null)
@@ -187,6 +204,26 @@ function render(){
   $("histBox").style.display=(D.history||[]).length?"":"none";
   dirty=false;$("saveHint").textContent=ro?t("readonly"):"";
   paintSteps();renderSwitch();renderShip();
+}
+function fmtBJ(v){if(!v)return "";var d=new Date(new Date(v).getTime()+8*3600e3);return d.toISOString().slice(0,16).replace("T"," ")+" (GMT+8)"}
+function paintDue(s){
+  var b=$("dueBar");b.className="duebar no-print";
+  if(s.deemed_at){b.classList.add("done");b.textContent=t("deemed_on").replace("{d}",fmtBJ(s.deemed_at));b.style.display="";return}
+  if(!s.reply_due_at||["confirmed","adopted"].indexOf(s.status)>=0){b.style.display="none";return}
+  var left=new Date(s.reply_due_at).getTime()-Date.now();
+  if(left<=0){b.textContent=t("due_over").replace("{d}",fmtBJ(s.reply_due_at));b.style.display="";return}
+  var n=left>=864e5?Math.floor(left/864e5)+" "+t("days"):Math.max(1,Math.ceil(left/36e5))+" "+t("hours");
+  b.textContent=t("due_left").replace("{d}",fmtBJ(s.reply_due_at)).replace("{n}",n);b.style.display="";
+}
+function paintNotify(s){
+  var nt=s.notify||{},to=nt.to||[];
+  if(document.activeElement!==$("ntEmails"))$("ntEmails").value=(nt.custom&&nt.custom.length?nt.custom:to).join(", ");
+  $("ntHint").textContent=to.length?(t(nt.source==="customer"?"nt_custom":"nt_profile")+to.join(", ")):t("nt_none");
+  $("bNt").disabled=!IS_BUYER||!!window.READONLY;
+}
+function paintTerms(s){
+  var list=s.terms||[];$("piTermsBox").style.display=list.length?"":"none";
+  $("piTerms").innerHTML=list.map(function(x){return "<li>"+esc(x.en)+"</li>"}).join("");
 }
 function paintSteps(){
   var s=D.sheet,cf=s.contract_file,sub=!!s.submitted_at;
@@ -249,6 +286,9 @@ $("bSave").onclick=function(){
   var b=this;b.disabled=true;
   post("/submit",{lines:lines,request:{delivery:$("rqDelivery").value,marks:$("rqMarks").value,remarks:$("rqRemarks").value}}).then(function(j){
     b.disabled=false;if(!j.ok){toast(j.error||"Error",true);return}toast(j.changed?t("saved"):t("nochange"));load()}).catch(function(e){b.disabled=false;toast(e.message,true)})};
+$("bNt").onclick=function(){var b=this;b.disabled=true;
+  post("/notify-emails",{emails:$("ntEmails").value}).then(function(j){b.disabled=false;if(!j.ok){toast(j.error||"Error",true);return}toast(t("emails_saved"));load()})
+    .catch(function(e){b.disabled=false;toast(e.message,true)})};
 $("bPdf").onclick=function(){openPdf("/contract-pdf"+sq())};
 $("bPrint").onclick=function(){window.print()};
 $("cfView").onclick=function(e){e.preventDefault();openPdf("/contract"+sq())};
