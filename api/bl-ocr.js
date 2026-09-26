@@ -8,6 +8,8 @@ import { extractUser } from "./auth.js";
 import { recordBlDate } from "./db/lib/bl-dates.js";
 // 只有内部员工识别的提单才记提单日（这个接口本身没验登录；⛔ 不能让任何人都能写到期日的起算点）
 const BL_DATE_WRITER_ROLES = ["admin", "staff"];
+const INTERNAL_UIDS = [91];   // damon（Damon 本人，role=petstore），同 po-collab 的做法按账号 id 放行
+const isInternalCaller = (u) => !!u && (BL_DATE_WRITER_ROLES.includes(String(u.role || "").toLowerCase()) || INTERNAL_UIDS.includes(Number(u.uid)));
 
 const ALLOWED = [
   "https://damon.sanlyn.cn", "https://ai.sanlyn.cn",
@@ -68,6 +70,11 @@ export default async function handler(req, res) {
   setCors(req, res);
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") return res.status(405).json({ success: false, error: "method_not_allowed" });
+
+  // 只给内部员工用（全局鉴权只保证「登录了」，工厂/客户账号也能调、会白烧识别额度）—— 部署会话 0926 复核
+  const caller = extractUser(req);
+  if (!isInternalCaller(caller))
+    return res.status(403).json({ success: false, error: "internal_only" });
 
   const apiKey = process.env.MINIMAX_API_KEY;
   if (!apiKey) return res.status(500).json({ success: false, error: "MINIMAX_API_KEY not configured" });
@@ -130,7 +137,7 @@ export default async function handler(req, res) {
     let blDateRecorded = null;
     if (doc_type !== "customs" && fields && fields.bl_no && (fields.bl_date || fields.etd)) {
       const u = extractUser(req);
-      if (u && BL_DATE_WRITER_ROLES.includes(String(u.role || "").toLowerCase())) {
+      if (isInternalCaller(u)) {
         blDateRecorded = await recordBlDate(getPool(), {
           bl_no: fields.bl_no, bl_date: fields.bl_date || fields.etd, source: "ocr",
           note: fields.bl_date ? "bl-ocr: bl_date" : "bl-ocr: etd(On Board Date)", by: u.username || String(u.uid || ""),
