@@ -90,9 +90,13 @@ tfoot td{background:var(--line2);font-weight:700}
 @media(max-width:700px){.steps{grid-template-columns:1fr}}
 .steps .stp{border:1px solid var(--line);border-radius:4px;padding:8px 12px}
 .steps .alldone{grid-column:1/-1}
-.sealrow{display:flex;align-items:center;gap:10px;margin:6px 0}
-.sealrow img{width:64px;height:64px;object-fit:contain;border:1px solid var(--line);border-radius:4px;background:#fff}
-.sealrow small{color:var(--dim);font-size:10.5px}
+.sealbox{display:flex;gap:12px;align-items:flex-start;border:1px dashed var(--line);border-radius:4px;padding:10px;margin:6px 0;background:var(--page)}
+.sealpic{flex:none;width:72px;height:72px;border:1px solid var(--line);border-radius:4px;background:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:10.5px;color:var(--dim);line-height:1.4}
+.sealpic img{width:100%;height:100%;object-fit:contain}
+.sealtxt{flex:1;min-width:0}.sealtxt em{font-size:10.5px}.sealtxt .sealflow{color:var(--dim)}
+.sealbtns{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}.sealbtns .btn{margin-left:0}
+.orline{display:flex;align-items:center;gap:8px;color:var(--dim);font-size:10.5px;margin:6px 0}
+.orline::before,.orline::after{content:"";flex:1;border-top:1px dashed var(--line)}
 .sealspot{position:relative}.sealspot img{position:absolute;width:120px;height:120px;object-fit:contain;opacity:.35}
 @media print{.sealspot img{display:none}}body.pdfmode .sealspot img{display:none}
 .stp{padding:3px 0}.stp em{display:block;font-style:normal;font-size:10.5px;color:var(--dim)}
@@ -201,17 +205,31 @@ body.pdfmode table.items{width:100%!important}
     </div>
 
     <div class="steps no-print" id="steps">
-          <div class="stp" id="stp1"><b>①</b> 填「可交货日期」并提交 <span class="st" id="st1">未完成</span></div>
-          <div class="stp" id="stp2"><b>②</b> 上传确认后的采购合同 <span class="st" id="st2">未上传</span>
-            <div class="sealrow" id="sealRow" style="display:none"><img id="sealImg" alt="公章"><span>贵司已登记公章<br><small>点右边按钮，盖在合同「乙方（盖章）」处</small></span></div>
-            <button class="btn" id="bSeal" type="button" style="display:none">🔏 用贵司公章确认</button>
-            <button class="btn" id="bSealUp" type="button" style="display:none">📤 上传贵司公章</button>
-            <input type="file" id="sealFile" accept="image/png,image/jpeg" style="display:none">
+      <div class="stp" id="stp1"><b>①</b> 填「可交货日期」并提交 <span class="st" id="st1">未完成</span>
+        <em>在下方「可交货日期」选好日期，再点右上「保存并提交」。</em>
+        <em>箱规、毛净重、条码等缺项不拦，可以先提交，之后再补。</em>
+        <button class="btn" id="bGoDate" type="button">📅 去填交货日期</button></div>
+      <div class="stp" id="stp2"><b>②</b> 确认采购合同 <span class="st" id="st2">未上传</span>
+        <div class="sealbox">
+          <div class="sealpic" id="sealPic">未登记<br>公章</div>
+          <div class="sealtxt">
+            <b id="sealTitle">贵司公章</b>
+            <em id="sealDesc"></em>
+            <em class="sealflow">上传公章 → 我方审核（1 个工作日内）→ 通过后启用，旧章自动停用</em>
             <em id="sealMsg" style="display:none"></em>
-            <button class="btn" id="bSigned" type="button">📎 上传合同</button>
-            <span id="cfLinks" style="display:none;margin-left:4px"><a href="#" id="cfView">预览</a> · <a href="#" id="cfDl">下载</a></span>
-            <em>先点左上「下载采购合同 PDF」，签字或盖章后上传；PDF / 图片均可</em></div>
+            <div class="sealbtns">
+              <button class="btn pri" id="bSeal" type="button" style="display:none">🔏 用贵司公章确认</button>
+              <button class="btn" id="bSealUp" type="button">📤 上传公章</button>
+            </div>
+            <input type="file" id="sealFile" accept="image/png,image/jpeg" style="display:none">
+          </div>
         </div>
+        <div class="orline"><span>或</span></div>
+        <button class="btn" id="bSigned" type="button">📎 上传合同</button>
+        <span id="cfLinks" style="display:none;margin-left:4px"><a href="#" id="cfView">预览</a> · <a href="#" id="cfDl">下载</a></span>
+        <em>先点左上「下载采购合同 PDF」，签字或盖章后上传；PDF / 图片均可</em>
+      </div>
+    </div>
     <div class="party">
       <div>
         <b class="t">买方开票资料 · Buyer</b>
@@ -869,17 +887,30 @@ function paintSteps(){
   $("bSigned").textContent=cf?"重新上传":"📎 上传合同";
   var sl=(s.seal||{}).status||(s.has_seal?"active":"none");
   $("bSeal").style.display=(sl==="active"&&!window.READONLY)?"":"none";
-  $("sealRow").style.display=(sl==="active"&&(s.seal||{}).url)?"flex":"none"; if((s.seal||{}).url)$("sealImg").src=s.seal.url;
-  $("bSealUp").style.display=((sl==="none"||sl==="rejected")&&!window.READONLY)?"":"none";
-  $("sealMsg").style.display=(sl==="pending"||sl==="rejected")?"block":"none";
-  $("sealMsg").style.color=sl==="rejected"?"var(--miss)":"var(--warn)";
-  $("sealMsg").textContent=sl==="pending"?"公章已上传，我方审核通过后即可一键盖章确认（也可先用「上传合同」）"
-    :sl==="rejected"?("公章未通过审核："+((s.seal||{}).reason||"")+"，请重新上传"):"";
+  paintSeal(s.seal||{status:sl});
   $("cfLinks").style.display=cf?"":"none";
   var old=$("steps").querySelector(".alldone"); if(old)old.remove();
   if(s.status==="confirmed"||(ok1&&cf)){var d=document.createElement("div");d.className="alldone";
     d.textContent="✅ 已确认，谢谢！我们接着安排下一步。";$("steps").appendChild(d)}
 }
+function paintSeal(se){
+  var st=se.status, ro=!!window.READONLY, pic=$("sealPic"), pend=se.pending||(st==="pending"?{url:se.url}:null);
+  var showUrl=st==="active"?se.url:(pend&&pend.url);
+  pic.innerHTML=showUrl?'<img alt="公章" src="'+String(showUrl).replace(/"/g,"&quot;")+'">':"未登记<br>公章";
+  $("sealTitle").textContent=st==="active"?"贵司已登记公章":st==="pending"?"公章审核中":"贵司还没有登记公章";
+  $("sealDesc").textContent=st==="active"?"点「用贵司公章确认」，盖在合同「乙方（盖章）」处；可预览、下载。"
+    :st==="pending"?"已收到贵司公章，我方审核通过后就能一键盖章。等不及可以先「上传合同」。"
+    :"上传一次，以后每张采购单都可以一键盖章确认。PNG / JPG，≤2MB，透明底最好。";
+  var rej=st==="rejected"?se.reason:se.rejected_reason, msg="";
+  if(st==="active"&&pend)msg="新公章审核中，通过后替换；现在的公章照常能用";
+  else if(rej)msg="上次上传的公章未通过审核："+rej+"，请重新上传";
+  $("sealMsg").style.display=msg?"block":"none"; $("sealMsg").textContent=msg;
+  $("sealMsg").style.color=rej&&!(st==="active"&&pend)?"var(--miss)":"var(--warn)";
+  $("bSeal").style.display=(st==="active"&&!ro)?"":"none";
+  $("bSealUp").style.display=(ro||st==="pending"||(st==="active"&&pend))?"none":"";
+  $("bSealUp").textContent=st==="active"?"🔄 更换公章":rej?"📤 重新上传公章":"📤 上传公章";
+}
+$("bGoDate").onclick=function(){var d=$("dlvDate");d.scrollIntoView({block:"center"});d.focus();try{d.showPicker&&d.showPicker()}catch(e){}};
 function openPdf(path,dl){
   var w=dl?null:window.open("","_blank");
   fetch(API+path,{headers:AH()}).then(function(r){if(!r.ok)return r.json().then(function(j){throw new Error(j.error||("HTTP "+r.status))});return r.blob()})
@@ -903,7 +934,9 @@ $("bSeal").onclick=function(){
       toast("已盖章确认，可以预览或下载");
     }).catch(function(e){b.disabled=false;b.textContent="🔏 用贵司公章确认";toast("盖章失败："+e.message,true)});
 };
-$("bSealUp").onclick=function(){$("sealFile").value="";$("sealFile").click()};
+$("bSealUp").onclick=function(){
+  if((D.sheet.seal||{}).status==="active"&&!confirm("上传新公章替换现在的公章？\n我方审核通过后才替换，期间现在的公章照常能用。"))return;
+  $("sealFile").value="";$("sealFile").click()};
 $("sealFile").onchange=function(){
   var f=this.files&&this.files[0]; if(!f)return;
   if(f.size>2*1024*1024){toast("公章图片不能超过 2MB",true);return}
@@ -913,7 +946,9 @@ $("sealFile").onchange=function(){
       body:JSON.stringify({token:TOKEN,sheet:D.sheet.id,filename:f.name,mime:f.type,data_base64:String(fr.result).split(",")[1]})})
       .then(function(r){return r.json()}).then(function(j){
         if(!j.ok){toast(j.error||"上传失败",true);return}
-        D.sheet.seal={status:"pending"}; paintSteps(); toast("公章已上传，等我方审核");
+        var cur=D.sheet.seal||{};
+        D.sheet.seal=cur.status==="active"?{status:"active",url:cur.url,pending:{url:null}}:{status:"pending"};
+        paintSteps(); toast("公章已上传，等我方审核");
       }).catch(function(e){toast("上传失败："+e.message,true)});
   };
   fr.readAsDataURL(f);

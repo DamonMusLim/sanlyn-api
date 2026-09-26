@@ -175,9 +175,15 @@ async function sealStatus(pool, factoryCompanyId) {
     `SELECT cs.id, cs.is_active, cs.is_default, cs.name, cs.url, cs.uploaded_at FROM customer_stamps cs
        JOIN companies c ON c.code = cs.company_code WHERE c.id = $1 ORDER BY cs.uploaded_at DESC`, [factoryCompanyId]);
   const act = r.rows.find(x => x.is_active && x.is_default);
-  if (act) return { status: "active", url: act.url || null };
   const last = r.rows[0];
-  if (last && /待审核/.test(last.name || "")) return { status: "pending", stamp_id: last.id };
+  if (act) {
+    // 换章：在用章照常能盖，最新上传的那枚单独显示审核状态
+    const pend = last && last.id !== act.id && /待审核/.test(last.name || "") ? { url: last.url } : null;
+    const rej = last && last.id !== act.id && /已驳回/.test(last.name || "")
+      ? (last.name.split("已驳回：")[1] || "").replace(/）$/, "") : null;
+    return { status: "active", url: act.url || null, pending: pend, rejected_reason: rej };
+  }
+  if (last && /待审核/.test(last.name || "")) return { status: "pending", stamp_id: last.id, url: last.url || null };
   if (last && /已驳回/.test(last.name || "")) return { status: "rejected", reason: (last.name.split("已驳回：")[1] || "").replace(/）$/, "") };
   return { status: "none" };
 }
