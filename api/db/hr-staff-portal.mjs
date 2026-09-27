@@ -319,7 +319,7 @@ export default async function handler(req, res) {
         const r = await pool.query(
           `UPDATE hr_day_agenda
               SET status=$1, done_by=$2, done_at=CASE WHEN $1='done' THEN now() ELSE NULL END
-            WHERE id=$3 AND company_code=$4 AND work_date=$5
+            WHERE id=$3 AND company_code=$4 AND (work_date=$5 OR (kind='task' AND work_date < $5::date))
               AND (employee_id IS NULL OR employee_id=$6)
             RETURNING id`,
           [done ? "done" : "open", done ? me.name : null, id, me.company_code, today, empId]);
