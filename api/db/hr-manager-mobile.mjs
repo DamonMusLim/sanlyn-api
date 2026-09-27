@@ -104,6 +104,8 @@ export async function buildApprovalsSummary(pool, { caps, me, empId, leaves, rei
         WHERE status IN ('open','pending_review')
           AND source='dataops'
           AND (COALESCE(title,'') ~ '报损' OR COALESCE(dedupe_key,'') ~ 'writeoff|loss|risk')
+          -- 0927:同批「下架+核日期」是给店员(PET-12)的,不是老板待批,只算交给 Damon 的
+          AND lower(COALESCE(next_holder,''))='damon'
         ORDER BY created_at DESC NULLS LAST, id DESC`);
     return r.rows || [];
   }) : [];
