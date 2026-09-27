@@ -20,14 +20,23 @@ const PROBLEMS = [
 ];
 
 const CACHE_TTL_MS = 60000;
-let riskCenterCache = { at: 0, data: null };
+const PREWARM_MS = 5 * 60000;
+// 0927 Damon「加载太慢了」:行的重计算要 12 秒 → 先给上一份(不管多旧),过期后台重算;工单每次现查,点完建单马上看得到。
+let baseCache = { at: 0, data: null, inflight: null };
+// 整类已派的工单(store-board 那边按类建的 storehealth:*),映射到风险问题
+const PROBLEM_TASK_MAP = {
+  "storehealth:negative_stock": "negative_stock",
+  "storehealth:barcode_missing": "data_gap",
+  "storehealth:pic_missing": "data_gap",
+  "storehealth:cost_missing": "data_gap",
+};
 
 function json(res, code, body) { return res.status(code).json(body); }
 function n(v) { const x = Number(v); return Number.isFinite(x) ? x : null; }
 function groupOf(data, key) { return (data.groups || []).find((g) => g.key === key) || { rows: [], count: 0, amount_by_price: null }; }
 
 export function invalidateRiskCenterCache() {
-  riskCenterCache = { at: 0, data: null };
+  baseCache.at = 0; // 只标过期,旧数据照给,后台重算
 }
 
 function withCacheMeta(data, cached, at) {
@@ -74,7 +83,7 @@ function addRow(map, row, problem, why) {
   }
 }
 
-export async function buildRiskCenter(pool) {
+async function buildRiskBase(pool) {
   const [expiry, goods] = await Promise.all([buildExpiryRisk(pool), buildProblemGoods(pool)]);
   const byKey = Object.fromEntries(PROBLEMS.map((p) => [p.key, p]));
   const rows = new Map();
@@ -96,39 +105,19 @@ export async function buildRiskCenter(pool) {
     for (const r of g.rows || []) addRow(rows, r, byKey[pk], g.why);
   }
 
-  const taskRes = await pool.query(
-    `SELECT id, title, status, next_holder, created_at, due_at, dedupe_key
-       FROM public.tasks
-      -- 0916:tasks 触发器会把 domain petstore 归一成 petshop,⛔别按 domain 过滤,risk: 去重键已唯一
-      WHERE dedupe_key LIKE 'risk:%'
-        AND status NOT IN ('done','cancelled')
-      ORDER BY created_at DESC NULLS LAST, id`);
-  const allOpenTasks = taskRes.rows.map((t) => {
-    const m = String(t.dedupe_key || "").match(/^risk:([^:]+):(.+)$/);
-    return { id: t.id, title: t.title, status: t.status, next_holder: t.next_holder, created_at: t.created_at, due_at: t.due_at,
-      problem_key: m ? m[1] : null, product_code: m ? m[2] : null, dedupe_key: t.dedupe_key };
-  });
-  const taskByCode = new Map();
-  for (const t of allOpenTasks) {
-    if (!t.product_code) continue;
-    if (!taskByCode.has(t.product_code)) taskByCode.set(t.product_code, []);
-    taskByCode.get(t.product_code).push({ id: t.id, status: t.status, next_holder: t.next_holder, created_at: t.created_at, problem_key: t.problem_key });
-  }
-  for (const item of rows.values()) item.open_tasks = taskByCode.get(item.product_code) || [];
-
   const list = Array.from(rows.values()).map((r) => {
     r.problems.sort((a, b) => PROBLEMS.findIndex((p) => p.key === a.key) - PROBLEMS.findIndex((p) => p.key === b.key));
     delete r._amount;
     return r;
   }).sort((a, b) => a.top_priority - b.top_priority || (n(b.amount_by_price) || 0) - (n(a.amount_by_price) || 0));
 
+  for (const r of list) r.open_tasks = [];
   const counts = Object.fromEntries(PROBLEMS.map((p) => [p.key, 0]));
   for (const r of list) for (const p of r.problems) counts[p.key] = (counts[p.key] || 0) + 1;
   const exp = groupOf(expiry, "tier_5_expired");
 
   return {
     ok: true,
-    verdict: list.length ? `🔴 ${list.length} 个商品有风险待处理` : "✅ 暂无风险商品",
     rows: list,
     problems: PROBLEMS,
     problem_counts: counts,
@@ -137,15 +126,91 @@ export async function buildRiskCenter(pool) {
       expired_amount: exp.amount_by_price,
       onsale_no_stock_n: counts.onsale_no_stock || 0,
       no_date_n: counts.no_date || 0,
-      open_tasks_n: allOpenTasks.length,
-      pending_writeoff_n: allOpenTasks.filter((t) => t.problem_key === "writeoff").length,
     },
-    open_tasks: allOpenTasks,
     captured: expiry.summary && expiry.summary.captured,
     stale_days: expiry.summary && expiry.summary.stale_days,
     caveats: [].concat(expiry.caveats || [], goods.caveats || []),
   };
 }
+
+async function loadTasks(pool) {
+  const r = await pool.query(
+    `SELECT id, title, status, next_holder, created_at, due_at, dedupe_key
+       FROM public.tasks
+      -- 0916:tasks 触发器会把 domain petstore 归一成 petshop,⛔别按 domain 过滤,risk: 去重键已唯一
+      -- 0927:加 pa:<动作>:<商品>(产品分析建的单)和 storehealth:*(经营台按类建的单),都算「已转任务」
+      WHERE (dedupe_key LIKE 'risk:%' OR dedupe_key LIKE 'pa:%' OR dedupe_key LIKE 'storehealth:%')
+        AND status NOT IN ('done','cancelled')
+      ORDER BY created_at DESC NULLS LAST, id`);
+  const rowTasks = [], problemTasks = {};
+  for (const t of r.rows) {
+    const key = String(t.dedupe_key || "");
+    const base = { id: t.id, title: t.title, status: t.status, next_holder: t.next_holder, created_at: t.created_at, due_at: t.due_at };
+    if (PROBLEM_TASK_MAP[key]) {
+      const pk = PROBLEM_TASK_MAP[key];
+      (problemTasks[pk] || (problemTasks[pk] = [])).push(base);
+      continue;
+    }
+    let m = key.match(/^risk:([^:]+):(.+)$/);
+    if (m) { rowTasks.push({ ...base, problem_key: m[1], product_code: m[2], dedupe_key: key }); continue; }
+    m = key.match(/^pa:.*:([^:]+)$/);
+    if (m) rowTasks.push({ ...base, problem_key: "pa", product_code: m[1], dedupe_key: key });
+  }
+  return { rowTasks, problemTasks };
+}
+
+// 行数据 + 现查的工单合并;⛔不改缓存里的对象(每次浅拷贝),防请求之间串数据
+function attachTasks(base, tasks) {
+  const byCode = new Map();
+  for (const t of tasks.rowTasks) {
+    if (!byCode.has(t.product_code)) byCode.set(t.product_code, []);
+    byCode.get(t.product_code).push({ id: t.id, status: t.status, next_holder: t.next_holder, created_at: t.created_at, problem_key: t.problem_key });
+  }
+  const rows = (base.rows || []).map((r) => ({ ...r, open_tasks: byCode.get(r.product_code) || [] }));
+  const converted = rows.filter((r) => r.open_tasks.length).length;
+  const todo = rows.length - converted;
+  return {
+    ...base,
+    verdict: rows.length ? `🔴 ${rows.length} 个商品有风险 · 已转任务 ${converted} · 还没人管 ${todo}` : "✅ 暂无风险商品",
+    rows,
+    problem_tasks: tasks.problemTasks,
+    cards: {
+      ...base.cards,
+      converted_n: converted,
+      todo_n: todo,
+      open_tasks_n: tasks.rowTasks.length,
+      pending_writeoff_n: tasks.rowTasks.filter((t) => t.problem_key === "writeoff").length,
+    },
+    open_tasks: tasks.rowTasks,
+  };
+}
+
+// risk-act 建单前要现算一份核对「还在不在」,保持原来的完整口径
+export async function buildRiskCenter(pool) {
+  const [base, tasks] = await Promise.all([buildRiskBase(pool), loadTasks(pool)]);
+  return attachTasks(base, tasks);
+}
+
+function refreshBase() {
+  if (baseCache.inflight) return baseCache.inflight;
+  baseCache.inflight = buildRiskBase(getPool())
+    .then((data) => { baseCache.data = data; baseCache.at = Date.now(); })
+    .catch((err) => { console.error("[petstore-risk-center] refresh", err); if (!baseCache.data) throw err; })
+    .finally(() => { baseCache.inflight = null; });
+  return baseCache.inflight;
+}
+
+async function getBase() {
+  if (baseCache.data) {
+    if (Date.now() - baseCache.at >= CACHE_TTL_MS) refreshBase().catch(() => {});
+    return { data: baseCache.data, at: baseCache.at, cached: true };
+  }
+  await refreshBase();
+  return { data: baseCache.data, at: baseCache.at, cached: false };
+}
+
+refreshBase().catch(() => {});
+setInterval(() => { refreshBase().catch(() => {}); }, PREWARM_MS).unref();
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
@@ -154,14 +219,8 @@ export default async function handler(req, res) {
     if (req.headers["x-gateway-auth"] !== "gw-dataops-0903") { if (!requireAuth(req, res)) return; }
     if (req.method !== "GET") return json(res, 405, { ok: false, error: "method_not_allowed" });
 
-    const now = Date.now();
-    if (riskCenterCache.data && now - riskCenterCache.at < CACHE_TTL_MS) {
-      return json(res, 200, withCacheMeta(riskCenterCache.data, true, riskCenterCache.at));
-    }
-
-    const data = await buildRiskCenter(getPool());
-    riskCenterCache = { at: Date.now(), data };
-    return json(res, 200, withCacheMeta(data, false, riskCenterCache.at));
+    const [base, tasks] = await Promise.all([getBase(), loadTasks(getPool())]);
+    return json(res, 200, withCacheMeta(attachTasks(base.data, tasks), base.cached, base.at));
   } catch (err) {
     console.error("[petstore-risk-center]", err);
     return json(res, 500, { ok: false, error: "server_error" });

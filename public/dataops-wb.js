@@ -178,7 +178,7 @@ var PAGES = {
     return html;
   },
   risk: async function(){
-    if (!$("risk-style")) document.head.insertAdjacentHTML("beforeend", '<style id="risk-style">.risk-tabs{display:flex;gap:8px;margin:0 0 12px}.risk-tab,.risk-chip,.risk-act,.risk-dl{border:1px solid #d8e0ea;background:#fff;border-radius:8px;padding:7px 10px;cursor:pointer}.risk-tab.on,.risk-chip.on{background:#18212f;color:#fff;border-color:#18212f}.risk-cards{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;margin:8px 0 10px}.risk-card{border:1px solid #e2e8f0;background:#fff;border-radius:8px;padding:10px;cursor:pointer}.risk-card b{display:block;font-size:22px;margin-top:5px}.risk-card.red b{color:#c81e1e}.risk-meta{display:flex;justify-content:space-between;align-items:center;color:#667085;font-size:12px;margin:8px 0 12px}.risk-filters{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.risk-bulk{background:#c81e1e;color:#fff;border-color:#c81e1e}.risk-table{width:100%;border-collapse:collapse;background:#fff}.risk-table th,.risk-table td{border-bottom:1px solid #edf2f7;padding:9px 8px;text-align:left;vertical-align:top}.risk-name{font-weight:700}.risk-sub,.risk-small{color:#667085;font-size:12px}.risk-badge{display:inline-block;border-radius:6px;padding:2px 6px;margin:1px 3px 1px 0;font-size:12px;background:#eef2f7}.risk-badge.red{background:#fee2e2;color:#991b1b}.risk-badge.orange{background:#ffedd5;color:#9a3412}.risk-badge.yellow{background:#fef9c3;color:#854d0e}.risk-expired{color:#c81e1e;font-weight:700}.risk-detail{background:#fbfcfe}.risk-act{background:#f8fafc}.risk-act.red{background:#c81e1e;color:#fff;border-color:#c81e1e}.risk-more{text-align:center;padding:12px}@media(max-width:900px){.risk-cards{grid-template-columns:repeat(2,1fr)}.risk-table{font-size:12px}}</style>');
+    if (!$("risk-style")) document.head.insertAdjacentHTML("beforeend", '<style id="risk-style">.risk-tabs{display:flex;gap:8px;margin:0 0 12px}.risk-tab,.risk-chip,.risk-act,.risk-dl{border:1px solid #d8e0ea;background:#fff;border-radius:8px;padding:7px 10px;cursor:pointer}.risk-tab.on,.risk-chip.on{background:#18212f;color:#fff;border-color:#18212f}.risk-cards{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;margin:8px 0 10px}.risk-card{border:1px solid #e2e8f0;background:#fff;border-radius:8px;padding:10px;cursor:pointer}.risk-card b{display:block;font-size:22px;margin-top:5px}.risk-card.red b{color:#c81e1e}.risk-meta{display:flex;justify-content:space-between;align-items:center;color:#667085;font-size:12px;margin:8px 0 12px}.risk-filters{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.risk-bulk{background:#c81e1e;color:#fff;border-color:#c81e1e}.risk-table{width:100%;border-collapse:collapse;background:#fff}.risk-table th,.risk-table td{border-bottom:1px solid #edf2f7;padding:9px 8px;text-align:left;vertical-align:top}.risk-name{font-weight:700}.risk-sub,.risk-small{color:#667085;font-size:12px}.risk-badge{display:inline-block;border-radius:6px;padding:2px 6px;margin:1px 3px 1px 0;font-size:12px;background:#eef2f7}.risk-badge.red{background:#fee2e2;color:#991b1b}.risk-badge.orange{background:#ffedd5;color:#9a3412}.risk-badge.yellow{background:#fef9c3;color:#854d0e}.risk-expired{color:#c81e1e;font-weight:700}.risk-detail{background:#fbfcfe}.risk-act{background:#f8fafc}.risk-act.red{background:#c81e1e;color:#fff;border-color:#c81e1e}.risk-more{text-align:center;padding:12px}.risk-done>td{background:#f0fdf4}.risk-ok{display:inline-block;background:#dcfce7;color:#166534;border-radius:6px;padding:2px 7px;font-size:12px;font-weight:700;white-space:nowrap}.risk-chip.sent{border-color:#86efac;background:#f0fdf4}.risk-chip.conv{border-color:#86efac;color:#166534}.risk-chip.conv.on{background:#166534;color:#fff;border-color:#166534}.risk-act.done{background:#f1f5f9;color:#94a3b8;border-color:#e2e8f0;cursor:default}@media(max-width:900px){.risk-cards{grid-template-columns:repeat(2,1fr)}.risk-table{font-size:12px}}</style>');
     var E = window.rvEsc || esc, N = window.rvN || num, M = window.rvMoney || function(v){return v==null?"—":"¥"+Number(v).toLocaleString("zh-CN")};
     var st = window.__riskState || (window.__riskState = {tab:"main",filter:"",limit:100,data:null});
     // 前端数据只复用60秒,过期重拉(否则侧栏来回切永远看旧数据)
@@ -191,6 +191,9 @@ var PAGES = {
     function hasOpen(r,k){ return (r.open_tasks||[]).some(function(t){return !k || t.problem_key===k}); }
     function canProblem(r){ return (r.problems||[]).find(function(p){return p.assignee && !hasOpen(r,p.key)}); }
     function shownRows(){
+      // 0927 Damon:「要增加已经转任务」—— __converted=已转任务 / __todo=还没人管
+      if (st.filter==="__converted") return rows.filter(function(r){return (r.open_tasks||[]).length});
+      if (st.filter==="__todo") return rows.filter(function(r){return !(r.open_tasks||[]).length});
       return rows.filter(function(r){return !st.filter || (r.problems||[]).some(function(p){return p.key===st.filter})});
     }
     function redraw(){
@@ -259,7 +262,22 @@ var PAGES = {
       +'<div class="risk-card" data-risk-tab="queue">未处理工单<b>'+N(cards.open_tasks_n)+'</b></div>'
       +'<div class="risk-card" data-risk-tab="queue">待批报损<b>'+N(cards.pending_writeoff_n)+'</b></div>'
       +'<div class="risk-card red" data-risk-tab="nearexp">临期清仓<b>→</b></div></div>';
-    function filt(){ return '<div class="risk-filters">'+ps.map(function(p){return '<button class="risk-chip '+(st.filter===p.key?'on':'')+'" data-risk-filter="'+E(p.key)+'">'+E(p.label)+' '+N((d.problem_counts||{})[p.key]||0)+'</button>'}).join("")+(st.filter?'<button class="risk-chip risk-bulk" data-risk-bulk="'+E(st.filter)+'">本类前20转工单</button>':'')+'</div>'; }
+    var ptasks = d.problem_tasks || {};
+    function filt(){
+      var conv = '<button class="risk-chip conv '+(st.filter==="__converted"?'on':'')+'" data-risk-filter="__converted">✓ 已转任务 '+N(cards.converted_n||0)+'</button>'
+        +'<button class="risk-chip '+(st.filter==="__todo"?'on':'')+'" data-risk-filter="__todo">还没人管 '+N(cards.todo_n||0)+'</button>';
+      return '<div class="risk-filters">'+conv+ps.map(function(p){
+        var pt = ptasks[p.key] || [];
+        var sent = pt.length ? ' · 已派 '+E(pt[0].next_holder||"")+(pt.length>1?' 等'+pt.length+'张':'') : '';
+        return '<button class="risk-chip '+(pt.length?'sent ':'')+(st.filter===p.key?'on':'')+'" data-risk-filter="'+E(p.key)+'">'+E(p.label)+' '+N((d.problem_counts||{})[p.key]||0)+sent+'</button>'}).join("")
+        +(st.filter&&st.filter.indexOf("__")!==0?'<button class="risk-chip risk-bulk" data-risk-bulk="'+E(st.filter)+'">本类前20转工单</button>':'')+'</div>';
+    }
+    function ago(t){ var ms=Date.now()-new Date(t).getTime(); if(!t||!isFinite(ms))return ""; var dd=Math.floor(ms/86400000); return dd>0?dd+"天前":"今天"; }
+    function taskCell(ts){
+      if(!ts||!ts.length) return "—";
+      var t=ts[0];
+      return '<span class="risk-ok">✓ 已转任务</span><div class="risk-small">'+E(t.next_holder||"—")+' 手上'+(ago(t.created_at)?' · '+ago(t.created_at):'')+(ts.length>1?' · 等'+ts.length+'张':'')+'</div>';
+    }
     function tasks(ts){ return ts&&ts.length ? ts.map(function(t){return '<div>'+E(t.id)+'<div class="risk-small">'+E(t.status)+' '+E(t.next_holder||"")+'</div></div>'}).join("") : "—"; }
     function detailHtml(r){
       return (r.problems||[]).map(function(x){
@@ -276,7 +294,10 @@ var PAGES = {
           var badges = (r.problems||[]).slice(0,3).map(function(x){return '<span class="risk-badge '+E(x.tier)+'">'+E(x.label)+'</span>'}).join("")+more;
           var date = E(r.produce_date||"—")+'<div class="'+(Number(r.days_to_expire)<=0?'risk-expired':'risk-small')+'">'+E(r.expiration_date||"—")+' / '+(r.days_to_expire==null?"—":r.days_to_expire+"天")+'</div>';
           var det = '<tr id="risk-detail-'+i+'" hidden><td></td><td colspan="8" class="risk-detail"></td></tr>';
-          return '<tr><td><button class="risk-act" data-risk-expand="'+i+'" data-risk-index="'+globalIndex+'">▸</button></td><td><div class="risk-name">'+E(r.product_name)+'</div><div class="risk-sub">'+E(r.spec_text||"—")+' · '+E(r.shelf_code||"—")+'</div></td><td>'+badges+'</td><td>'+E(r.product_status==="UP"?"在售":(r.product_status==="LOWER"?"下架":"—"))+'</td><td>'+N(r.stk)+'</td><td>'+date+'</td><td>'+M(r.amount_by_price)+'</td><td>'+tasks(r.open_tasks)+'</td><td>'+(p?'<button class="risk-act red" data-risk-one data-problem="'+E(p.key)+'" data-code="'+E(r.product_code)+'">'+E(p.action)+'</button>':'—')+'</td></tr>'+det;
+          var done = (r.open_tasks||[]).length>0;
+          var act = p ? '<button class="risk-act red" data-risk-one data-problem="'+E(p.key)+'" data-code="'+E(r.product_code)+'">'+E(p.action)+'</button>'
+            : (done ? '<button class="risk-act done" disabled>已转任务</button>' : '—');
+          return '<tr'+(done?' class="risk-done"':'')+'><td><button class="risk-act" data-risk-expand="'+i+'" data-risk-index="'+globalIndex+'">▸</button></td><td><div class="risk-name">'+E(r.product_name)+'</div><div class="risk-sub">'+E(r.spec_text||"—")+' · '+E(r.shelf_code||"—")+'</div></td><td>'+badges+'</td><td>'+E(r.product_status==="UP"?"在售":(r.product_status==="LOWER"?"下架":"—"))+'</td><td>'+N(r.stk)+'</td><td>'+date+'</td><td>'+M(r.amount_by_price)+'</td><td>'+taskCell(r.open_tasks)+'</td><td>'+act+'</td></tr>'+det;
         }).join("")+(all.length>part.length?'<tr><td colspan="9" class="risk-more"><button class="risk-act" data-risk-more>再显示 100 行(剩 '+(all.length-part.length)+')</button></td></tr>':'')+'</tbody></table>';
     }
     function queue(){

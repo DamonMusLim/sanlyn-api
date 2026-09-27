@@ -5,7 +5,9 @@ import { buildProblemGoods } from "./petstore-problem-goods.js";
 
 const STORE = "63350001";
 const CACHE_TTL_MS = 60000;
-let storeBoardCache = { at: 0, data: null };
+const PREWARM_MS = 5 * 60000;
+// 0927 Damon「加载太慢了」:重计算 12 秒 → 先给上一份(不管多旧),过期后台重算;工单每次现查。
+const boardCache = new Map(); // storeCode -> { at, data, inflight }
 
 function json(res, code, body) { return res.status(code).json(body); }
 function n(v) { const x = Number(v); return Number.isFinite(x) ? x : null; }
@@ -15,7 +17,7 @@ function groupOf(data, key) { return (data.groups || []).find((g) => g.key === k
 function cacheWrap(data, cached, at) { return { ...data, cached, generated_at: new Date(at).toISOString() }; }
 
 export function invalidateStoreBoardCache() {
-  storeBoardCache = { at: 0, data: null };
+  for (const c of boardCache.values()) c.at = 0; // 只标过期,旧数据照给,后台重算
 }
 
 async function loadDna(pool, storeCode) {
@@ -54,12 +56,16 @@ async function loadOpenTasks(pool) {
 }
 
 export async function buildStoreBoard(pool, storeCode = STORE) {
-  const [catalog, expiry, goods, rows, openTasks] = await Promise.all([
+  const [base, openTasks] = await Promise.all([buildStoreBoardBase(pool, storeCode), loadOpenTasks(pool)]);
+  return { ...base, open_tasks: openTasks };
+}
+
+async function buildStoreBoardBase(pool, storeCode) {
+  const [catalog, expiry, goods, rows] = await Promise.all([
     buildCatalogOverview(pool, storeCode),
     buildExpiryRisk(pool),
     buildProblemGoods(pool),
-    loadDna(pool, storeCode),
-    loadOpenTasks(pool)
+    loadDna(pool, storeCode)
   ]);
 
   const exp = groupOf(expiry, "tier_5_expired");
@@ -163,10 +169,33 @@ export async function buildStoreBoard(pool, storeCode = STORE) {
       completeness: catalog.completeness,
       last_snapshot_at: catalog.last_snapshot_at,
       gaps
-    },
-    open_tasks: openTasks
+    }
   };
 }
+
+function refreshBase(storeCode) {
+  let c = boardCache.get(storeCode);
+  if (!c) { c = { at: 0, data: null, inflight: null }; boardCache.set(storeCode, c); }
+  if (c.inflight) return c.inflight;
+  c.inflight = buildStoreBoardBase(getPool(), storeCode)
+    .then((data) => { c.data = data; c.at = Date.now(); return c; })
+    .catch((err) => { console.error("[petstore-store-board] refresh", err); if (!c.data) throw err; return c; })
+    .finally(() => { c.inflight = null; });
+  return c.inflight;
+}
+
+async function getBase(storeCode) {
+  const c = boardCache.get(storeCode);
+  if (c && c.data) {
+    if (Date.now() - c.at >= CACHE_TTL_MS) refreshBase(storeCode).catch(() => {});
+    return { data: c.data, at: c.at, cached: true };
+  }
+  const fresh = await refreshBase(storeCode);
+  return { data: fresh.data, at: fresh.at, cached: false };
+}
+
+refreshBase(STORE).catch(() => {});
+setInterval(() => { refreshBase(STORE).catch(() => {}); }, PREWARM_MS).unref();
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
@@ -175,13 +204,10 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return json(res, 405, { ok: false, error: "method_not_allowed" });
 
   try {
-    const now = Date.now();
-    if (storeBoardCache.data && now - storeBoardCache.at < CACHE_TTL_MS) {
-      return json(res, 200, cacheWrap(storeBoardCache.data, true, storeBoardCache.at));
-    }
-    const data = await buildStoreBoard(getPool(), req.query?.storeCode || STORE);
-    storeBoardCache = { at: Date.now(), data };
-    return json(res, 200, cacheWrap(data, false, storeBoardCache.at));
+    const q = String(req.query?.storeCode || "");
+    const storeCode = /^\d{8}$/.test(q) ? q : STORE; // 缓存按店分,只收 8 位店号,防乱传参撑爆 Map
+    const [base, openTasks] = await Promise.all([getBase(storeCode), loadOpenTasks(getPool())]);
+    return json(res, 200, cacheWrap({ ...base.data, open_tasks: openTasks }, base.cached, base.at));
   } catch (err) {
     console.error("[petstore-store-board]", err);
     return json(res, 500, { ok: false, error: "server_error" });
