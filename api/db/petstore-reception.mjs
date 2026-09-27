@@ -21,6 +21,14 @@ const LINE_LABEL = {
   deworm_external: "体外驱虫",
 };
 
+// start_at 可能是 Date 对象,String() 后截取会得到「2026 」这种错字
+function hm(v) {
+  if (!v) return "";
+  const d = v instanceof Date ? v : new Date(v);
+  if (Number.isNaN(d.getTime())) return String(v).slice(11, 16);
+  return new Date(d.getTime() + 8 * 3600e3).toISOString().slice(11, 16);
+}
+
 function json(res, status, body) { return res.status(status).json(body); }
 function text(v, max = 160) { const s = String(v ?? "").trim(); return s ? s.slice(0, max) : ""; }
 function todayCn(now = new Date()) { return new Date(now.getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10); }
@@ -69,7 +77,7 @@ async function requireStaff(req, pool) {
 
 function apptRow(x) {
   return {
-    id: x.id, time: String(x.start_at || "").slice(11, 16), pet_id: x.pet_id,
+    id: x.id, time: hm(x.start_at), pet_id: x.pet_id,
     pet_name: x.pet_name || x.service_pet_name || "", service: x.service_name || x.biz_type || "",
     customer_name: x.owner_name || "", status: x.reception_status || x.status || "",
   };

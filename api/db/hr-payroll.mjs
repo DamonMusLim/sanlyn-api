@@ -153,7 +153,12 @@ async function computeOne(pool, emp, range, cfg) {
   }
   const overtimeAmount = hourlyRate * overtimeHours * (Number(cfg.overtime_multiplier) || 1.5);
   const holidayExtraMultiplier = Math.max((Number(cfg.holiday_multiplier) || 3) - 1, 0);
-  const holidayAmount = dailyRate * holidayWorkDays * holidayExtraMultiplier;
+  // 法定日上班(Damon 0927 定):当天合计 3 倍,月薪员工日薪按国家口径 月薪÷21.75;
+  // base 已按出勤折算(÷26)付过这 1 天,这里只补差额。日薪/时薪员工按实际日薪 ×(倍数-1)。
+  const holidayMultiplier = Number(cfg.holiday_multiplier) || 3;
+  const holidayAmount = emp.pay_type === "monthly"
+    ? holidayWorkDays * (holidayMultiplier * rate / 21.75 - dailyRate)
+    : dailyRate * holidayWorkDays * holidayExtraMultiplier;
   if (compOffHours > 0) warnings.push(`有${compOffHours}小时调休(不计入工资，只抵休息)`);
 
   return {
