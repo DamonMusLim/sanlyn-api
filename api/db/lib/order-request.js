@@ -165,6 +165,8 @@ async function saveFiles(id, files) {
 }
 
 async function upsertTask(pool, row) {
+  // 测试公司（TEST-*，越权测试专用）不给艾莎建任务，免得刷屏
+  if ([row.buyer_company_code, row.factory_company_code].some((c) => /^TEST-/i.test(String(c || "")))) return;
   const title = `订单申请待审核 ${row.buyer_company_code || ""}`.slice(0, 100);
   await pool.query(
     `INSERT INTO tasks (id,title,task_type,level,status,domain,priority,assigned_staff_no,
