@@ -43,7 +43,7 @@ function pool() {
 
 const gdc = {
   async unpicked() { return 2; },
-  async list() { return { list: [{ order_no: "O1", day_seq: "18", channel_code: 10, order_status: "WAIT_PICK", quantity: 3, recipient_phone: "155****8888" }] }; },
+  async list() { return { list: [{ order_no: "O1", day_seq: "18", channel_code: 10, order_status: 20, quantity: 3, recipient_phone: "155****8888" }] }; },
   async detail() { return { plat: "MEI_TUAN", goods: [
     { product_name: "猫砂", upc_code: "1111", product_code: "P1", sku_spec: "5L", quantity: 1, actual_price: 9.9 },
     { product_name: "罐头", upc_code: "2222", product_code: "P2", sku_spec: "80g", quantity: 2, actual_price: 6.8 },

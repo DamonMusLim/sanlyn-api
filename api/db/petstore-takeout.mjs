@@ -1,12 +1,9 @@
 import { createGdcCashierClient } from "../lib/gdc-cashier.mjs";
 
 const STORE_CODE = process.env.GDC_STORE_CODE || "63350001";
-const STATUS_MAP = {
-  pending: ["WAIT_PICK", "UNPICKED", "pending", 10],
-  picked: ["PICKED", "WAIT_TAKE", "picked", 20],
-  done: ["DONE", "COMPLETED", "done", 30],
-  cancelled: ["CANCELLED", "CANCELED", "cancelled", 40],
-};
+// 果冻橙收银端 TakeOutContentFragment / TakeOutOrderNewAdapter 里的真实值(0927 反编译核对)
+const STATUS_MAP = { pending: 20, picked: 40, done: 60, cancelled: 80 };
+const STATUS_LABEL = { 20: "待拣货", 40: "已拣货", 60: "已完成", 80: "已取消" };
 const CHANNELS = { 10: "美团", MEI_TUAN: "美团", ELE_ME: "饿了么" };
 let unpickedCache = { at: 0, count: 0 };
 
@@ -37,7 +34,7 @@ function normalizeOrder(x) {
   return {
     order_no: text(x.order_no, 80), day_seq: text(x.day_seq, 40), recipient_name: text(x.recipient_name, 80),
     recipient_phone: text(x.recipient_phone, 80), remark: text(x.remark, 400), channel: platform(x.channel_code),
-    order_status: x.order_status, pay_price: x.pay_price ?? null, quantity: n(x.quantity), order_time: x.order_time || "",
+    order_status: x.order_status, status_label: STATUS_LABEL[Number(x.order_status)] || "", pay_price: x.pay_price ?? null, quantity: n(x.quantity), order_time: x.order_time || "",
   };
 }
 
@@ -50,7 +47,7 @@ async function listOrders(client, b) {
     store_code: STORE_CODE,
   };
   const st = text(b.status, 30);
-  if (STATUS_MAP[st]) body.order_status = STATUS_MAP[st];
+  if (STATUS_MAP[st]) body.order_status = String(STATUS_MAP[st]);
   const data = await client.list(body);
   return { success: true, rows: (data.list || []).map(normalizeOrder), status_map: STATUS_MAP };
 }
