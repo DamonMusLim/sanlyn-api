@@ -57,19 +57,23 @@ export function composeMail(kind, s, url) {
   const hi = `<p>Dear ${esc(s.customer || "Customer")},</p>`;
   const sign = `<p>Best regards,<br>Xiamen Pet Baby Import and Export Co., Ltd.</p>`;
   const btn = (label) => url ? `<p><a href="${esc(url)}">${esc(label)}</a></p>` : "";
+  // 客户认得的短单号（LL-9）+ 货物（HS 1404909090 CAT LITTER）
+  const ref = s.ref ? ` (${s.ref})` : "";
+  const what = (s.ref || (s.goods && s.goods.length))
+    ? `<p>${s.ref ? `Order: ${esc(s.ref)}<br>` : ""}${(s.goods || []).map((g) => `HS ${esc(g.hs)}: ${esc(g.name)}`).join("<br>")}</p>` : "";
   if (kind === "link") return {
-    subject: `PI ${no} – review and confirm`,
-    html: `${hi}<p>Please review PI ${esc(no)} and confirm it, or request changes to quantity, delivery date or shipping marks on the page.</p>`
+    subject: `PI ${no}${ref} – review and confirm`,
+    html: `${hi}${what}<p>Please review PI ${esc(no)} and confirm it, or request changes to quantity, delivery date or shipping marks on the page.</p>`
       + `${btn(`Review PI ${no}`)}<p>If we receive no reply within ${REPLY_DAYS} days (by ${esc(due)}), this PI is deemed accepted according to its terms.</p>${sign}`,
   };
   if (kind === "r1" || kind === "r2") return {
-    subject: `PI ${no} – confirm by ${due}`,
-    html: `${hi}<p>PI ${esc(no)} is still waiting for your confirmation.</p>`
+    subject: `PI ${no}${ref} – confirm by ${due}`,
+    html: `${hi}${what}<p>PI ${esc(no)} is still waiting for your confirmation.</p>`
       + `${btn(`Confirm PI ${no}`)}<p>If we receive no reply by ${esc(due)}, this PI is deemed accepted according to its terms.</p>${sign}`,
   };
   if (kind === "deemed") return {
-    subject: `PI ${no} – deemed accepted`,
-    html: `${hi}<p>We received no reply on PI ${esc(no)} by ${esc(due)}. According to its terms, the PI is now deemed accepted and we will proceed with your order.</p>`
+    subject: `PI ${no}${ref} – deemed accepted`,
+    html: `${hi}${what}<p>We received no reply on PI ${esc(no)} by ${esc(due)}. According to its terms, the PI is now deemed accepted and we will proceed with your order.</p>`
       + `${btn(`PI ${no}`)}<p>If anything needs to be changed, contact us as soon as possible.</p>${sign}`,
   };
   throw new Error("unknown mail kind " + kind);
@@ -87,6 +91,21 @@ async function queueMail(pool, s, kind, rcpt, dryRun) {
   await pool.query(`UPDATE collab.po_sheet SET notify_log = notify_log || jsonb_build_object($2::text, jsonb_build_object('at', NOW(), 'outbox_id', $3::bigint, 'to', $4::jsonb)) WHERE id=$1`,
     [s.id, kind, r.rows[0].id, JSON.stringify(rcpt.to)]);
   return { outbox_id: r.rows[0].id };
+}
+
+// 货物摘要：按 HS 归并；同一 HS 多个英文申报名时取箱数最多的那个（⛔ 不按行罗列，客户只要知道是什么货）
+export async function goodsOf(pool, orderId) {
+  if (!orderId) return [];
+  const r = await pool.query(
+    `SELECT hs, name FROM (
+       SELECT p.hs_code AS hs, p.declaration_name_en AS name, SUM(li.qty_ctn) AS ctn,
+              ROW_NUMBER() OVER (PARTITION BY p.hs_code ORDER BY SUM(li.qty_ctn) DESC) AS rk
+         FROM order_line_items li
+         JOIN LATERAL (SELECT hs_code, declaration_name_en FROM products WHERE sku = li.sku AND active LIMIT 1) p ON true
+        WHERE li.order_id = $1 AND NULLIF(p.hs_code,'') IS NOT NULL AND NULLIF(p.declaration_name_en,'') IS NOT NULL
+        GROUP BY 1, 2) t
+      WHERE rk = 1 ORDER BY hs LIMIT 5`, [orderId]);
+  return r.rows;
 }
 
 // 这张单现在该做什么（纯函数，方便测）
@@ -111,12 +130,14 @@ export async function runOrderCollabNotify({ dryRun = true, now = new Date() } =
   if (!cutover || isNaN(Date.parse(cutover))) { console.log(TAG, "CUTOVER 未设 → 什么都不做"); return stats; }
   const rows = (await pool.query(
     `SELECT s.id, s.order_no, s.status, s.sent_at, s.reply_due_at, s.deemed_at, s.notify_log, s.party_company_id,
-            s.factory_name AS customer, o.pi_no, o.contract_no, o.company_code
+            s.factory_name AS customer, o.pi_no, o.contract_no, o.company_code,
+            COALESCE(NULLIF(o.customer_po,''), regexp_replace(o.order_no, '^[0-9]+-', '')) AS ref, o.id AS order_id
        FROM collab.po_sheet s JOIN orders o ON o.order_no = s.order_no
       WHERE s.side='customer' AND s.status NOT IN ('void','adopted') AND s.sent_at >= $1
       ORDER BY s.id`, [cutover])).rows;
   for (const s of rows) {
     stats.checked++;
+    s.goods = await goodsOf(pool, s.order_id).catch(() => []);
     const acts = nextActions(s, now);
     if (!acts.length) continue;
     const rcpt = await notifyRecipients(pool, s.party_company_id);
