@@ -47,6 +47,13 @@ async function requireStaff(req, pool) {
   return { empId: claims.employee_id, me };
 }
 
+// 货位在库里可能是 JSON 数组串 ["5-305"],给人看要拆开
+function shelfText(v) {
+  if (!v) return "";
+  try { const a = JSON.parse(v); if (Array.isArray(a)) return a.filter(Boolean).join("、"); } catch { /* 不是 JSON 就原样 */ }
+  return String(v);
+}
+
 async function lookupProduct(pool, q) {
   const query = text(q, 120);
   if (!query) return [];
@@ -74,7 +81,7 @@ async function lookupProduct(pool, q) {
     product_code: x.product_code || "", barcode: x.barcode || "",
     product_name: x.product_name || "", spec: x.spec || "",
     price: x.out_price ?? null, stock: x.stock_num ?? null,
-    location: x.shelf_location || "", recent_expiry: x.recent_expiry || "",
+    location: shelfText(x.shelf_location), recent_expiry: x.recent_expiry || "",
   }));
 }
 
