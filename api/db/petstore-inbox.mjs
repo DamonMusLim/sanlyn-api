@@ -36,6 +36,10 @@ async function requireStaff(req, pool) {
     [claims.employee_id]);
   const me = r.rows[0];
   if (!me || me.employment_status !== "active") return { error: "forbidden" };
+  // 2026-09-27 止血:会话里有企微/微信/美团/饿了么全部客户聊天,之前任何在职店员登录都能看全部。
+  // 按渠道分权限设计好之前,只有老板(BOSS_EMPLOYEE_IDS,默认35)能看。
+  const bossIds = String(process.env.BOSS_EMPLOYEE_IDS || "35").split(",").map((x) => x.trim()).filter(Boolean);
+  if (!bossIds.includes(String(claims.employee_id))) return { error: "forbidden" };
   return { empId: claims.employee_id, me };
 }
 
