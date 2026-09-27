@@ -20,10 +20,12 @@ function pool(seed = {}) {
     agenda: [],
     count30: seed.count30 || 0,
     lookup: seed.lookup || [],
+    lastSql: "",
   };
   return {
     state,
     async query(sql, params) {
+      state.lastSql = sql;
       if (sql.includes("FROM petstore_stock_reports") && sql.includes("COUNT(*)::int AS n")) {
         return { rows: [{ n: state.count30 }] };
       }
@@ -59,7 +61,7 @@ function pool(seed = {}) {
       }
       if (sql.includes("SET status='found'")) {
         const row = state.reports.find((x) => x.id === params[0] && x.company_code === params[1]);
-        Object.assign(row, { status: "found", found_location: params[2], found_action: params[3] });
+        Object.assign(row, { status: "found", found_location: params[2], found_action: params[3], found_photos: JSON.parse(params[4]) });
         return { rows: [row] };
       }
       if (sql.includes("SELECT * FROM petstore_stock_reports WHERE id=$1")) {
@@ -71,7 +73,9 @@ function pool(seed = {}) {
         return { rows: [row] };
       }
       if (sql.includes("FROM public.petstore_skus")) return { rows: state.lookup };
-      if (sql.includes("ORDER BY created_at DESC LIMIT 200")) return { rows: state.reports };
+      if (sql.includes("ORDER BY created_at DESC LIMIT 200")) {
+        return { rows: state.reports.map((x) => ({ ...x, overdue: x.status === "searching" && new Date(x.created_at).getTime() < Date.parse("2026-09-26T12:00:00.000Z") })) };
+      }
       if (sql.includes("GROUP BY product_code HAVING COUNT")) return { rows: [] };
       throw new Error(`unexpected sql: ${sql}`);
     },
@@ -115,6 +119,31 @@ async function call(h, body) {
 }
 
 {
+  const p = pool({ reports: [{ id: 1, company_code: "JINFANG", product_code: "P1", status: "searching", bound_location: "B-1", created_at: "2026-09-27T00:00:00.000Z" }] });
+  const h = makeHandler({ poolFactory: () => p, setCorsFn: noCors, verifyStaff: async () => staff, now, photoSaver });
+  const r = await call(h, { action: "found", id: 1, found_location: "C-4", found_action: "return_bound" });
+  assert.equal(r.statusCode, 400);
+  assert.equal(r.body.error, "return_photo_required");
+}
+
+{
+  const reports = [
+    { id: 1, company_code: "JINFANG", product_code: "P1", product_name: "猫砂", status: "searching", bound_location: "B-1", created_at: "2026-09-27T00:00:00.000Z" },
+    { id: 2, company_code: "JINFANG", product_code: "P1", product_name: "猫砂", status: "searching", bound_location: "B-1", created_at: "2026-09-27T00:00:00.000Z" },
+  ];
+  const p = pool({ reports });
+  const h = makeHandler({ poolFactory: () => p, setCorsFn: noCors, verifyStaff: async () => staff, now, photoSaver });
+  const r1 = await call(h, { action: "found", id: 1, found_location: "C-4", found_action: "rebind_new" });
+  const r2 = await call(h, { action: "found", id: 2, found_location: "C-4", found_action: "rebind_new" });
+  assert.equal(r1.statusCode, 200);
+  assert.equal(r2.statusCode, 200);
+  assert.equal(r1.body.rebind_todo_created, true);
+  assert.equal(r2.body.rebind_todo_created, false);
+  assert.equal(p.state.agenda.length, 1);
+  assert.match(p.state.agenda[0].title, /改绑货位:猫砂 B-1→C-4/);
+}
+
+{
   const p = pool({ count30: 1 });
   const h = makeHandler({ poolFactory: () => p, setCorsFn: noCors, verifyStaff: async () => staff, now, photoSaver });
   const r = await call(h, { action: "create", product_code: "P1", product_name: "猫砂", reason: "missing", photos: [{ mime: "image/jpeg", base64: "xx" }] });
@@ -132,12 +161,28 @@ async function call(h, body) {
 }
 
 {
-  const p = pool({ lookup: [{ product_code: "P1", barcode: "BC", product_name: "猫砂", spec: "5L", out_price: 19.9, stock_num: 2, shelf_location: "B-1", recent_expiry: "2027-01-01", cost_price: 9.9 }] });
+  const p = pool({ lookup: [{ product_code: "P1", barcode: "BC2", product_name: "猫砂", spec: "5L", out_price: 19.9, stock_num: 2, shelf_location: "B-1", recent_expiry: "2027-01-01", cost_price: 9.9 }] });
   const h = makeHandler({ poolFactory: () => p, setCorsFn: noCors, verifyStaff: async () => staff, now, photoSaver });
-  const r = await call(h, { action: "product_lookup", q: "BC" });
+  const r = await call(h, { action: "product_lookup", q: "BC2" });
   assert.equal(r.statusCode, 200);
+  assert.equal(r.body.rows.length, 1);
+  assert.doesNotMatch(p.state.lastSql, /s\.barcode/);
+  assert.match(p.state.lastSql, /LATERAL/);
   assert.equal(r.body.rows[0].product_name, "猫砂");
+  assert.equal(r.body.rows[0].barcode, "BC2");
   assert.equal(Object.hasOwn(r.body.rows[0], "cost_price"), false);
+}
+
+{
+  const p = pool({ reports: [
+    { id: 1, company_code: "JINFANG", product_code: "P1", status: "searching", created_at: "2026-09-26T11:59:59.000Z" },
+    { id: 2, company_code: "JINFANG", product_code: "P2", status: "searching", created_at: "2026-09-26T12:00:01.000Z" },
+  ] });
+  const h = makeHandler({ poolFactory: () => p, setCorsFn: noCors, verifyStaff: async () => mgr, now, photoSaver });
+  const r = await call(h, { action: "list" });
+  assert.equal(r.statusCode, 200);
+  assert.equal(r.body.rows[0].overdue, true);
+  assert.equal(r.body.rows[1].overdue, false);
 }
 
 console.log("petstore-stock-report tests passed");

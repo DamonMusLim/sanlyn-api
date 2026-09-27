@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS petstore_stock_reports (
   status TEXT NOT NULL DEFAULT 'searching',
   found_location TEXT,
   found_action TEXT,
+  found_photos JSONB NOT NULL DEFAULT '[]'::jsonb,
   reported_by_employee_id INTEGER NOT NULL,
   reported_by_name TEXT,
   shift_note TEXT,
@@ -47,3 +48,6 @@ CREATE INDEX IF NOT EXISTS idx_petstore_stock_reports_employee_created
 CREATE UNIQUE INDEX IF NOT EXISTS ux_petstore_stock_reports_open_product_employee
   ON petstore_stock_reports(company_code, product_code, reported_by_employee_id)
   WHERE status IN ('searching','pending_confirm');
+
+ALTER TABLE petstore_stock_reports
+  ADD COLUMN IF NOT EXISTS found_photos JSONB NOT NULL DEFAULT '[]'::jsonb;

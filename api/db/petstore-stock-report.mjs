@@ -51,12 +51,18 @@ async function lookupProduct(pool, q) {
   const query = text(q, 120);
   if (!query) return [];
   const r = await pool.query(`
-    SELECT s.product_code, COALESCE(b.barcode, s.barcode) AS barcode,
+    SELECT s.product_code, b.barcode,
            s.product_name, s.spec, s.out_price, s.stock_num,
            COALESCE(c.shelf_no, s.shelf_list) AS shelf_location,
            sup.expire_date_batch AS recent_expiry
       FROM public.petstore_skus s
-      LEFT JOIN public.petstore_product_barcodes b ON b.product_code=s.product_code
+      LEFT JOIN LATERAL (
+        SELECT pb.barcode
+          FROM public.petstore_product_barcodes pb
+         WHERE pb.product_code=s.product_code
+         ORDER BY CASE WHEN pb.barcode=$1 THEN 0 ELSE 1 END, pb.barcode
+         LIMIT 1
+      ) b ON true
       LEFT JOIN public.petstore_product_status_current c
         ON c.product_code=s.product_code AND c.store_code=$2
       LEFT JOIN public.petstore_sku_supp sup ON sup.product_code=s.product_code
@@ -84,6 +90,23 @@ async function addFrequentTodo(pool, me, productName, productCode, now) {
     `INSERT INTO hr_day_agenda (company_code, work_date, kind, title, note, status, created_by)
      VALUES ($1,$2,'task',$3,$4,'open',$5)`,
     [me.company_code, date, title, `常丢商品，请重新定位并贴货位标签。商品编码:${productCode}`, "stock_report"]);
+  return true;
+}
+
+async function addRebindTodo(pool, me, row, loc, now) {
+  const oldLoc = text(row.bound_location, 120);
+  const name = text(row.product_name, 160) || text(row.product_code, 80);
+  const title = `改绑货位:${name} ${oldLoc || "未绑"}→${loc}`;
+  const date = todayCn(now);
+  const exists = await pool.query(
+    `SELECT id FROM hr_day_agenda
+      WHERE company_code=$1 AND work_date=$2 AND kind='task' AND title=$3 LIMIT 1`,
+    [me.company_code, date, title]);
+  if (exists.rows.length) return false;
+  await pool.query(
+    `INSERT INTO hr_day_agenda (company_code, work_date, kind, title, note, status, created_by)
+     VALUES ($1,$2,'task',$3,$4,'open',$5)`,
+    [me.company_code, date, title, `员工找到位置与绑定货位不同。本期只记待办，不自动改货位。商品编码:${row.product_code}`, "stock_report"]);
   return true;
 }
 
@@ -120,7 +143,7 @@ async function createReport(pool, me, empId, b, now, photoSaver = savePhoto) {
   return { status: 200, body: { success: true, data: r.rows[0], frequent_lost: frequent, todo_created } };
 }
 
-async function found(pool, me, b) {
+async function found(pool, me, empId, b, now, photoSaver = savePhoto) {
   const id = Number(b.id);
   const r = await pool.query(
     `SELECT * FROM petstore_stock_reports
@@ -136,19 +159,31 @@ async function found(pool, me, b) {
   if (differs && action === "return_bound" && !(Array.isArray(b.photos) && b.photos.length)) {
     return { status: 400, body: { success: false, error: "return_photo_required" } };
   }
+  let foundUrls = [];
+  if (differs && action === "return_bound") {
+    try { foundUrls = b.photos.map((p) => photoSaver(p, empId, now)); }
+    catch (e) { return { status: 400, body: { success: false, error: e.message } }; }
+  }
+  const rebind_todo_created = differs && action === "rebind_new"
+    ? await addRebindTodo(pool, me, row, loc, now())
+    : false;
   const rr = await pool.query(
     `UPDATE petstore_stock_reports
-        SET status='found', found_location=$3, found_action=$4, found_at=now(), closed_at=now()
+        SET status='found', found_location=$3, found_action=$4,
+            found_photos=COALESCE(found_photos,'[]'::jsonb) || $5::jsonb,
+            found_at=now(), closed_at=now()
       WHERE id=$1 AND company_code=$2 RETURNING *`,
-    [id, me.company_code, loc, action || null]);
-  return { status: 200, body: { success: true, data: rr.rows[0] } };
+    [id, me.company_code, loc, action || null, JSON.stringify(foundUrls)]);
+  return { status: 200, body: { success: true, data: rr.rows[0], rebind_todo_created } };
 }
 
 async function listReports(pool, me, empId, b) {
   const manager = isManager(me);
   const status = text(b.status, 40);
   const r = await pool.query(
-    `SELECT * FROM petstore_stock_reports
+    `SELECT *,
+            (status='searching' AND created_at < now() - interval '24 hours') AS overdue
+       FROM petstore_stock_reports
       WHERE company_code=$1
         AND ($2::boolean OR reported_by_employee_id=$3)
         AND ($4::text='' OR status=$4)
@@ -209,7 +244,7 @@ export function makeHandler({ poolFactory = defaultPoolFactory, setCorsFn = defa
       let out;
       if (action === "product_lookup") out = { status: 200, body: { success: true, rows: await lookupProduct(pool, b.q || b.query || b.barcode) } };
       else if (action === "create") out = await createReport(pool, auth.me, auth.empId, b, now, photoSaver);
-      else if (action === "found") out = await found(pool, auth.me, b);
+      else if (action === "found") out = await found(pool, auth.me, auth.empId, b, now, photoSaver);
       else if (action === "confirm_loss") out = await confirmLoss(pool, auth.me, b, now);
       else if (action === "list") out = await listReports(pool, auth.me, auth.empId, b);
       else out = { status: 400, body: { success: false, error: "bad_action" } };
