@@ -7,6 +7,13 @@ import { requireAuth } from "../auth.js";
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
+const PAGE_COLS = `product_code, barcode, product_name, category, spec_text, pic_url,
+             gdc_created_at, gdc_updated_at,
+             store_price, mt_price, ele_price, cur_stock, product_status, shelf_code,
+             month_sale, warn_status, category_l1, category_l2, spu_code,
+             produce_date, expiration_date, days_to_expire, expiry_captured,
+             stock_num, out_price, supplier, take_out,
+             gdc_created_at, gdc_updated_at, gdc_created_by, gdc_updated_by`;
 
 function cleanText(value, max = 120) {
   const s = String(value ?? "").trim();
@@ -36,6 +43,27 @@ async function listRows(req) {
   // stock=instock 时只返回有货的;其它任何值(含不传)= 全部 = 原行为。
   // ⛔ 默认必须是全部 —— 这个接口还有别的页面在用。
   const stock = cleanText(req.query?.stock, 40) === "instock" ? "instock" : null;
+  // 分页口径:默认按 SKU(一页 pageSize 行,跟 total 同口径,前端 ceil(total/pageSize) 才对);
+  // by=spu 按商品(SPU)分页:一页 pageSize 个 SPU、展开成其下全部规格行,页数要按 summary.spu_total 算。
+  // 0927 起 by=spu 只给:jdc 门店商品(StoreGoodsPage)、dataops-wb 商品库。⛔别把默认改回 SPU(总部商品库 147 页后 86 页全空)
+  const bySpu = cleanText(req.query?.by, 10) === "spu";
+  const pageRowsSql = bySpu ? `
+    ), spu_page AS (
+      SELECT DISTINCT spu_code
+        FROM filtered
+       ORDER BY spu_code
+       LIMIT $4 OFFSET $5
+    ), page_rows AS (
+      SELECT ${PAGE_COLS}
+        FROM filtered
+       WHERE spu_code IN (SELECT spu_code FROM spu_page)
+    )` : `
+    ), page_rows AS (
+      SELECT ${PAGE_COLS}
+        FROM filtered
+       ORDER BY spu_code, product_code, spec_text
+       LIMIT $4 OFFSET $5
+    )`;
   const params = [keyword, category, productStatus, pageSize, offset, stock];
   const sql = `
     WITH sku_key_check AS (
@@ -92,22 +120,7 @@ async function listRows(req) {
              COUNT(*) FILTER (WHERE expiration_date IS NOT NULL)::int AS expiry_covered,
              MAX(expiry_captured) AS expiry_captured
         FROM filtered
-    ), spu_page AS (
-      SELECT DISTINCT spu_code
-        FROM filtered
-       ORDER BY spu_code
-       LIMIT $4 OFFSET $5
-    ), page_rows AS (
-      SELECT product_code, barcode, product_name, category, spec_text, pic_url,
-             gdc_created_at, gdc_updated_at,
-             store_price, mt_price, ele_price, cur_stock, product_status, shelf_code,
-             month_sale, warn_status, category_l1, category_l2, spu_code,
-             produce_date, expiration_date, days_to_expire, expiry_captured,
-             stock_num, out_price, supplier, take_out,
-             gdc_created_at, gdc_updated_at, gdc_created_by, gdc_updated_by
-        FROM filtered
-       WHERE spu_code IN (SELECT spu_code FROM spu_page)
-    )
+    ${pageRowsSql}
     SELECT COALESCE(
              jsonb_agg(to_jsonb(page_rows) ORDER BY page_rows.spu_code, page_rows.product_code, page_rows.spec_text)
                FILTER (WHERE page_rows.product_code IS NOT NULL),

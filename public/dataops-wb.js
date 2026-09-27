@@ -1877,7 +1877,7 @@ async function renderList(mode){
     var onlyInStock = SHOP && !q.showZero;
     var base = "db/petstore-goods-list?page="+q.page+"&pageSize="+q.pageSize+
       "&keyword="+encodeURIComponent(q.keyword)+"&category="+encodeURIComponent(q.category)+
-      "&product_status="+encodeURIComponent(q.product_status);
+      "&product_status="+encodeURIComponent(q.product_status)+"&by=spu";   // 本页按 SPU 翻页(下面 pages 用 spu_total)
     var qs = base + (onlyInStock ? "&stock=instock" : "");
     delete cache[qs];
     var d = await get(qs);
