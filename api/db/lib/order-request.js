@@ -50,28 +50,30 @@ export function canAccessRequest(user, row) {
   if (kind === "internal") return true;
   if (kind === "factory") {
     const own = userCodes(user);
-    return row.channel === "factory" && own.includes(String(row.factory_company_code || "").toUpperCase());
+    return row.channel === "factory" && own.includes(String(row.factory_company_code || "").trim().toUpperCase());
   }
   if (kind === "customer") {
     const own = userCodes(user);
-    return row.channel !== "factory" && own.includes(String(row.buyer_company_code || "").toUpperCase());
+    return row.channel !== "factory" && own.includes(String(row.buyer_company_code || "").trim().toUpperCase());
   }
   return false;
 }
 
+// 白名单：明确挑出每种身份该看的字段，其余（含将来新增）一律不返回
 function publicLine(line, kind) {
-  const out = { ...line };
-  if (kind !== "internal") {
-    delete out.cost; delete out.margin; delete out.factory_amount; delete out.factoryPrice;
-  }
-  if (kind === "factory") {
-    delete out.unit_price; delete out.unitPrice; delete out.customer_amount; delete out.customerPrice;
-    delete out.customer_po; delete out.customerPO;
-  }
-  if (kind === "customer") {
-    delete out.factory_price; delete out.factoryPrice; delete out.factory_amount; delete out.factory_code;
-  }
+  const out = { sku: line.sku, product_id: line.product_id, product_name: line.product_name,
+    description: line.description, qty: line.qty, unit: line.unit };
+  if (kind === "internal") { out.unit_price = line.unit_price ?? null; out.factory_price = line.factory_price ?? null; }
+  else if (kind === "factory") { out.factory_price = line.factory_price ?? null; }   // 工厂只看自己价，⛔ 不看客户价
+  else { out.unit_price = line.unit_price ?? null; }                                  // 客户只看自己价，⛔ 不看工厂价
   return out;
+}
+// extra：客户/工厂只看收货相关，⛔ 不看工厂最早交货等对方字段（内部看全部）
+function publicExtra(extra, kind) {
+  const e = extra || {};
+  if (kind === "internal") return e;
+  if (kind === "factory") return { factory_ready_date: e.factory_ready_date || null };
+  return { consignee: e.consignee || "", delivery_address: e.delivery_address || "", destination_port: e.destination_port || "" };
 }
 
 export function sanitizeForAudience(row, user) {
@@ -81,7 +83,7 @@ export function sanitizeForAudience(row, user) {
     buyer_company_code: row.buyer_company_code, requested_delivery: row.requested_delivery,
     customer_po: row.customer_po, container: row.container, remarks: row.remarks,
     lines: (row.lines || []).map((x) => publicLine(x, kind)),
-    files: row.files || [], extra: row.extra || {}, return_reason: row.return_reason || "", created_at: row.created_at,
+    files: (row.files || []).map((f) => ({ name: f.name, size: f.size, mime: f.mime })), extra: publicExtra(row.extra, kind), return_reason: row.return_reason || "", created_at: row.created_at,
     updated_at: row.updated_at, formConfig: orderRequestFormConfig(user),
   };
   if (kind === "internal") Object.assign(out, {
@@ -94,13 +96,15 @@ export function sanitizeForAudience(row, user) {
   return out;
 }
 
-function normalizeLines(body) {
+function normalizeLines(body, kind) {
   const rows = Array.isArray(body.products) ? body.products : (Array.isArray(body.lines) ? body.lines : []);
+  const internal = kind === "internal";   // ⛔ 只有内部提交的行价可信；客户/工厂提交的价一律丢弃（防注入工厂价/客户价）
   return rows.slice(0, 200).map((p) => ({
     sku: String(p.sku || p.code || "").trim(), product_id: p.product_id || p.productId || null,
     product_name: p.productName || p.product_name || p.name || "",
     description: p.description || "", qty: p.qty || p.quantity || "", unit: p.unit || "CTN",
-    unit_price: p.unitPrice ?? p.unit_price ?? null, factory_price: p.factoryPrice ?? p.factory_price ?? null,
+    unit_price: internal ? (p.unitPrice ?? p.unit_price ?? null) : null,
+    factory_price: internal ? (p.factoryPrice ?? p.factory_price ?? null) : null,
   })).filter((p) => p.sku || p.product_name || p.description);
 }
 
@@ -188,7 +192,7 @@ export async function handleOrderRequestCreate(req, res, pool, parsedFiles = [])
   const buyer = kind === "factory" ? BABI_CODE : String(b.companyCode || b.buyer_company_code || "").trim().toUpperCase();
   assertBuyerScope(user, buyer);
   const factory = kind === "factory" ? userCodes(user)[0] : (b.factoryCompanyCode || b.factory_company_code || "");
-  const lines = normalizeLines(b);
+  const lines = normalizeLines(b, kind);
   if (!lines.length) return res.status(400).json({ ok: false, error: "lines_required" });
   const files = await saveFiles(id, parsedFiles);
   const row = (await pool.query(
@@ -211,8 +215,8 @@ async function listRows(pool, user, id) {
   const params = [];
   let where = id ? "WHERE id=$1" : "WHERE true";
   if (id) params.push(id);
-  if (kind === "customer") { params.push(userCodes(user)); where += ` AND channel <> 'factory' AND buyer_company_code = ANY($${params.length}::text[])`; }
-  if (kind === "factory") { params.push(userCodes(user)); where += ` AND channel='factory' AND factory_company_code = ANY($${params.length}::text[])`; }
+  if (kind === "customer") { params.push(userCodes(user)); where += ` AND channel <> 'factory' AND upper(btrim(buyer_company_code)) = ANY($${params.length}::text[])`; }
+  if (kind === "factory") { params.push(userCodes(user)); where += ` AND channel='factory' AND upper(btrim(factory_company_code)) = ANY($${params.length}::text[])`; }
   const r = await pool.query(`SELECT * FROM order_request ${where} ORDER BY created_at DESC LIMIT 100`, params);
   return r.rows;
 }
@@ -321,11 +325,18 @@ function fakeRes() {
 }
 
 export async function handleOrderRequestConfirm(req, res, pool) {
-  const row = await loadInternal(pool, req.user, req.body?.id);
-  if (!["submitted", "reviewing"].includes(row.status)) return res.status(409).json({ ok: false, error: "status_" + row.status });
+  if (!isInternalUser(req.user)) return res.status(403).json({ ok: false, error: "internal_only" });   // ⛔ 建单只限内部（原 loadInternal 的闸，别在抢占前丢了）
+  const claim = await pool.query(
+    `UPDATE order_request SET status='confirming', updated_at=NOW()
+      WHERE id=$1 AND status IN ('submitted','reviewing') RETURNING *`, [req.body?.id]);
+  if (!claim.rows.length) {
+    const cur = (await pool.query(`SELECT status FROM order_request WHERE id=$1`, [req.body?.id])).rows[0];
+    return res.status(cur ? 409 : 404).json({ ok: false, error: cur ? "status_" + cur.status : "not_found" });
+  }
+  const row = claim.rows[0];
   const review = req.body?.review || row.review || {};
-  const products = review.products || row.lines || [];
-  if (products.some((p) => p.factoryPrice == null && p.factory_price == null)) {
+  const products = (Array.isArray(review.products) && review.products.length) ? review.products : (row.lines || []);
+  if (!products.length || products.some((p) => p.factoryPrice == null && p.factory_price == null)) {
     return res.status(409).json({ ok: false, error: "factory_price_required" });
   }
   const body = { ...review, companyCode: row.buyer_company_code, products,
@@ -341,7 +352,10 @@ export async function handleOrderRequestConfirm(req, res, pool) {
     headers: { ...(req.headers || {}), authorization: "Bearer " + svcToken } };
   const ocRes = fakeRes();
   await orderCreateHandler(ocReq, ocRes);
-  if (ocRes.statusCode >= 400 || !ocRes.body?.success) return res.status(409).json({ ok: false, error: "order_create_failed", detail: ocRes.body?.error || "" });
+  if (ocRes.statusCode >= 400 || !ocRes.body?.success) {
+    await pool.query(`UPDATE order_request SET status='reviewing', updated_at=NOW() WHERE id=$1`, [row.id]).catch(() => {});
+    return res.status(409).json({ ok: false, error: "order_create_failed", detail: ocRes.body?.error || "" });
+  }
   const orderNo = ocRes.body.order_no || ocRes.body.order?.order_no;
   const updated = (await pool.query(
     `UPDATE order_request SET status='confirmed', order_no=$2, review=$3::jsonb, updated_at=NOW() WHERE id=$1 RETURNING *`,
