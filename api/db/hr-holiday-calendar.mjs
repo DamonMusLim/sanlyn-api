@@ -130,7 +130,13 @@ export function compactDateRanges(dates) {
     else { ranges.push([start, prev]); start = prev = d; }
   }
   ranges.push([start, prev]);
-  return ranges.map(([a, b]) => a === b ? fmtMd(a) : `${fmtMd(a)}-${fmtMd(b).slice(3)}`).join(",");
+  return ranges.map(([a, b]) => {
+    if (a === b) return fmtMd(a);
+    const sameMonth = a.slice(0, 7) === b.slice(0, 7);
+    return sameMonth
+      ? `${fmtMd(a)}至${Number(b.slice(8, 10))}日`
+      : `${fmtMd(a)}至${fmtMd(b)}`;
+  }).join("，");
 }
 
 export function fmtMd(d) {

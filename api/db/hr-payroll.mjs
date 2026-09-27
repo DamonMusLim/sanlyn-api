@@ -113,7 +113,8 @@ async function computeOne(pool, emp, range, cfg) {
   const overtimeAmount = hourlyRate * overtimeHours * (Number(cfg.overtime_multiplier) || 1.5);
   const legalDates = new Set(holidays.rows.map((r) => r.d));
   const holidayWorkDays = work.filter((s) => legalDates.has(s.work_date)).length;
-  const holidayAmount = dailyRate * holidayWorkDays * (Number(cfg.holiday_multiplier) || 3);
+  const holidayExtraMultiplier = Math.max((Number(cfg.holiday_multiplier) || 3) - 1, 0);
+  const holidayAmount = dailyRate * holidayWorkDays * holidayExtraMultiplier;
   if (compOffHours > 0) warnings.push(`有${compOffHours}小时调休(不计入工资，只抵休息)`);
 
   return {

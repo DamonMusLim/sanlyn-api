@@ -9,12 +9,13 @@ export const D = "YYYY-MM-DD";
 
 // 当天条目:kind='tip' 进「建议」(Damon 自己写的)，其余进「今日待办」(带时间的安排)。
 // 一张表两种用途，不另加表。
-export async function agendaFor(pool, companyCode, today) {
+export async function agendaFor(pool, companyCode, today, employeeId) {
   const r = await pool.query(
     `SELECT id, to_char(at_time,'HH24:MI') AS at_time, title, note, kind, status
        FROM hr_day_agenda
       WHERE company_code=$1 AND work_date=$2
-      ORDER BY at_time NULLS LAST, id`, [companyCode, today]);
+        AND (employee_id IS NULL OR employee_id=$3)
+      ORDER BY at_time NULLS LAST, id`, [companyCode, today, employeeId]);
   const all = r.rows;
   return {
     items: all.filter((x) => x.kind !== "tip"),

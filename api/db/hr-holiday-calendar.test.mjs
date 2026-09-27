@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { buildHolidayCalendar } from "./hr-holiday-calendar.mjs";
+import { buildHolidayCalendar, compactDateRanges } from "./hr-holiday-calendar.mjs";
 
 const CO = "JINFANG";
 const employees = [
@@ -65,5 +65,9 @@ const legalMonday = buildHolidayCalendar({
 });
 assert.equal(legalMonday[0].days[0].overlaps_weekly_rest, true);
 assert.equal(legalMonday[0].days[0].type, "legal_off");
+
+assert.equal(compactDateRanges(["2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28"]), "9月25日至28日");
+assert.equal(compactDateRanges(["2026-09-30", "2026-10-01", "2026-10-02"]), "9月30日至10月2日");
+assert.equal(compactDateRanges(["2026-10-02"]), "10月2日");
 
 console.log("hr-holiday-calendar tests passed");

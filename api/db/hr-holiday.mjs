@@ -103,9 +103,10 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireAuth(req, res)) return;
   const pool = getPool();
-  const company = req.query?.company_code || req.body?.company_code || "JINFANG";
+  const requestedCompany = req.query?.company_code || req.body?.company_code || "JINFANG";
   try {
-    const who = await actor(pool, req, company);
+    const who = await actor(pool, req, requestedCompany);
+    const company = who.employeeId && who.me?.company_code ? who.me.company_code : requestedCompany;
     const ownOnly = !who.manager;
     if (ownOnly && !who.employeeId) return res.status(403).json({ success: false, error: "无员工身份" });
 

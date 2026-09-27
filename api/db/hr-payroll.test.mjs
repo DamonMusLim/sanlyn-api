@@ -96,8 +96,9 @@ async function cleanup() {
     check("时薪加班 5h×22×1.5", by["测时薪"].overtime_amount, 165);
     check("时薪应发合计", by["测时薪"].gross_amount, 957);
     check("月薪 5200÷26×20", by["测月薪"].base_amount, 4000);
-    check("月薪 10/1 法定上班=日薪×3", by["测月薪"].holiday_amount, 600);
+    check("月薪 10/1 法定上班额外补2倍", by["测月薪"].holiday_amount, 400);
     check("月薪法定上班天数", by["测月薪"].holiday_work_days, 1);
+    check("月薪法定当天合计正好3倍", by["测月薪"].gross_amount, 4400);
 
     console.log("\n【出勤口径兜底】");
     checkStr("日薪有打卡→按打卡", by["测日薪"].basis, "checkin");
