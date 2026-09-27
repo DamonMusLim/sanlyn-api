@@ -67,7 +67,14 @@ export async function todayReport(pool) {
       WHERE status='cancelled' AND source='dataops' AND dedupe_key ~ '^risk:'
         AND (closed_at AT TIME ZONE 'Asia/Shanghai')::date = ${TODAY}
       ORDER BY id`);
+  // 外卖拣货完成 → 自动同步果冻橙(pickedV2)的结果,没同步上的要看见
+  const takeout = await pool.query(
+    `SELECT order_no, bool_or(gdc_synced_at IS NOT NULL) AS ok, max(gdc_result) AS result
+       FROM petstore_takeout_picks
+      WHERE completed_at IS NOT NULL AND (completed_at AT TIME ZONE 'Asia/Shanghai')::date = ${TODAY}
+      GROUP BY order_no ORDER BY max(completed_at)`);
   return {
+    takeout: takeout.rows.map((r) => ({ order_no: r.order_no, ok: !!r.ok, result: r.result || "" })),
     price_done: did,
     price_skipped: skippedOther,
     price_skipped_takeout: skippedTakeout,
