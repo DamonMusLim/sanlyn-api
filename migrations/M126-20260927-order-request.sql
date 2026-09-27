@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS order_request (
   remarks text,
   files jsonb NOT NULL DEFAULT '[]'::jsonb,
   review jsonb NOT NULL DEFAULT '{}'::jsonb,
+  extra jsonb NOT NULL DEFAULT '{}'::jsonb,   -- 收货人/地址/目的港（客户、我方），工厂最早可交货日（工厂）
   order_no text,
   return_reason text,
   created_at timestamptz NOT NULL DEFAULT now(),

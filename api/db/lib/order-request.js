@@ -81,7 +81,7 @@ export function sanitizeForAudience(row, user) {
     buyer_company_code: row.buyer_company_code, requested_delivery: row.requested_delivery,
     customer_po: row.customer_po, container: row.container, remarks: row.remarks,
     lines: (row.lines || []).map((x) => publicLine(x, kind)),
-    files: row.files || [], return_reason: row.return_reason || "", created_at: row.created_at,
+    files: row.files || [], extra: row.extra || {}, return_reason: row.return_reason || "", created_at: row.created_at,
     updated_at: row.updated_at, formConfig: orderRequestFormConfig(user),
   };
   if (kind === "internal") Object.assign(out, {
@@ -97,7 +97,7 @@ export function sanitizeForAudience(row, user) {
 function normalizeLines(body) {
   const rows = Array.isArray(body.products) ? body.products : (Array.isArray(body.lines) ? body.lines : []);
   return rows.slice(0, 200).map((p) => ({
-    sku: String(p.sku || "").trim(), product_id: p.product_id || p.productId || null,
+    sku: String(p.sku || p.code || "").trim(), product_id: p.product_id || p.productId || null,
     product_name: p.productName || p.product_name || p.name || "",
     description: p.description || "", qty: p.qty || p.quantity || "", unit: p.unit || "CTN",
     unit_price: p.unitPrice ?? p.unit_price ?? null, factory_price: p.factoryPrice ?? p.factory_price ?? null,
@@ -193,11 +193,14 @@ export async function handleOrderRequestCreate(req, res, pool, parsedFiles = [])
   const files = await saveFiles(id, parsedFiles);
   const row = (await pool.query(
     `INSERT INTO order_request (id,channel,buyer_company_code,factory_company_code,submitted_by_uid,
-      submitted_by_username,source,status,lines,requested_delivery,customer_po,container,remarks,files,created_at,updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'submitted',$8::jsonb,$9,$10,$11,$12,$13::jsonb,NOW(),NOW()) RETURNING *`,
+      submitted_by_username,source,status,lines,requested_delivery,customer_po,container,remarks,files,extra,created_at,updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'submitted',$8::jsonb,$9,$10,$11,$12,$13::jsonb,$14::jsonb,NOW(),NOW()) RETURNING *`,
     [id, kind, buyer, factory || null, user?.uid || user?.id || null, user?.username || user?.name || "",
      b.source || "portal", JSON.stringify(lines), b.requiredArrivalDate || b.requested_delivery || null,
-     b.customerPO || b.customer_po || null, b.container || b.containerType || "", b.remarks || "", JSON.stringify(files)])).rows[0];
+     b.customerPO || b.customer_po || null, b.container || b.containerType || "", b.remarks || "", JSON.stringify(files),
+     // 客户门户下单页带的收货信息 + 工厂最早可交货日；工厂那一路 ⛔ 不收任何买方/收货人信息
+     JSON.stringify(kind === "factory" ? { factory_ready_date: b.factory_ready_date || null }
+       : { consignee: b.consignee || "", delivery_address: b.deliveryAddress || "", destination_port: b.destinationPort || "" })])).rows[0];
   await upsertTask(pool, row);
   return res.status(200).json({ ok: true, request: sanitizeForAudience(row, user) });
 }
