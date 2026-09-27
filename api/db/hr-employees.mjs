@@ -51,7 +51,7 @@ export async function nextEmployeeCode(pool, companyCode) {
 }
 
 const COLS = "id, employee_code, name, role, employment_status, store_id, phone, id_card_no, "
-  + "company_code, position, pay_type, pay_rate, "
+  + "company_code, position, pay_type, pay_rate, employment_type, "
   + "to_char(probation_end,'YYYY-MM-DD') AS probation_end, "
   + "(password_hash IS NOT NULL) AS has_password, must_change_password, "
   + "id_card_file, to_char(contract_start,'YYYY-MM-DD') AS contract_start, "
@@ -181,15 +181,17 @@ export default async function handler(req, res) {
         `INSERT INTO hr_employees
            (employee_code, name, role, store_id, phone, id_card_no,
             contract_start, contract_end, emergency_contact, emergency_phone, hire_date,
-            company_code, position, pay_type, pay_rate, probation_end,
+            company_code, position, pay_type, pay_rate, employment_type, probation_end,
             password_hash, must_change_password)
          VALUES ($1,$2,COALESCE($3,'clerk'),COALESCE($4,'jinfang'),$5,$6,$7,$8,$9,$10,$11,
-                 COALESCE($12,'JINFANG'),$13,COALESCE($14,'daily'),$15,$16,$17,true) RETURNING id`,
-        [b.employee_code || await nextEmployeeCode(pool, b.company_code || company), b.name, b.role || null, b.store_id || null, b.phone || null,
+                 COALESCE($12,'JINFANG'),$13,COALESCE($14,'daily'),$15,
+                 COALESCE($16, CASE WHEN COALESCE($14,'daily')='monthly' THEN 'fulltime' ELSE 'parttime' END),
+                 $17,$18,true) RETURNING id`,
+        [b.employee_code || await nextEmployeeCode(pool, b.company_code || "JINFANG"), b.name, b.role || null, b.store_id || null, b.phone || null,
          b.id_card_no || null, dt(b.contract_start), dt(b.contract_end),
          b.emergency_contact || null, b.emergency_phone || null, dt(b.hire_date),
          b.company_code || null, b.position || null, b.pay_type || null,
-         num(b.pay_rate), dt(b.probation_end),
+         num(b.pay_rate), b.employment_type || null, dt(b.probation_end),
          b.password ? hashPw(String(b.password)) : null]
       );
       const newId = r.rows[0].id;
@@ -218,7 +220,7 @@ export default async function handler(req, res) {
       const allowed = ["employee_code", "name", "role", "employment_status", "store_id",
         "phone", "id_card_no", "contract_start", "contract_end",
         "emergency_contact", "emergency_phone", "hire_date", "face_employee_id", "face_enabled",
-        "company_code", "position", "pay_type", "pay_rate", "probation_end"];
+        "company_code", "position", "pay_type", "pay_rate", "employment_type", "probation_end"];
       const sets = [];
       const params = [];
       for (const k of allowed) {

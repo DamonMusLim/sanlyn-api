@@ -1,7 +1,7 @@
 // /api/db/hr-holiday.mjs — 法定假日 + 店内放假计划
 import { getPool, setCors } from "./db.js";
 import { requireAuth } from "./auth.js";
-import { buildHolidayCalendar, compactDateRanges, fmtMd } from "./hr-holiday-calendar.mjs";
+import { buildHolidayCalendar, fmtMd, holidayNoticeTitle } from "./hr-holiday-calendar.mjs";
 
 const D = "YYYY-MM-DD";
 const MANAGER_ROLES = new Set(["boss", "manager", "store_manager", "admin"]);
@@ -21,10 +21,18 @@ function prevDay(d) {
   return new Date(Date.parse(d + "T00:00:00Z") - 86400000).toISOString().slice(0, 10);
 }
 
-function noticeText(plan, result) {
-  const off = compactDateRanges(result.summary.off_dates);
-  const back = result.summary.return_to_work ? fmtMd(result.summary.return_to_work) : "待排班确认";
-  return `${plan.name}放假：${off}，${back}上班`;
+function noticeNote(plan, result) {
+  const days = result.days
+    .filter((d) => d.date >= plan.start_date && d.date <= plan.end_date)
+    .map((d) => ({
+      date: d.date,
+      type: d.type,
+      title: ["work", "makeup_work", "legal_work"].includes(d.type) ? "上班" : "休",
+      holiday_name: d.holiday_name || null,
+      legal: d.type === "legal_off" || d.type === "legal_work",
+      multiplier: d.holiday_multiplier || null,
+    }));
+  return JSON.stringify({ plan_id: plan.id, plan_name: plan.name, days });
 }
 
 function planSummary(result, plan) {
@@ -60,7 +68,7 @@ async function actor(pool, req, company) {
 
 async function loadInputs(pool, company, from, to, employeeId) {
   const empParams = [company];
-  let empSql = `SELECT id,name,company_code FROM hr_employees
+  let empSql = `SELECT id,name,company_code,COALESCE(employment_type,'fulltime') AS employment_type FROM hr_employees
                  WHERE company_code=$1 AND employment_status='active'`;
   if (employeeId) { empParams.push(employeeId); empSql += ` AND id=$${empParams.length}`; }
   empSql += " ORDER BY name";
@@ -153,8 +161,12 @@ export default async function handler(req, res) {
       const from = todayCN(), noticeTo = prevDay(plan.start_date);
       const rows = [];
       for (const r of data) {
-        const title = noticeText(plan, r);
-        if (from <= noticeTo) rows.push({ employee_id: r.employee_id, employee_name: r.employee_name, from, to: noticeTo, title, note: title });
+        if (r.employment_type !== "fulltime") continue;
+        const title = holidayNoticeTitle(plan, r);
+        if (from <= noticeTo) rows.push({
+          employee_id: r.employee_id, employee_name: r.employee_name,
+          from, to: noticeTo, title, note: noticeNote(plan, r),
+        });
       }
       if (req.body.dry_run) return res.status(200).json({ success: true, dry_run: true, data: rows });
       let inserted = 0;

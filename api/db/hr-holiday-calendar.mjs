@@ -59,7 +59,18 @@ function nextWork(days, after) {
   return days.find((d) => d.date > after && (d.type === "work" || d.type === "makeup_work" || d.type === "legal_work"))?.date || null;
 }
 
-function summarize(days) {
+function summarize(days, emp) {
+  if (emp.employment_type === "parttime") {
+    return {
+      off_days: days.filter((d) => d.is_rest_day).length,
+      off_dates: days.filter((d) => d.is_rest_day).map((d) => d.date),
+      return_to_work: nextWork(days, ""),
+      makeup_work_dates: [],
+      makeup_text: "兼职,按排班",
+      legal_work_days: days.filter((d) => d.type === "legal_work").length,
+      text: "兼职,按排班",
+    };
+  }
   const offTypes = new Set(["weekly_rest", "legal_off", "store_off"]);
   const off = days.filter((d) => offTypes.has(d.type));
   const makeup = days.filter((d) => d.type === "makeup_work").map((d) => d.date);
@@ -83,11 +94,25 @@ export function buildHolidayCalendar(input) {
   return employees.map((emp) => {
     const changed = changesFor(input.restChanges, emp.id);
     const days = dates.map((d) => {
+      const shift = shifts.get(`${emp.id}:${d}`) || null;
+      const hol = holidays.get(d) || null;
+      if (emp.employment_type === "parttime") {
+        const works = !!(shift && !shift.is_rest_day);
+        return {
+          date: d,
+          type: works && hol?.kind === "legal" ? "legal_work" : (works ? "work" : "parttime_off"),
+          is_rest_day: !works,
+          holiday_name: hol?.name || null,
+          plan_id: null,
+          rest_rule_source: "parttime_schedule",
+          rest_weekdays: [],
+          overlaps_weekly_rest: false,
+          holiday_multiplier: works && hol?.kind === "legal" ? 3 : null,
+        };
+      }
       const rule = activeRestRule(input.restRules, emp.company_code || input.companyCode, emp.id, d);
       const weekly = rule.weekdays.includes(weekday(d));
       const fiveDay = rule.weekdays.length >= 2;
-      const shift = shifts.get(`${emp.id}:${d}`) || null;
-      const hol = holidays.get(d) || null;
       const storePlan = planOn(input.storePlans, emp.company_code || input.companyCode, d);
       let isRest = changed.next.has(d) || (weekly && !changed.orig.has(d));
       let type = isRest ? "weekly_rest" : "work";
@@ -115,7 +140,7 @@ export function buildHolidayCalendar(input) {
         holiday_multiplier: type === "legal_work" ? 3 : null,
       };
     });
-    return { employee_id: emp.id, employee_name: emp.name, days, summary: summarize(days) };
+    return { employee_id: emp.id, employee_name: emp.name, employment_type: emp.employment_type || "fulltime", days, summary: summarize(days, emp) };
   });
 }
 
@@ -141,4 +166,15 @@ export function compactDateRanges(dates) {
 
 export function fmtMd(d) {
   return `${Number(d.slice(5, 7))}月${Number(d.slice(8, 10))}日`;
+}
+
+export function holidayNoticeTitle(plan, result) {
+  const off = compactDateRanges(result.summary.off_dates);
+  const back = result.summary.return_to_work ? fmtMd(result.summary.return_to_work) : "待排班确认";
+  const legalWork = result.days
+    .filter((d) => d.date >= plan.start_date && d.date <= plan.end_date && d.type === "legal_work")
+    .map((d) => `${fmtMd(d.date)}上班(3倍工资)`);
+  return legalWork.length
+    ? `${plan.name}放假：${off}，${legalWork.join("，")}`
+    : `${plan.name}放假：${off}，${back}上班`;
 }

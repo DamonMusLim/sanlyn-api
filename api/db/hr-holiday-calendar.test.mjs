@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { buildHolidayCalendar, compactDateRanges } from "./hr-holiday-calendar.mjs";
+import { buildHolidayCalendar, compactDateRanges, holidayNoticeTitle } from "./hr-holiday-calendar.mjs";
 
 const CO = "JINFANG";
 const employees = [
@@ -8,6 +8,7 @@ const employees = [
   { id: 2, name: "周三休", company_code: CO },
   { id: 3, name: "上五休二", company_code: CO },
   { id: 4, name: "法定上班", company_code: CO },
+  { id: 5, name: "兼职", company_code: CO, employment_type: "parttime" },
 ];
 const restRules = [
   { company_code: CO, employee_id: null, weekday: 1, effective_from: "2026-09-01", effective_to: null },
@@ -57,6 +58,11 @@ const legalWork = out.find((x) => x.employee_id === 4);
 assert.equal(byDate(legalWork, "2026-10-01").type, "legal_work");
 assert.equal(byDate(legalWork, "2026-10-01").holiday_multiplier, 3);
 
+const parttime = out.find((x) => x.employee_id === 5);
+assert.equal(byDate(parttime, "2026-10-01").type, "parttime_off");
+assert.equal(byDate(parttime, "2026-10-04").type, "parttime_off");
+assert.equal(parttime.summary.text, "兼职,按排班");
+
 assert.equal(byDate(wang, "2026-10-05").overlaps_weekly_rest, false);
 const legalMonday = buildHolidayCalendar({
   employees: [{ id: 1, name: "汪卫云", company_code: CO }],
@@ -69,5 +75,19 @@ assert.equal(legalMonday[0].days[0].type, "legal_off");
 assert.equal(compactDateRanges(["2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28"]), "9月25日至28日");
 assert.equal(compactDateRanges(["2026-09-30", "2026-10-01", "2026-10-02"]), "9月30日至10月2日");
 assert.equal(compactDateRanges(["2026-10-02"]), "10月2日");
+
+const noticeRows = buildHolidayCalendar({
+  employees: [
+    { id: 1, name: "汪卫云", company_code: CO, employment_type: "fulltime" },
+    { id: 2, name: "周三休", company_code: CO, employment_type: "fulltime" },
+  ],
+  restRules,
+  holidays,
+  storePlans: [{ id: 10, company_code: CO, name: "国庆", start_date: "2026-10-01", end_date: "2026-10-04" }],
+  from: "2026-10-01", to: "2026-10-06", companyCode: CO,
+});
+const t1 = holidayNoticeTitle({ name: "国庆", start_date: "2026-10-01", end_date: "2026-10-04" }, noticeRows[0]);
+const t2 = holidayNoticeTitle({ name: "国庆", start_date: "2026-10-01", end_date: "2026-10-04" }, noticeRows[1]);
+assert.notEqual(t1, t2);
 
 console.log("hr-holiday-calendar tests passed");

@@ -29,6 +29,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_hr_store_holiday_plans_dedupe
 
 ALTER TABLE hr_payroll ADD COLUMN IF NOT EXISTS holiday_work_days NUMERIC DEFAULT 0;
 ALTER TABLE hr_payroll ADD COLUMN IF NOT EXISTS holiday_amount NUMERIC DEFAULT 0;
+ALTER TABLE hr_payroll ADD COLUMN IF NOT EXISTS holiday_paid_days NUMERIC DEFAULT 0;
+ALTER TABLE hr_payroll ADD COLUMN IF NOT EXISTS store_paid_days NUMERIC DEFAULT 0;
+
+ALTER TABLE hr_employees ADD COLUMN IF NOT EXISTS employment_type TEXT CHECK (employment_type IN ('fulltime','parttime'));
+UPDATE hr_employees
+   SET employment_type = CASE WHEN pay_type = 'monthly' THEN 'fulltime' ELSE 'parttime' END
+ WHERE employment_type IS NULL;
 
 ALTER TABLE hr_org_settings ADD COLUMN IF NOT EXISTS holiday_multiplier NUMERIC DEFAULT 3;
 

@@ -35,19 +35,26 @@ const call = (method, query, body) => new Promise(async (r) => {
 async function setup() {
   await cleanup();
   await pool.query(`INSERT INTO hr_public_holidays (holiday_date,year,kind,name)
-                    VALUES (DATE '2026-10-01',2026,'legal','国庆')
+                    VALUES (DATE '2026-10-01',2026,'legal','国庆'),
+                           (DATE '2026-10-02',2026,'legal','国庆'),
+                           (DATE '2026-10-03',2026,'legal','国庆')
                     ON CONFLICT (holiday_date) DO NOTHING`);
+  await pool.query(`INSERT INTO hr_store_holiday_plans (company_code,name,start_date,end_date,created_by)
+                    VALUES ($1,'测试店休',DATE '2026-10-04',DATE '2026-10-04','test')`, [CO]);
   await pool.query(`INSERT INTO hr_org_settings (company_code,display_name,standard_month_days,overtime_multiplier,holiday_multiplier)
                     VALUES ($1,'测试公司',26,1.5,3) ON CONFLICT (company_code) DO UPDATE
                     SET standard_month_days=26, overtime_multiplier=1.5, holiday_multiplier=3`, [CO]);
-  const mk = async (code, name, type, rate) => (await pool.query(
-    `INSERT INTO hr_employees (company_code,employee_code,name,role,pay_type,pay_rate,employment_status)
-     VALUES ($1,$2,$3,'clerk',$4,$5,'active') RETURNING id`, [CO, code, name, type, rate])).rows[0].id;
+  const mk = async (code, name, type, rate, employmentType) => (await pool.query(
+    `INSERT INTO hr_employees (company_code,employee_code,name,role,pay_type,pay_rate,employment_type,employment_status)
+     VALUES ($1,$2,$3,'clerk',$4,$5,$6,'active') RETURNING id`, [CO, code, name, type, rate, employmentType])).rows[0].id;
 
-  const d = await mk("TT-D", "测日薪", "daily", 150);
-  const h = await mk("TT-H", "测时薪", "hourly", 22);
-  const m = await mk("TT-M", "测月薪", "monthly", 5200);
-  const z = await mk("TT-Z", "测未设薪", "daily", null);
+  const d = await mk("TT-D", "测日薪", "daily", 150, "parttime");
+  const h = await mk("TT-H", "测时薪", "hourly", 22, "parttime");
+  const m = await mk("TT-M", "测月薪", "monthly", 5200, "fulltime");
+  const z = await mk("TT-Z", "测未设薪", "daily", null, "parttime");
+  const f = await mk("TT-F", "正式休假", "monthly", 5200, "fulltime");
+  const p = await mk("TT-P", "兼职休假", "daily", 100, "parttime");
+  const pw = await mk("TT-PW", "兼职法定上班", "daily", 100, "parttime");
 
   const shift = (id, name, day, s2, e2) => pool.query(
     `INSERT INTO hr_shifts (company_code,employee_id,employee_name,work_date,start_time,end_time,shift_label)
@@ -68,7 +75,8 @@ async function setup() {
   for (let i = 1; i <= 20; i++) await shift(m, "测月薪", i, "09:00", "18:00");
   // 跨零点夜班（单独验工时算法）
   await shift(d, "测日薪", 12, "22:00", "06:00");
-  return { d, h, m, z };
+  await shift(pw, "兼职法定上班", 1, "09:00", "18:00");
+  return { d, h, m, z, f, p, pw };
 }
 
 async function cleanup() {
@@ -78,6 +86,7 @@ async function cleanup() {
   await pool.query("DELETE FROM hr_staff_checkin WHERE company_code=$1", [CO]);
   await pool.query("DELETE FROM hr_leave_requests WHERE company_code=$1", [CO]);
   await pool.query("DELETE FROM hr_reimbursements WHERE company_code=$1", [CO]);
+  await pool.query("DELETE FROM hr_store_holiday_plans WHERE company_code=$1", [CO]);
   await pool.query("DELETE FROM hr_employees WHERE company_code=$1", [CO]);
   await pool.query("DELETE FROM hr_org_settings WHERE company_code=$1", [CO]);
 }
@@ -99,6 +108,14 @@ async function cleanup() {
     check("月薪 10/1 法定上班额外补2倍", by["测月薪"].holiday_amount, 400);
     check("月薪法定上班天数", by["测月薪"].holiday_work_days, 1);
     check("月薪法定当天合计正好3倍", by["测月薪"].gross_amount, 4400);
+
+    console.log("\n【正式/兼职假日】");
+    check("正式工法定休息带薪3天", by["正式休假"].holiday_paid_days, 3);
+    check("正式工店休带薪1天", by["正式休假"].store_paid_days, 1);
+    check("正式工base含法定+店休4天", by["正式休假"].base_amount, 800);
+    check("兼职法定休息不发", by["兼职休假"].holiday_paid_days, 0);
+    check("兼职无排班base为0", by["兼职休假"].base_amount, 0);
+    check("兼职10/1法定上班合计3倍", by["兼职法定上班"].gross_amount, 300);
 
     console.log("\n【出勤口径兜底】");
     checkStr("日薪有打卡→按打卡", by["测日薪"].basis, "checkin");
