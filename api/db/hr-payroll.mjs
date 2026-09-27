@@ -74,7 +74,7 @@ async function computeOne(pool, emp, range, cfg) {
     pool.query(`SELECT id, company_code, name, to_char(start_date,'${D}') AS start_date,
                        to_char(end_date,'${D}') AS end_date
                   FROM hr_store_holiday_plans
-                 WHERE company_code=$1 AND start_date <= $2::date AND end_date >= $3::date`,
+                 WHERE company_code=$1 AND start_date <= $3::date AND end_date >= $2::date`,
       [emp.company_code, range.from, range.to]).catch(() => ({ rows: [] })),
     pool.query(`SELECT company_code, employee_id, weekday,
                        to_char(effective_from,'${D}') AS effective_from,
