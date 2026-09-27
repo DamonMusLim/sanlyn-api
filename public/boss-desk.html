@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>宠物店工作台</title>
+  <style>
+    :root { color-scheme: light dark; --bg:#f7f8fa; --fg:#17191d; --muted:#737780; --line:#dfe3ea; --card:#fff; --bad:#b42318; --brand:#176b87; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#111318; --fg:#f0f3f6; --muted:#9ba3ad; --line:#303741; --card:#191d24; --bad:#ff8a80; --brand:#75d1ee; } }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    a { color:inherit; text-decoration:none; }
+    .wrap { width:min(1080px,100%); margin:0 auto; padding:14px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+    h1 { margin:0; font-size:20px; font-weight:750; }
+    .top { display:flex; align-items:center; gap:10px; color:var(--muted); white-space:nowrap; }
+    button { border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:8px; min-height:34px; padding:0 12px; cursor:pointer; }
+    button:disabled { opacity:.55; cursor:default; }
+    .grid { display:grid; grid-template-columns: 128px 1fr 1fr; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--card); }
+    .cell { min-height:76px; padding:12px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); }
+    .cell:nth-child(3n) { border-right:0; }
+    .head { min-height:44px; font-weight:750; text-align:center; background:color-mix(in srgb, var(--card) 88%, var(--brand)); }
+    .label { color:var(--muted); font-weight:650; display:flex; align-items:center; }
+    .span { grid-column:2 / 4; border-right:0; }
+    .num { font-size:30px; line-height:1.05; font-weight:800; letter-spacing:0; }
+    .text { font-size:18px; font-weight:750; }
+    .sub { margin-top:5px; color:var(--muted); display:flex; flex-wrap:wrap; gap:6px 10px; }
+    .sub a { color:var(--brand); }
+    .muted { color:var(--muted); }
+    .bad { color:var(--bad); }
+    .click { display:block; height:100%; border-radius:6px; }
+    .click:focus-visible, button:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+    .errors { margin-top:10px; color:var(--muted); font-size:12px; }
+    @media (max-width: 640px) {
+      .wrap { padding:10px; }
+      .grid { display:block; }
+      .head { display:none; }
+      .cell { min-height:0; border-right:0; }
+      .label { background:color-mix(in srgb, var(--card) 90%, var(--line)); }
+      .store::before { content:attr(data-store); display:block; color:var(--muted); font-weight:650; margin-bottom:4px; }
+      .span { grid-column:auto; }
+      .num { font-size:26px; }
+      h1 { font-size:18px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>宠物店工作台</h1>
+      <div class="top"><span id="updated">更新于 --:--</span><button id="refresh" type="button">刷新</button></div>
+    </header>
+    <main id="app" class="grid" aria-live="polite"></main>
+    <div id="errors" class="errors"></div>
+  </div>
+  <script>
+    const app = document.getElementById("app");
+    const updated = document.getElementById("updated");
+    const refresh = document.getElementById("refresh");
+    const errors = document.getElementById("errors");
+    let boss = null;
+    const links = {
+      board: "/dataops/?p=board", risk: "/dataops/?p=risk", rival: "/dataops/?p=rival&tab=opp",
+      staff: "/m/staff", staffApprovals: "/m/staff#approvals", mboard: "/m/board", todo: "/m/todo"
+    };
+    function h(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c])); }
+    function money(v) { return v == null ? '<span class="muted">未接入</span>' : "¥" + Number(v).toLocaleString("zh-CN", { maximumFractionDigits: 0 }); }
+    function val(v) { return v == null ? '<span class="muted">未接入</span>' : h(v); }
+    function a(url, html, cls = "click") { return `<a class="${cls}" href="${h(url)}" target="_blank" rel="noopener">${html}</a>`; }
+    function row(label, left, right) { app.insertAdjacentHTML("beforeend", `<div class="cell label">${label}</div><div class="cell store" data-store="金枋店">${left}</div><div class="cell store" data-store="泉州店">${right}</div>`); }
+    function span(label, body) { app.insertAdjacentHTML("beforeend", `<div class="cell label">${label}</div><div class="cell span">${body}</div>`); }
+    function store(code) { return (boss?.stores || []).find(s => s.code === code) || {}; }
+    function sales(s) {
+      if (!s.sales_yesterday) return '<span class="muted">未接入</span>';
+      const x = s.sales_yesterday;
+      const del = x.delivery_amount == null ? '<span class="muted">外卖未接入</span>' : `${money(x.delivery_amount)}（${val(x.delivery_orders)} 单）`;
+      return a(links.board, `<div class="text">线下 ${money(x.offline_amount)}（${val(x.offline_num)} 单）</div><div class="sub">${del}</div>`);
+    }
+    function nearexp(s) {
+      if (!s.nearexp) return '<span class="muted">未接入</span>';
+      const n = s.nearexp;
+      return a(links.risk, `<div class="num">30天内 ${val(n.le30)}</div><div class="sub">3天内 ${val(n.le3)} · 共 ${val(n.total)}</div>`);
+    }
+    function oos(s) { return s.oos == null ? '<span class="muted">未接入</span>' : a(links.board, `<div class="num">${val(s.oos)}</div>`); }
+    function team(s) {
+      if (!s.team) return '<span class="muted">未接入</span>';
+      const rows = (s.team.checked_in || []).map(x => `${h(x.name)} ${h(x.at)}`).join(" / ");
+      return a(links.mboard, `<div class="text">已到 ${s.team.checked_in.length}/总 ${val(s.team.staff_total)}</div><div class="sub">${rows || "未打卡"}</div>`);
+    }
+    function approvalCard() {
+      const approvals = boss?.approvals;
+      if (!approvals) return '<span class="bad">取不到</span>';
+      const p = approvals;
+      const items = [
+        a(links.risk, `临期降价 ${val(p.nearexp_ready)}（待核 ${val(p.nearexp_unverified)}）`, ""),
+        a("/m/pricing", `价格 ${val(p.price)}`, ""),
+        a(links.rival, `补货 ${val(p.restock)}`, ""),
+        a(links.risk, `报损 ${val(p.writeoff)}`, ""),
+        a(links.staffApprovals, `要我拍板 ${val(p.boss_tasks)}`, ""),
+        a(links.todo, `工单通知 ${val(p.tickets_fyi)}`, "")
+      ].join(" / ");
+      return `<div class="num">${val(p.total)}</div><div class="sub">${items}</div>`;
+    }
+    function chatCard() {
+      if (!boss?.chat) return '<span class="muted">未接入</span>';
+      const c = boss.chat;
+      return a(c.link, `<div class="text">待回复 ${val(c.owed_reply)} / 未关 ${val(c.open_total)}</div>`);
+    }
+    function render() {
+      app.innerHTML = '<div class="cell"></div><div class="cell head">金枋店</div><div class="cell head qz">泉州店</div>';
+      const jf = store("63350001"), qz = store("63350002");
+      span("待我审批", approvalCard());
+      row("昨日营业", sales(jf), sales(qz));
+      row("临期", nearexp(jf), nearexp(qz));
+      row("缺货", oos(jf), oos(qz));
+      row("员工打卡", team(jf), team(qz));
+      span("客户消息", chatCard());
+      span("工单", boss?.tickets_open == null ? '<span class="muted">未接入</span>' : a(links.risk, `<div class="num">${val(boss.tickets_open)}</div>`));
+      errors.textContent = (boss?.errors || []).join(" / ");
+      const d = boss?.generated_at ? new Date(boss.generated_at) : new Date();
+      updated.textContent = "更新于 " + d.toLocaleTimeString("zh-CN", { hour:"2-digit", minute:"2-digit" });
+    }
+    async function load() {
+      refresh.disabled = true;
+      try {
+        const r = await fetch("/dataops/api/db/petstore-boss-desk", { credentials:"same-origin" });
+        if (!r.ok) throw new Error("boss");
+        boss = await r.json();
+      } catch (e) { boss = { stores: [], errors:["boss: 取不到"] }; }
+      render();
+      refresh.disabled = false;
+    }
+    refresh.addEventListener("click", load);
+    load();
+  </script>
+</body>
+</html>
