@@ -22,6 +22,8 @@ function endpoint(req) {
 function flattenFields(fields) {
   const out = {};
   for (const [k, v] of Object.entries(fields || {})) out[k] = Array.isArray(v) ? v[0] : v;
+  // 页面带附件时把整张表单塞在 payload（JSON 字符串）里 → 摊平
+  if (typeof out.payload === "string") { try { Object.assign(out, JSON.parse(out.payload)); } catch (_) {} delete out.payload; }
   for (const k of ["lines", "products", "review"]) {
     if (typeof out[k] === "string") {
       try { out[k] = JSON.parse(out[k]); } catch (_) {}

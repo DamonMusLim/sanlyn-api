@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>订单申请 · Sanlyn</title>
+<style>
+:root{--ink:#1A1D21;--ink2:#4A5159;--dim:#8A9199;--bg:#ECEEF2;--page:#fff;--line:#D9DDE2;--line2:#EBEEF1;--head:#2C3E50;--accent:#23395B;--miss:#D64541;--miss-bg:#FDF0EF;--ok:#2E7D5B;--ok-bg:#EDF6F1;--warn:#B8860B}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.65 "Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+button,input,select,textarea{font:inherit}button{cursor:pointer}.topbar{position:sticky;top:0;z-index:8;background:var(--page);border-bottom:1px solid var(--line);padding:9px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn{font-size:12px;font-weight:600;padding:7px 13px;border-radius:3px;border:1px solid var(--line);background:var(--page);color:var(--ink2)}.btn:hover{border-color:var(--accent);color:var(--accent)}.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}.btn:disabled{opacity:.45;cursor:not-allowed}.tag{margin-left:auto;font-size:11px;color:var(--dim)}
+.wrap{max-width:1260px;margin:0 auto;padding:16px;display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:16px}@media(max-width:950px){.wrap{grid-template-columns:1fr}}
+.card{background:var(--page);border:1px solid var(--line);border-radius:4px;padding:16px 18px;margin-bottom:12px}h1{font-size:21px;margin:0 0 4px}.sub{color:var(--dim);font-size:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:700px){.grid{grid-template-columns:1fr}}
+label{display:block;font-size:11.5px;color:var(--ink2);font-weight:600;margin-bottom:4px}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:4px;background:#fff;color:var(--ink);padding:8px 9px}textarea{min-height:76px;resize:vertical}.fixed{border:1px solid var(--line);border-radius:4px;padding:8px 9px;background:var(--line2);min-height:36px}
+.search{margin:10px 0}.tbl{overflow:auto;border:1px solid var(--line);border-radius:4px}table{width:100%;border-collapse:collapse;font-size:12px}th{background:var(--head);color:#fff;border:1px solid var(--head);padding:7px 6px;text-align:left;white-space:nowrap}td{border:1px solid var(--line);padding:6px;vertical-align:middle}td.c,th.c{text-align:center}td.r{text-align:right;font-variant-numeric:tabular-nums}.qty{width:78px;text-align:right}.newrow{background:var(--line2)}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.step{border:1px solid var(--line);border-radius:4px;padding:8px;text-align:center;color:var(--dim);font-size:11.5px}.step.on{border-color:var(--ok);background:var(--ok-bg);color:var(--ok);font-weight:700}
+.req{border-left:3px solid var(--accent);padding-left:10px;margin:8px 0}.req b{display:block}.req small{color:var(--dim)}.ret{background:var(--miss-bg);color:var(--miss);border:1px solid #F0C4C1;border-radius:4px;padding:6px 8px;margin-top:6px}.empty{color:var(--dim);padding:12px}.loginbox{max-width:340px;margin:40px auto}.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--head);color:#fff;padding:9px 16px;border-radius:6px;display:none;z-index:20}.toast.err{background:var(--miss)}
+.lang{display:flex;gap:4px}.lang button{font-size:11px;padding:2px 8px;border:1px solid var(--line);border-radius:10px;background:var(--page);color:var(--ink2)}.lang button.on{background:var(--head);border-color:var(--head);color:#fff}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <button class="btn" type="button" onclick="history.back()">Back</button>
+  <div class="lang" id="lang" style="display:none"></div>
+  <span class="tag" id="tag">Loading...</span>
+</div>
+<div id="state" class="card" style="max-width:420px;margin:40px auto">Loading...</div>
+<div class="wrap" id="app" style="display:none">
+  <main>
+    <div class="card"><h1 id="title">订单申请</h1><div class="sub" id="hint"></div></div>
+    <div class="card">
+      <div class="grid">
+        <div id="buyerBox"></div>
+        <div><label id="arrivalLbl">要求到货日期</label><input type="date" id="requiredArrivalDate"></div>
+        <div id="poBox"><label id="poLbl">客户 PO</label><input id="customerPO"></div>
+        <div><label id="containerLbl">柜型 / 柜量</label><input id="container"></div>
+      </div>
+    </div>
+    <div class="card">
+      <label id="productLbl">产品</label><input class="search" id="q" placeholder="Search product / SKU">
+      <div class="tbl"><table><thead><tr><th>SKU</th><th id="thName">品名</th><th id="thPack">装箱</th><th id="thPrice">上次价</th><th class="c" id="thQty">箱数</th></tr></thead><tbody id="products"></tbody><tbody id="newLines"></tbody></table></div>
+      <button class="btn" id="addNew" type="button" style="margin-top:10px">Add new item</button>
+    </div>
+    <div class="card">
+      <div class="grid">
+        <div id="sourceBox"><label>来源</label><select id="source"><option>微信</option><option>邮件</option><option>电话</option><option>当面</option></select></div>
+        <div id="readyBox"><label>工厂可交货日期</label><input type="date" id="factoryReadyDate"></div>
+      </div>
+      <label id="remarksLbl" style="margin-top:10px">备注</label><textarea id="remarks"></textarea>
+      <label id="fileLbl" style="margin-top:10px">上传原件</label><input type="file" id="files" multiple accept=".pdf,.xlsx,.xls,.jpg,.jpeg,.png">
+      <button class="btn pri" id="submit" type="button" style="margin-top:12px">Submit</button>
+    </div>
+  </main>
+  <aside>
+    <div class="card"><div class="steps"><div class="step on">Sent</div><div class="step">Under review</div><div class="step">Factory confirming</div><div class="step">PI ready</div></div></div>
+    <div class="card"><b id="mineTitle">我的申请</b><div id="requests"></div></div>
+  </aside>
+</div>
+<div class="toast" id="toast"></div>
+<script src="order-request.js"></script>
+</body>
+</html>
