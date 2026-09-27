@@ -9,6 +9,7 @@ const RISK_BY_PRIORITY = {
   P2: "mid",
   P3: "low",
 };
+const STAFF_NO_RE = /^[A-Z]{2,4}-\d{2}$/;
 
 function genTaskId() {
   return "t-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6);
@@ -24,6 +25,11 @@ function cleanString(value) {
   if (value === undefined || value === null) return null;
   const s = String(value).trim();
   return s ? s : null;
+}
+
+function cleanOwnerStaffNo(rawExtra) {
+  const staffNo = cleanString(rawExtra && rawExtra.owner_staff_no);
+  return staffNo && STAFF_NO_RE.test(staffNo) ? staffNo : null;
 }
 
 function buildRaw(body) {
@@ -100,6 +106,7 @@ export default async function handler(req, res) {
   }
 
   const rawPatch = buildRaw(b);
+  const assignedTo = cleanOwnerStaffNo(rawPatch.raw_extra);
   let ownerObjectType =
     cleanString(b.owner_object_type) ||
     (cleanString(b.related_order_no) ? "order" : cleanString(b.entity_type)) ||
@@ -127,6 +134,7 @@ export default async function handler(req, res) {
     source,
     dedupeKey,
     priority,
+    assignedTo,
   };
 
   const pool = getPool();
@@ -140,12 +148,12 @@ export default async function handler(req, res) {
          id, title, task_type, level, status, risk_level,
          owner_object_type, owner_object_id, related_order_no, company_code,
          mode, due_at, reason, raw,
-         source, dedupe_key, priority, notify_stage
+         source, dedupe_key, priority, notify_stage, assigned_to
        ) VALUES (
          $1, $2, $3, $4, 'open', $5,
          $6, $7, $8, $9,
          'owned', $10::timestamptz, $11, $12::jsonb,
-         $13, $14, $15, 0
+         $13, $14, $15, 0, $16
        )
        ON CONFLICT (source, dedupe_key)
          WHERE status NOT IN ('done', 'cancelled')
@@ -161,7 +169,8 @@ export default async function handler(req, res) {
          due_at = EXCLUDED.due_at,
          reason = EXCLUDED.reason,
          raw = COALESCE(tasks.raw, '{}'::jsonb) || EXCLUDED.raw,
-         priority = EXCLUDED.priority
+         priority = EXCLUDED.priority,
+         assigned_to = COALESCE(NULLIF(tasks.assigned_to, ''), EXCLUDED.assigned_to)
        RETURNING id, status, (xmax = 0) AS created`,
       [
         values.id,
@@ -179,6 +188,7 @@ export default async function handler(req, res) {
         values.source,
         values.dedupeKey,
         values.priority,
+        values.assignedTo,
       ]
     );
 

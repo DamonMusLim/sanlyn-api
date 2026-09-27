@@ -6,9 +6,11 @@
  *   cd /opt/sanlyn-api-test && set -a && source .env && set +a && node scripts/task-escalation-cron.mjs
  */
 
-import "dotenv/config";
 import { appendFile, readFile } from "node:fs/promises";
-import { getPool } from "../api/db.js";
+
+if (process.env.ESCALATION_SELFTEST !== "owner-review-stage") {
+  await import("dotenv/config");
+}
 
 const LIVE = process.env.ESCALATION_LIVE === "1";
 const LIMIT = Number(process.env.ESCALATION_MAX_PUSHES || 5);
@@ -26,6 +28,11 @@ const MS = {
 let activeStaffByNoPromise = null;
 const unclaimedTaskDayKeys = new Set();
 const unclaimedLoadedDays = new Set();
+
+async function getPoolInstance() {
+  const mod = await import("../api/db.js");
+  return mod.getPool();
+}
 
 function asDate(value) {
   if (!value) return null;
@@ -51,6 +58,16 @@ function addMs(date, ms) {
 
 function rawObject(raw) {
   return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+}
+
+function rawExtraObject(raw) {
+  const obj = rawObject(raw);
+  return rawObject(obj.raw_extra);
+}
+
+function rawText(task, key) {
+  const raw = rawObject(task.raw);
+  return firstNonEmpty(raw[key], rawExtraObject(task.raw)[key]);
 }
 
 function isSnoozed(task, now) {
@@ -117,6 +134,37 @@ function nextStage(task, now) {
   return null;
 }
 
+function isOwnerReviewTask(task) {
+  return rawText(task, "escalate_to") === "D-00" && Boolean(rawText(task, "owner_staff_no"));
+}
+
+function ownerReviewStage(task, now) {
+  if (!isOwnerReviewTask(task)) return null;
+  if (isSnoozed(task, now)) return { hold: true, reason: "任务已暂缓" };
+  if (task.resolved_at) return null;
+
+  const dueAt = asDate(task.due_at);
+  const createdAt = asDate(task.created_at);
+  const baseAt = dueAt || (createdAt ? addMs(createdAt, MS.day) : null);
+  if (!baseAt) return null;
+
+  const pushAt = dueAt ? addMs(dueAt, 12 * MS.hour) : addMs(createdAt, 36 * MS.hour);
+  if (pushAt > now) return { hold: true, reason: `负责人/复核人处理期未满，到点=${pushAt.toISOString()}` };
+
+  const lastNotifiedAt = asDate(task.last_notified_at);
+  if (lastNotifiedAt && todayKey(lastNotifiedAt) === todayKey(now)) {
+    return { hold: true, reason: "今日已推 Damon" };
+  }
+
+  return {
+    stage: 3,
+    reason: dueAt ? "负责人审核工单到期12小时未解决" : "负责人审核工单创建36小时未解决",
+    nextAt: addMs(now, MS.day),
+    daily: true,
+    ownerReview: true,
+  };
+}
+
 function idempotencyKey(taskId, stageInfo, now) {
   // stage3 是每日一推，幂等粒度必须带日期；否则唯一键会挡住第二天提醒。
   if (stageInfo.daily) return `${taskId}:stage${stageInfo.stage}:${todayKey(now)}`;
@@ -134,6 +182,16 @@ function firstNonEmpty(...values) {
     const text = String(value ?? "").trim();
     if (text) return text;
   }
+  return "";
+}
+
+function firstLink(task) {
+  const raw = rawObject(task.raw);
+  const extra = rawExtraObject(task.raw);
+  const links = Array.isArray(raw.links) ? raw.links : Array.isArray(extra.links) ? extra.links : [];
+  const first = links[0];
+  if (typeof first === "string") return first.trim();
+  if (first && typeof first === "object") return firstNonEmpty(first.url, first.href, first.link);
   return "";
 }
 
@@ -250,8 +308,10 @@ function payloadFor(task, stageInfo, chainInfo) {
     urgency: normalizedPriority(task.priority) === "P0" ? "紧急" : "普通",
     deadline: deadlineFor(task, stageInfo),
     count: "1",
-    url: `${PUBLIC_TASK_URL}${encodeURIComponent(task.id)}`,
+    url: firstNonEmpty(firstLink(task), `${PUBLIC_TASK_URL}${encodeURIComponent(task.id)}`),
   };
+  const recommendedAction = rawText(task, "recommended_action");
+  if (recommendedAction) payload.recommended_action = recommendedAction;
   if (STAGED) {
     Object.assign(payload, { owner_no: chainInfo.owner?.no || "", owner_name: chainInfo.owner?.name || "", reviewer_no: chainInfo.reviewer?.no || "", reviewer_name: chainInfo.reviewer?.name || "", chain: chainInfo.chain || "" });
   }
@@ -301,6 +361,46 @@ async function fetchCandidates(pool, now) {
   const watermarkLabel =
     !watermark.date && watermark.raw !== "none" ? `${watermark.raw}(解析失败,已忽略)` : watermark.raw;
   return { rows, skippedBeforeWatermark, watermark: watermarkLabel };
+}
+
+// 审核 review(Claude 0927):负责人审核工单不吃 ESCALATION_SINCE 3天水位——否则超过3天没人管的工单就永远静默了。
+// 改用固定起点 = 这套机制上线日(0927),既不会把历史旧单一次性倒出来(0905 事故),也保证「最后才是 Damon」每天追到解决为止。
+const OWNER_REVIEW_SINCE = new Date("2026-09-27T00:00:00+08:00");
+async function fetchOwnerReviewCandidates(pool, now) {
+  const watermark = { date: OWNER_REVIEW_SINCE };
+  const params = [now.toISOString()];
+  const watermarkClause = watermark.date ? `AND created_at >= $2::timestamptz` : "";
+  if (watermark.date) params.push(watermark.date.toISOString());
+
+  const { rows } = await pool.query(
+    `SELECT id, title, status, priority, source, dedupe_key, related_order_no,
+            company_code, company_id, domain,
+            assigned_to, acknowledged_at, resolved_at, notify_stage,
+            next_notify_at, last_notified_at, raw, due_at, created_at
+      FROM tasks
+      WHERE status IN ('open', 'doing')
+        AND COALESCE(raw->>'escalate_to', raw->'raw_extra'->>'escalate_to') = 'D-00'
+        AND NULLIF(trim(COALESCE(raw->>'owner_staff_no', raw->'raw_extra'->>'owner_staff_no')), '') IS NOT NULL
+        ${watermarkClause}
+      ORDER BY COALESCE(due_at, created_at) ASC`,
+    params
+  );
+
+  let skippedBeforeWatermark = 0;
+  if (watermark.date) {
+    const countRes = await pool.query(
+      `SELECT count(*)::int AS count
+        FROM tasks
+        WHERE status IN ('open', 'doing')
+          AND COALESCE(raw->>'escalate_to', raw->'raw_extra'->>'escalate_to') = 'D-00'
+          AND NULLIF(trim(COALESCE(raw->>'owner_staff_no', raw->'raw_extra'->>'owner_staff_no')), '') IS NOT NULL
+          AND created_at < $2::timestamptz`,
+      params
+    );
+    skippedBeforeWatermark = countRes.rows[0]?.count || 0;
+  }
+
+  return { rows, skippedBeforeWatermark };
 }
 
 async function reserveAttempt(client, key, task, stageInfo) {
@@ -363,6 +463,17 @@ async function pushNotify(task, stageInfo, chainInfo) {
 
 function shouldPushDamon(stageInfo, chainInfo) {
   return !STAGED || stageInfo.stage >= 3 || (stageInfo.stage === 2 && !chainInfo.reviewer);
+}
+
+function ownerReviewChainInfo(task, activeStaffByNo) {
+  const ownerNo = normalizeStaffNo(rawText(task, "owner_staff_no") || task.assigned_to);
+  const reviewerNo = normalizeStaffNo(rawText(task, "reviewer_staff_no"));
+  const ownerStaff = activeStaffByNo.get(ownerNo);
+  const reviewerStaff = reviewerNo ? activeStaffByNo.get(reviewerNo) : null;
+  const owner = { no: ownerNo.toUpperCase(), name: staffName(ownerNo, ownerStaff) || ownerNo.toUpperCase() };
+  const reviewer = reviewerNo ? { no: reviewerNo.toUpperCase(), name: staffName(reviewerNo, reviewerStaff) || reviewerNo.toUpperCase() } : null;
+  const fallbackChain = `${owner.no}先审→${reviewer ? `${reviewer.no}复核→` : ""}Damon`;
+  return { owner, reviewer, skipReason: "", assignedTo: task.assigned_to || owner.no, chain: firstNonEmpty(rawText(task, "chain"), fallbackChain) };
 }
 
 function unclaimedFileFor(now) {
@@ -467,9 +578,44 @@ async function processOne(pool, task, stageInfo, now, chainInfo) {
   return { pushed: true, skipped: false, skippedNoOwner: false, skippedBadOwner: false };
 }
 
+function logOwnerReviewHold(task, decision, now, activeStaffByNo) {
+  const stageInfo = { stage: 3, reason: decision.reason, nextAt: null, daily: true, ownerReview: true };
+  const chainInfo = ownerReviewChainInfo(task, activeStaffByNo);
+  const key = idempotencyKey(task.id, stageInfo, now);
+  if (!LIVE) {
+    console.log(`[DRY] task=${task.id} priority=${priorityLabel(task.priority)} source=${task.source || ""} stage=hold key=${key} reason=${decision.reason} action=hold payload=${JSON.stringify(payloadFor(task, stageInfo, chainInfo))}`);
+    return;
+  }
+  console.log(`[owner-review-hold] task=${task.id} key=${key} reason=${decision.reason} chain=${chainInfo.chain}`);
+}
+
+function runOwnerReviewStageSelfTest() {
+  const now = new Date("2026-09-27T12:00:00.000Z");
+  const baseTask = {
+    id: "selftest",
+    raw: { escalate_to: "D-00", owner_staff_no: "CW-06", reviewer_staff_no: "CW-07" },
+    created_at: "2026-09-26T00:00:00.000Z",
+    due_at: "2026-09-27T06:00:00.000Z",
+    resolved_at: null,
+    last_notified_at: null,
+  };
+  const cases = [
+    ["未到期 hold", baseTask],
+    ["到期+12h 推", { ...baseTask, due_at: "2026-09-26T23:00:00.000Z" }],
+    ["同日第二次不推", { ...baseTask, due_at: "2026-09-26T23:00:00.000Z", last_notified_at: "2026-09-27T01:00:00.000Z" }],
+    ["due_at 为空按 created_at+36h", { ...baseTask, due_at: null }],
+    ["非审核工单不进新分支", { ...baseTask, raw: { escalate_to: "D-01", owner_staff_no: "CW-06" } }],
+  ];
+  for (const [name, task] of cases) {
+    const decision = ownerReviewStage(task, now);
+    const result = !decision ? "skip" : decision.hold ? "hold" : `push-stage-${decision.stage}`;
+    console.log(`[selftest] ${name}: ${result}${decision?.reason ? ` (${decision.reason})` : ""}`);
+  }
+}
+
 async function main() {
   const now = new Date();
-  const pool = getPool();
+  const pool = await getPoolInstance();
   let scanned = 0;
   let due = 0;
   let pushed = 0;
@@ -481,24 +627,39 @@ async function main() {
 
   try {
     const candidateResult = await fetchCandidates(pool, now);
+    const ownerReviewResult = await fetchOwnerReviewCandidates(pool, now);
     const activeStaffByNo = await loadActiveStaffByNo(pool);
-    const tasks = candidateResult.rows;
-    scanned = tasks.length;
+    const ownerReviewIds = new Set(ownerReviewResult.rows.map((task) => task.id));
+    const tasks = candidateResult.rows.filter((task) => !ownerReviewIds.has(task.id));
+    scanned = tasks.length + ownerReviewResult.rows.length;
+    const ownerReviewDueTasks = [];
+    for (const task of ownerReviewResult.rows) {
+      const decision = ownerReviewStage(task, now);
+      if (!decision) continue;
+      if (decision.hold) {
+        logOwnerReviewHold(task, decision, now, activeStaffByNo);
+      } else {
+        ownerReviewDueTasks.push({ task, stageInfo: decision });
+      }
+    }
     const allDueTasks = tasks
       .map((task) => ({ task, stageInfo: nextStage(task, now) }))
-      .filter((x) => x.stageInfo);
+      .filter((x) => x.stageInfo)
+      .concat(ownerReviewDueTasks);
     const priorityCounts = allDueTasks.reduce((acc, item) => {
       const key = priorityLabel(item.task.priority); acc[key] = (acc[key] || 0) + 1; return acc;
     }, {});
     due = allDueTasks.length; const loopTasks = LIVE && !STAGED ? allDueTasks.slice(0, LIMIT) : allDueTasks;
 
     console.log(
-      `待推汇总: candidates=${scanned} total=${due} priority=${JSON.stringify(priorityCounts)} live_limit=${LIVE ? LIMIT : "dry-all"} staged=${STAGED ? "1" : "0"} skipped_before_watermark=${candidateResult.skippedBeforeWatermark} watermark=${candidateResult.watermark}`
+      `待推汇总: candidates=${scanned} total=${due} priority=${JSON.stringify(priorityCounts)} owner_review=${ownerReviewResult.rows.length} live_limit=${LIVE ? LIMIT : "dry-all"} staged=${STAGED ? "1" : "0"} skipped_before_watermark=${candidateResult.skippedBeforeWatermark + ownerReviewResult.skippedBeforeWatermark} watermark=${candidateResult.watermark}`
     );
 
     for (let i = 0; i < loopTasks.length; i += 1) {
       const item = loopTasks[i];
-      const chainInfo = resolveChain(item.task.assigned_to, activeStaffByNo);
+      const chainInfo = item.stageInfo.ownerReview
+        ? ownerReviewChainInfo(item.task, activeStaffByNo)
+        : resolveChain(item.task.assigned_to, activeStaffByNo);
       if (LIVE && STAGED && !chainInfo.skipReason && shouldPushDamon(item.stageInfo, chainInfo) && pushed >= LIMIT) {
         if (!limitReachedLogged) {
           console.log(`[limit-reached] pushed=${pushed} limit=${LIMIT} remaining=${loopTasks.length - i}`);
@@ -526,7 +687,11 @@ async function main() {
   console.log(`统计: 扫${scanned}/该推${due}/实推${pushed}/跳过${skipped}/失败${failed}/dry=${LIVE ? "0" : "1"}`);
 }
 
-main().catch((err) => {
-  console.error("[FATAL]", err);
-  process.exit(1);
-});
+if (process.env.ESCALATION_SELFTEST === "owner-review-stage") {
+  runOwnerReviewStageSelfTest();
+} else {
+  main().catch((err) => {
+    console.error("[FATAL]", err);
+    process.exit(1);
+  });
+}
