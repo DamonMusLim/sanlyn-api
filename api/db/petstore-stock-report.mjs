@@ -59,7 +59,8 @@ async function lookupProduct(pool, q) {
   if (!query) return [];
   const r = await pool.query(`
     SELECT s.product_code, b.barcode,
-           s.product_name, s.spec, s.out_price, s.stock_num,
+           s.product_name, s.spec, COALESCE(l.out_price, s.out_price) AS out_price, s.stock_num,
+           COALESCE(l.img_url, s.img_url) AS img_url,
            COALESCE(c.shelf_no, s.shelf_list) AS shelf_location,
            sup.expire_date_batch AS recent_expiry
       FROM public.petstore_skus s
@@ -73,6 +74,7 @@ async function lookupProduct(pool, q) {
       LEFT JOIN public.petstore_product_status_current c
         ON c.product_code=s.product_code AND c.store_code=$2
       LEFT JOIN public.petstore_sku_supp sup ON sup.product_code=s.product_code
+      LEFT JOIN public.petstore_shop_listing l ON l.product_code=s.product_code AND l.store_code=$2
      WHERE s.product_code=$1 OR b.barcode=$1 OR s.product_name ILIKE '%' || $1 || '%'
      ORDER BY CASE WHEN b.barcode=$1 THEN 0 WHEN s.product_code=$1 THEN 1 ELSE 2 END,
               s.product_code LIMIT 20`,
@@ -82,6 +84,7 @@ async function lookupProduct(pool, q) {
     product_name: x.product_name || "", spec: x.spec || "",
     price: x.out_price ?? null, stock: x.stock_num ?? null,
     location: shelfText(x.shelf_location), recent_expiry: x.recent_expiry || "",
+    img: x.img_url || "",
   }));
 }
 
