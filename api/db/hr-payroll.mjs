@@ -11,6 +11,7 @@
 // ⚠️出勤天数口径：**有打卡记录才算实际出勤**；打卡链路没跑起来时会全是0 → 接口返回 basis 说明用的哪种口径，
 //   并在 warnings 里点名，绝不让"0出勤=0工资"这种假数悄悄变成工资单。
 import { getPool, setCors } from "./db.js";
+import { buildHolidayCalendar } from "./hr-holiday-calendar.mjs";
 
 const D = "YYYY-MM-DD";
 
@@ -40,8 +41,17 @@ function expandDates(from, to, set) {
   while (d <= end) { set.add(d.toISOString().slice(0, 10)); d = new Date(d.getTime() + 86400000); }
 }
 
+function paidDaysFromCalendar(row, paidOffOk) {
+  if (!paidOffOk || !row) return { holidayPaidDays: 0, storePaidDays: 0 };
+  return {
+    holidayPaidDays: row.days.filter((d) => d.type === "legal_off").length,
+    storePaidDays: row.days.filter((d) => d.type === "store_off").length,
+  };
+}
+
 async function computeOne(pool, emp, range, cfg) {
-  const [shifts, checkins, leaves, ot, reimb] = await Promise.all([
+  const employmentType = emp.employment_type || (emp.pay_type === "monthly" ? "fulltime" : "parttime");
+  const [shifts, checkins, leaves, ot, reimb, holidays, storePlans, restRules, restChanges] = await Promise.all([
     pool.query(`SELECT to_char(work_date,'${D}') AS work_date, start_time, end_time, is_rest_day
                   FROM hr_shifts WHERE employee_id=$1 AND work_date BETWEEN $2 AND $3`,
       [emp.id, range.from, range.to]),
@@ -58,6 +68,27 @@ async function computeOne(pool, emp, range, cfg) {
     pool.query(`SELECT COALESCE(SUM(amount),0) AS a FROM hr_reimbursements
                  WHERE employee_id=$1 AND status='approved' AND purchase_date BETWEEN $2 AND $3`,
       [emp.id, range.from, range.to]),
+    pool.query(`SELECT to_char(holiday_date,'${D}') AS holiday_date, kind, name
+                  FROM hr_public_holidays WHERE holiday_date BETWEEN $1 AND $2`,
+      [range.from, range.to]).catch(() => ({ rows: [] })),
+    pool.query(`SELECT id, company_code, name, to_char(start_date,'${D}') AS start_date,
+                       to_char(end_date,'${D}') AS end_date
+                  FROM hr_store_holiday_plans
+                 WHERE company_code=$1 AND start_date <= $3::date AND end_date >= $2::date`,
+      [emp.company_code, range.from, range.to]).catch(() => ({ rows: [] })),
+    pool.query(`SELECT company_code, employee_id, weekday,
+                       to_char(effective_from,'${D}') AS effective_from,
+                       to_char(effective_to,'${D}') AS effective_to
+                  FROM hr_rest_rules
+                 WHERE company_code=$1 AND effective_from <= $2::date
+                   AND (effective_to IS NULL OR effective_to >= $3::date)`,
+      [emp.company_code, range.to, range.from]).catch(() => ({ rows: [] })),
+    pool.query(`SELECT employee_id, to_char(orig_date,'${D}') AS orig_date,
+                       to_char(new_date,'${D}') AS new_date, status
+                  FROM hr_rest_change_requests
+                 WHERE company_code=$1 AND status='approved'
+                   AND (orig_date BETWEEN $2::date AND $3::date OR new_date BETWEEN $2::date AND $3::date)`,
+      [emp.company_code, range.from, range.to]).catch(() => ({ rows: [] })),
   ]);
 
   const work = shifts.rows.filter((s) => !s.is_rest_day);
@@ -88,34 +119,54 @@ async function computeOne(pool, emp, range, cfg) {
   const actualHours = basis === "checkin"
     ? work.filter((s) => checkinDates.has(s.work_date)).reduce((n, s) => n + shiftHours(s), 0)
     : scheduledHours;
+  const legalDates = new Set(holidays.rows.filter((r) => r.kind === "legal").map((r) => r.holiday_date));
+  const holidayWorkDays = work.filter((s) => legalDates.has(s.work_date)).length;
+  const paidOffOk = employmentType === "fulltime" && emp.pay_type !== "hourly";
+  const calendarRow = buildHolidayCalendar({
+    employees: [{ id: emp.id, name: emp.name, company_code: emp.company_code, employment_type: employmentType }],
+    restRules: restRules.rows, restChanges: restChanges.rows, holidays: holidays.rows,
+    storePlans: storePlans.rows, shifts: shifts.rows.map((s) => ({ ...s, employee_id: emp.id })),
+    from: range.from, to: range.to, companyCode: emp.company_code,
+  })[0];
+  const { holidayPaidDays, storePaidDays } = paidDaysFromCalendar(calendarRow, paidOffOk);
+  const paidDays = holidayPaidDays + storePaidDays;
+  if (holidayPaidDays) warnings.push(`法定假日带薪 ${holidayPaidDays} 天`);
+  if (storePaidDays) warnings.push(`店内放假带薪 ${storePaidDays} 天`);
 
   const rate = Number(emp.pay_rate || 0);
   if (!rate) warnings.push("未设薪资标准(pay_rate)，本行金额为0，去员工花名册补");
 
-  let baseAmount = 0, hourlyRate = 0;
+  let baseAmount = 0, hourlyRate = 0, dailyRate = 0;
   if (emp.pay_type === "monthly") {
     const std = Number(cfg.standard_month_days) || 26;
-    baseAmount = rate / std * actualDays;
+    baseAmount = rate / std * (actualDays + paidDays);
     hourlyRate = rate / std / 8;
+    dailyRate = rate / std;
   } else if (emp.pay_type === "hourly") {
     baseAmount = rate * actualHours;
     hourlyRate = rate;
+    dailyRate = rate * 8;
   } else { // daily
-    baseAmount = rate * actualDays;
+    baseAmount = rate * (actualDays + paidDays);
     hourlyRate = rate / 8;
+    dailyRate = rate;
   }
   const overtimeAmount = hourlyRate * overtimeHours * (Number(cfg.overtime_multiplier) || 1.5);
+  const holidayExtraMultiplier = Math.max((Number(cfg.holiday_multiplier) || 3) - 1, 0);
+  const holidayAmount = dailyRate * holidayWorkDays * holidayExtraMultiplier;
   if (compOffHours > 0) warnings.push(`有${compOffHours}小时调休(不计入工资，只抵休息)`);
 
   return {
     employee_id: emp.id, employee_name: emp.name,
-    pay_type: emp.pay_type, pay_rate: rate,
-    scheduled_days: scheduledDates.size, actual_days: actualDays,
+    employment_type: employmentType, pay_type: emp.pay_type, pay_rate: rate,
+    scheduled_days: scheduledDates.size, actual_days: actualDays + paidDays,
     actual_hours: round2(actualHours), leave_days: leaveDays,
-    overtime_hours: overtimeHours,
+    overtime_hours: overtimeHours, holiday_work_days: holidayWorkDays,
+    holiday_paid_days: holidayPaidDays, store_paid_days: storePaidDays,
     base_amount: round2(baseAmount), overtime_amount: round2(overtimeAmount),
+    holiday_amount: round2(holidayAmount),
     commission_amount: 0, deduction_amount: 0, reimb_amount: round2(reimbAmount),
-    gross_amount: round2(baseAmount + overtimeAmount),
+    gross_amount: round2(baseAmount + overtimeAmount + holidayAmount),
     basis, warnings,
   };
 }
@@ -128,7 +179,7 @@ export default async function handler(req, res) {
 
   try {
     const cfgQ = await pool.query("SELECT * FROM hr_org_settings WHERE company_code=$1", [company]);
-    const cfg = cfgQ.rows[0] || { standard_month_days: 26, overtime_multiplier: 1.5 };
+    const cfg = cfgQ.rows[0] || { standard_month_days: 26, overtime_multiplier: 1.5, holiday_multiplier: 3 };
 
     if (req.method === "GET") {
       const { period } = req.query;
@@ -148,7 +199,7 @@ export default async function handler(req, res) {
     if (req.method === "POST") {
       const range = monthRange(req.body?.period);
       const emps = await pool.query(
-        `SELECT id,name,pay_type,pay_rate FROM hr_employees
+        `SELECT id,name,company_code,pay_type,pay_rate,COALESCE(employment_type, CASE WHEN pay_type='monthly' THEN 'fulltime' ELSE 'parttime' END) AS employment_type FROM hr_employees
           WHERE company_code=$1 AND employment_status='active' ORDER BY name`, [company]);
       const out = [];
       const skipped = [];
@@ -163,20 +214,25 @@ export default async function handler(req, res) {
         const c = await computeOne(pool, emp, range, cfg);
         const up = await pool.query(
           `INSERT INTO hr_payroll (company_code,employee_id,employee_name,period,pay_type,pay_rate,
-             scheduled_days,actual_days,actual_hours,leave_days,overtime_hours,
-             base_amount,overtime_amount,commission_amount,deduction_amount,reimb_amount,gross_amount,status)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,0,0,$14,$15,'draft')
+             scheduled_days,actual_days,actual_hours,leave_days,overtime_hours,holiday_work_days,
+             holiday_paid_days,store_paid_days,
+             base_amount,overtime_amount,holiday_amount,commission_amount,deduction_amount,reimb_amount,gross_amount,status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,0,0,$18,$19,'draft')
            ON CONFLICT (company_code,employee_id,period) DO UPDATE SET
              pay_type=EXCLUDED.pay_type, pay_rate=EXCLUDED.pay_rate,
              scheduled_days=EXCLUDED.scheduled_days, actual_days=EXCLUDED.actual_days,
              actual_hours=EXCLUDED.actual_hours, leave_days=EXCLUDED.leave_days,
-             overtime_hours=EXCLUDED.overtime_hours, base_amount=EXCLUDED.base_amount,
-             overtime_amount=EXCLUDED.overtime_amount, reimb_amount=EXCLUDED.reimb_amount,
+             overtime_hours=EXCLUDED.overtime_hours, holiday_work_days=EXCLUDED.holiday_work_days,
+             holiday_paid_days=EXCLUDED.holiday_paid_days, store_paid_days=EXCLUDED.store_paid_days,
+             base_amount=EXCLUDED.base_amount, overtime_amount=EXCLUDED.overtime_amount,
+             holiday_amount=EXCLUDED.holiday_amount, reimb_amount=EXCLUDED.reimb_amount,
              gross_amount=EXCLUDED.gross_amount
            RETURNING *`,
           [company, emp.id, emp.name, range.label, c.pay_type, c.pay_rate,
            c.scheduled_days, c.actual_days, c.actual_hours, c.leave_days, c.overtime_hours,
-           c.base_amount, c.overtime_amount, c.reimb_amount, c.gross_amount]
+           c.holiday_work_days, c.holiday_paid_days, c.store_paid_days,
+           c.base_amount, c.overtime_amount, c.holiday_amount,
+           c.reimb_amount, c.gross_amount]
         );
         out.push({ ...up.rows[0], basis: c.basis, warnings: c.warnings });
       }

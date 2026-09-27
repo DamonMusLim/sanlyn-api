@@ -175,7 +175,7 @@ export default async function handler(req, res) {
         todo: todoFor(me.company_code),
         checklist: await openChecklist(pool, me.company_code, today, "open"),
         checklist_close: await openChecklist(pool, me.company_code, today, "close"),
-        agenda: await agendaFor(pool, me.company_code, today),
+        agenda: await agendaFor(pool, me.company_code, today, empId),
         shifts: shifts.rows, leaves: leaves.rows, reimbursements: reimb.rows,
         payslips: pay.rows, overtime: ot.rows, handbook: book.rows,
         manager,
@@ -319,8 +319,10 @@ export default async function handler(req, res) {
         const r = await pool.query(
           `UPDATE hr_day_agenda
               SET status=$1, done_by=$2, done_at=CASE WHEN $1='done' THEN now() ELSE NULL END
-            WHERE id=$3 AND company_code=$4 AND work_date=$5 RETURNING id`,
-          [done ? "done" : "open", done ? me.name : null, id, me.company_code, today]);
+            WHERE id=$3 AND company_code=$4 AND work_date=$5
+              AND (employee_id IS NULL OR employee_id=$6)
+            RETURNING id`,
+          [done ? "done" : "open", done ? me.name : null, id, me.company_code, today, empId]);
         if (!r.rowCount) return res.status(400).json({ success: false, error: "没有这件事" });
         return res.status(200).json({ success: true, message: done ? "已完成" : "已取消" });
       }

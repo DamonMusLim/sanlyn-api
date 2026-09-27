@@ -177,7 +177,7 @@ export async function managerExtras(pool, empId, me) {
   if (!caps.dashboard && !caps.approvals) return null;
 
   const errors = [];
-  const [leaves, reimb, failures] = await Promise.all([
+  const [leaves, reimb, failures, employees] = await Promise.all([
     caps.approvals ? safePart(errors, "leave", "请假待批", { rows: null }, () => pool.query(
       `SELECT l.id, l.employee_id, l.employee_name, l.store_id,
               to_char(l.leave_date_start,'YYYY-MM-DD') AS leave_date_start,
@@ -205,6 +205,12 @@ export async function managerExtras(pool, empId, me) {
       `SELECT id, source, impact, error_message, first_seen_at, last_seen_at, seen_count
          FROM job_failures WHERE status='open'
         ORDER BY last_seen_at DESC LIMIT 20`)) : { rows: [] },
+    caps.dashboard ? safePart(errors, "employees", "员工用工类型", { rows: [] }, () => pool.query(
+      `SELECT id, name, position, pay_type,
+              COALESCE(employment_type, CASE WHEN pay_type='monthly' THEN 'fulltime' ELSE 'parttime' END) AS employment_type
+         FROM hr_employees
+        WHERE company_code=$1 AND employment_status='active'
+        ORDER BY name LIMIT 200`, [me.company_code])) : { rows: [] },
   ]);
   const reimbRows = (reimb.rows || []).map((x) => ({
     id: x.id, employee_id: x.employee_id, employee_name: x.employee_name,
@@ -234,6 +240,7 @@ export async function managerExtras(pool, empId, me) {
       summary: rollup.summary,
     },
     failures: failures.rows,
+    employees: employees.rows || [],
   };
 }
 
@@ -277,6 +284,21 @@ export async function tryManagerAction({ action, b, res, pool, me, empId }) {
               approval_snapshot=$5::jsonb, approval_actor_person_id=$6
         WHERE id=$1 AND status='pending' RETURNING *`,
       [b.id, status, note, actor, JSON.stringify(snap), auth.person?.person_id || null]);
+    return res.status(200).json({ success: true, data: r.rows[0] });
+  }
+
+  if (action === "manager_employee_type") {
+    if (!hasCap(auth, "store.dashboard.view") && !hasCap(auth, "boss.dashboard.view")) {
+      return res.status(403).json({ success: false, error: "无员工资料管理能力" });
+    }
+    const type = b.employment_type === "parttime" ? "parttime" : "fulltime";
+    const r = await pool.query(
+      `UPDATE hr_employees
+          SET employment_type=$3
+        WHERE id=$1 AND company_code=$2 AND employment_status='active'
+        RETURNING id,name,employment_type`,
+      [b.id, me.company_code, type]);
+    if (!r.rows.length) return res.status(404).json({ success: false, error: "员工不存在" });
     return res.status(200).json({ success: true, data: r.rows[0] });
   }
 
