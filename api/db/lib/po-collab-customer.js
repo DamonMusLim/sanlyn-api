@@ -17,6 +17,7 @@ import { APP_BASE, genRaw, rawToHash } from "./collab-shared.js";
 import { isInternal } from "./po-collab-handlers.js";
 import { sealStatus } from "./po-collab-seal.js";
 import { autoIssueCollabLinks } from "./collab-auto-links.js";
+import { loadSellerCfg } from "../doc-data.js";
 import { notifyRecipients, piTerms, REPLY_DAYS } from "./po-collab-customer-notify.js";
 
 export const CROLE = "customer_order";
@@ -120,15 +121,19 @@ export async function handleCustomerValidate(req, res, pool) {
   }
   const o = (await pool.query(
     `SELECT order_date, pi_no, contract_no, currency, trade_terms, destination_port, payment_terms, payment_schedule,
-            payment_terms_days, confirmed_delivery, marks, shipping_plan_id, company_code
+            payment_terms_days, confirmed_delivery, marks, shipping_plan_id, company_code, issuing_company_id
        FROM orders WHERE order_no=$1 LIMIT 1`, [sheet.order_no])).rows[0] || {};
   const comp = async (code) => (await pool.query(
     `SELECT name_en, COALESCE(NULLIF(address_en,''), address) AS address, tax_id, registration_no, country
        FROM companies WHERE code=$1 LIMIT 1`, [code])).rows[0] || null;
-  const payee = (await pool.query(
-    `SELECT account_holder, bank_name_en, account_no, swift, bank_address, currency
-       FROM bank_accounts WHERE company_code=$1 AND currency=$2 AND active ORDER BY is_default DESC LIMIT 1`,
-    [SELLER_CODE, o.currency || "USD"])).rows[0] || null;
+  // 收款信息跟 PI 模板同一个来源（seller_profiles，经 loadSellerCfg）——⛔ 别再读 bank_accounts：
+  //   0927 实测页面印「BANK OF CHINA XIAMEN BRANCH」、PI PDF 印「…WENZAO SUB-BRANCH」，同一账号两个行名
+  const _cfg = await loadSellerCfg(pool, { issuing_company_id: o.issuing_company_id }, "");
+  const _bk = (_cfg && _cfg.bank) || {};
+  const _cny = ["CNY", "RMB"].includes(String(o.currency || "").toUpperCase());
+  const _acct = _cny ? (_bk.rmbAccount || _bk.cnyAccount || "") : (_bk.usdAccount || "");
+  const payee = _acct ? { account_holder: _bk.beneficiary || _bk.accountName || "", bank_name_en: _bk.bankName || "",
+    account_no: _acct, swift: _bk.swift || "", bank_address: _bk.bankAddr || "", currency: o.currency || null } : null;
   const lines = (await pool.query(
     `SELECT l.id, l.seq, l.product_name, l.ours, l.theirs,
             COALESCE(NULLIF(p.image_url,''), NULLIF(p.images->>0,'')) AS image_url
