@@ -24,7 +24,7 @@ function paging(query) {
 }
 function json(res, status, data) { return res.status(status).json(data); }
 
-async function listRows(req) {
+export async function listRows(req) {
   const { page, pageSize, offset } = paging(req.query || {});
   const storeCode = cleanText(req.query?.store_code, 80);
   const status = cleanText(req.query?.status, 40);

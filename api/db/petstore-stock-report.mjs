@@ -82,6 +82,46 @@ async function lookupProduct(pool, q) {
   }));
 }
 
+// 库存预警:果冻橙「预警数量」全店都没设(petstore_offline_stock_snapshot.alarm_num 全 0,且快照停在 08-28),
+// 所以不用那张表。口径跟补货意向一致:卖得动(近30天≥1件)但库存 ≤ 约一周的量。库存用 petstore_skus(15分钟同步)。
+async function stockAlerts(pool) {
+  const r = await pool.query(`
+    SELECT r.product_code, r.barcode, r.product_name, r.spec_text, r.pic_url, r.shelf_code,
+           COALESCE(k.stock_num, r.cur_stock, 0) AS stock, COALESCE(k.month_sale, 0) AS month_sale
+      FROM public.petstore_ops_row r
+      JOIN public.petstore_skus k ON k.product_code = r.product_code
+     WHERE COALESCE(k.month_sale, 0) >= 1
+       AND COALESCE(k.stock_num, r.cur_stock, 0) <= CEIL(COALESCE(k.month_sale, 0) / 4.0)
+     ORDER BY COALESCE(k.stock_num, r.cur_stock, 0) ASC, k.month_sale DESC
+     LIMIT 150`);
+  return r.rows.map((x) => ({
+    product_code: x.product_code, barcode: x.barcode || "", name: x.product_name || "", spec: x.spec_text || "",
+    img: x.pic_url || "", location: shelfText(x.shelf_code), stock: Number(x.stock), month_sale: Number(x.month_sale),
+  }));
+}
+
+// 盘点:复用 jdc 后台同一个接口的查询(api/db/petstore-stocktake.js listRows),不另写
+async function stocktakeRows() {
+  const { listRows } = await import("./petstore-stocktake.js");
+  const out = await listRows({ query: { store_code: STORE_CODE, pageSize: 100 } });
+  return (out.rows || []).map((x) => ({
+    ymd: x.ymd, name: x.product_name || x.product_code, product_code: x.product_code,
+    book_qty: x.book_qty, count_qty: x.count_qty, diff: x.diff, status: x.status || "", reason: x.reason || x.note || "",
+  }));
+}
+
+// 本地商品目录:手机存一份,扫码/速查先查本地(跟 lookupProduct 同源),每 15 分钟刷新
+async function catalog(pool) {
+  const r = await pool.query(`
+    SELECT r.product_code, r.barcode, r.product_name, r.spec_text, r.store_price,
+           COALESCE(k.stock_num, r.cur_stock) AS stock, r.shelf_code, r.pic_url
+      FROM public.petstore_ops_row r
+      LEFT JOIN public.petstore_skus k ON k.product_code = r.product_code`);
+  return r.rows.map((x) => [x.product_code, x.barcode || "", x.product_name || "", x.spec_text || "",
+    x.store_price == null ? null : Number(x.store_price), x.stock == null ? null : Number(x.stock),
+    shelfText(x.shelf_code), x.pic_url || ""]);
+}
+
 async function addFrequentTodo(pool, me, productName, productCode, now) {
   const title = `重新定位+贴货位标签:${productName || productCode}`;
   const date = todayCn(now);
@@ -247,6 +287,9 @@ export function makeHandler({ poolFactory = defaultPoolFactory, setCorsFn = defa
     try {
       let out;
       if (action === "product_lookup") out = { status: 200, body: { success: true, rows: await lookupProduct(pool, b.q || b.query || b.barcode) } };
+      else if (action === "alerts") out = { status: 200, body: { success: true, rows: await stockAlerts(pool) } };
+      else if (action === "stocktake") out = { status: 200, body: { success: true, rows: await stocktakeRows() } };
+      else if (action === "catalog") out = { status: 200, body: { success: true, at: Date.now(), cols: ["code", "barcode", "name", "spec", "price", "stock", "location", "img"], rows: await catalog(pool) } };
       else if (action === "create") out = await createReport(pool, auth.me, auth.empId, b, now, photoSaver);
       else if (action === "found") out = await found(pool, auth.me, auth.empId, b, now, photoSaver);
       else if (action === "confirm_loss") out = await confirmLoss(pool, auth.me, b, now);
