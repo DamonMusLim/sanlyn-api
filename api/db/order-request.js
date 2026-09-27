@@ -10,6 +10,7 @@ import {
   handleOrderRequestConfirm,
   handleOrderRequestReturn,
   handleOrderRequestFile,
+  handleOrderRequestForm,
 } from "./lib/order-request.js";
 
 function endpoint(req) {
@@ -56,6 +57,7 @@ export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
       if (sub === "file") return await handleOrderRequestFile(req, res, pool);
+      if (sub === "form") return await handleOrderRequestForm(req, res, pool);
       if (req.query?.id) return await handleOrderRequestGet(req, res, pool);
       return await handleOrderRequestList(req, res, pool);
     }

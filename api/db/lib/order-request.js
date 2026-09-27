@@ -231,6 +231,38 @@ async function priceRefs(pool, user, buyerCode, factoryCode, lines) {
   }));
 }
 
+// GET /order-request/form?buyer=：开新申请时的表单 = 字段配置 + 可选产品（下过的）+ 上票价
+//   客户：buyer 必须 ∈ 本人 companyCodes；工厂：只按本厂（orders.factory_company_id），⛔ 不回任何买方/终端客户信息；内部：可选任意客户
+export async function handleOrderRequestForm(req, res, pool) {
+  const user = req.user, kind = callerKind(user);
+  if (!["customer", "internal", "factory"].includes(kind)) return res.status(403).json({ ok: false, error: "role_not_allowed" });
+  const formConfig = orderRequestFormConfig(user);
+  if (kind === "factory") {
+    const r = await pool.query(
+      `SELECT DISTINCT ON (li.sku) li.sku, COALESCE(NULLIF(li.product_name,''), p.product_name) AS name, p.bg_bx AS pack, li.factory_price AS last_price
+         FROM order_line_items li JOIN orders o ON o.id = li.order_id JOIN companies fc ON fc.id = o.factory_company_id
+         LEFT JOIN products p ON p.id = li.product_id
+        WHERE upper(fc.code) = ANY($1::text[]) AND NULLIF(li.sku,'') IS NOT NULL AND o.created_at > NOW() - interval '3 years'
+        ORDER BY li.sku, o.created_at DESC LIMIT 300`, [userCodes(user)]);
+    return res.json({ ok: true, formConfig, products: r.rows });
+  }
+  const codes = userCodes(user);
+  const buyer = String(req.query?.buyer || (kind === "customer" ? codes[0] : "") || "").trim().toUpperCase();
+  if (kind === "customer" && !codes.includes(buyer)) return res.status(403).json({ ok: false, error: "buyer_out_of_scope" });
+  const out = { ok: true, formConfig, buyer };
+  if (kind === "internal") out.buyers = (await pool.query(
+    `SELECT code, COALESCE(NULLIF(name_en,''), name_cn, code) AS name FROM companies
+      WHERE type = 'customer' AND COALESCE(active, true) ORDER BY code LIMIT 500`)).rows;
+  if (kind === "customer") out.buyers = (await pool.query(
+    `SELECT code, COALESCE(NULLIF(name_en,''), name_cn, code) AS name FROM companies WHERE upper(code) = ANY($1::text[])`, [codes])).rows;
+  out.products = buyer ? (await pool.query(
+    `SELECT DISTINCT ON (li.sku) li.sku, COALESCE(NULLIF(li.product_name,''), p.product_name) AS name, p.bg_bx AS pack, li.unit_price AS last_price
+       FROM order_line_items li JOIN orders o ON o.id = li.order_id LEFT JOIN products p ON p.id = li.product_id
+      WHERE o.company_code = $1 AND NULLIF(li.sku,'') IS NOT NULL AND o.created_at > NOW() - interval '3 years'
+      ORDER BY li.sku, o.created_at DESC LIMIT 300`, [buyer])).rows : [];
+  return res.json(out);
+}
+
 export async function handleOrderRequestList(req, res, pool) {
   const rows = await listRows(pool, req.user, null);
   return res.json({ ok: true, requests: rows.map((r) => sanitizeForAudience(r, req.user)) });
