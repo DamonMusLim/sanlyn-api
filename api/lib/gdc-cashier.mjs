@@ -117,6 +117,7 @@ export function createGdcCashierClient({ fetcher = fetch, env = process.env, now
   return {
     list: (body) => call("pos/order/list", body),
     detail: (body) => call("pos/order/detailsV2", body),
+    picked: (body) => call("pos/order/pickedV2", body),
     unpicked: (body) => call("pos/order/queryUnpickedOrderCount", body),
   };
 }
