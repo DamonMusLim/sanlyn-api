@@ -1,7 +1,8 @@
 import crypto from "crypto";
 
 const BASE = "http://emallopen.guodongcheng.cn/api/";
-const CASHIER_BASE = "http://emallopen.guodongcheng.cn/";
+// 收银端登录链(与 mini ~/guodongcheng-agent/lib/login.mjs 一致,0816 实测通)
+const CASHIER_BASE = "https://mini.guodongcheng.cn/cashier/";
 const TOKEN_SKEW_MS = 3600_000;
 
 let cashierCache = null;
@@ -44,8 +45,10 @@ function responseCookies(res) {
   return v ? [v] : [];
 }
 
-function publicEncryptPem(pem, text) {
-  return crypto.publicEncrypt({ key: pem, padding: crypto.constants.RSA_PKCS1_PADDING }, Buffer.from(text)).toString("base64");
+// 公钥是 base64 的 DER(SPKI),不是 PEM
+function publicEncryptDer(b64, text) {
+  const key = crypto.createPublicKey({ key: Buffer.from(String(b64).replace(/\s+/g, ""), "base64"), format: "der", type: "spki" });
+  return crypto.publicEncrypt({ key, padding: crypto.constants.RSA_PKCS1_PADDING }, Buffer.from(text, "utf8")).toString("base64");
 }
 
 export function makeSign(params, appSecret) {
@@ -71,16 +74,18 @@ export function createGdcCashierClient({ fetcher = fetch, env = process.env, now
     if (cashierCache && cashierCache.exp - TOKEN_SKEW_MS > now()) return cashierCache;
     if (!tenant || !account || !password || !storeCode) throw new Error("gdc_env_missing");
     let cookie = "";
-    let r = await postForm(fetcher, CASHIER_BASE + "api/auth/getPublicKey", { tenantCode: tenant }, {}, cookie);
+    const hdr = { "user-env-flag": "APPLET", "head-store-code": storeCode };
+    let r = await postForm(fetcher, CASHIER_BASE + "miniOrange/login/getPublicKey", { tenantCode: tenant, userAccount: account }, hdr, cookie);
     cookie = r.cookie;
-    const pub = r.json?.data?.publicKey || r.json?.data?.public_key || r.json?.publicKey;
-    const random = r.json?.data?.random_str || r.json?.data?.randomStr || r.json?.random_str || "";
-    if (!pub) throw new Error("gdc_public_key_missing");
-    const encrypted = publicEncryptPem(pub, password + random);
-    const loginPwd = encodeURIComponent(encodeURIComponent(encrypted));
-    r = await postForm(fetcher, CASHIER_BASE + "api/auth/signIn", { tenantCode: tenant, userAccount: account, loginPwd }, { "user-env-flag": "APPLET", "head-store-code": storeCode }, cookie);
+    const pub = r.json?.data?.public_key;
+    const random = r.json?.data?.random_str;
+    if (!pub || !random) throw new Error("gdc_public_key_missing");
+    // loginPwd 要双重编码:这里 encodeURIComponent 一次,表单提交再编一次(只编一次恒返 201)
+    const loginPwd = encodeURIComponent(publicEncryptDer(pub, password + random));
+    r = await postForm(fetcher, CASHIER_BASE + "miniOrange/login/signIn", { tenantCode: tenant, userAccount: account, loginPwd, token: "", deviceBrand: "server", newVersion: "true" }, hdr, cookie);
     cookie = r.cookie;
-    r = await postForm(fetcher, CASHIER_BASE + "api/auth/receiveUerInfo", {}, { "user-env-flag": "APPLET", "head-store-code": storeCode }, cookie);
+    if (Number(r.json?.code) !== 200) throw new Error("gdc_signin_failed");
+    r = await postForm(fetcher, CASHIER_BASE + "miniOrange/auth/receiveUerInfo", { tenantCode: tenant, userAccount: account, storeCode }, hdr, cookie);
     const token = r.json?.data?.token;
     if (!token) throw new Error("gdc_token_missing");
     cashierCache = { token, cookie: r.cookie, exp: parseJwtExp(token), storeCode };
@@ -105,7 +110,7 @@ export function createGdcCashierClient({ fetcher = fetch, env = process.env, now
     const timestamp = String(now());
     const sign = makeSign({ app_id: sec.app_id, body: payload, timestamp }, sec.app_secret);
     const r = await postForm(fetcher, BASE + path, { app_id: sec.app_id, timestamp, body: encodeURIComponent(payload), sign }, { "user-env-flag": "APPLET", "head-store-code": auth.storeCode, token: auth.token }, auth.cookie);
-    if (r.json?.code && String(r.json.code) !== "0") throw new Error(r.json.message || "gdc_error");
+    if (r.json?.code != null && !["0", "200"].includes(String(r.json.code))) throw new Error(r.json.message || "gdc_error");
     return r.json?.data ?? r.json;
   }
 

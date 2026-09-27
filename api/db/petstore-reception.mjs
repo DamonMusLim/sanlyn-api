@@ -88,7 +88,7 @@ async function today(pool, me, b) {
     [me.store_code, day]);
   const bo = await pool.query(
     `SELECT b.id, b.pet_id, b.check_in AS start_at, b.status, p.name AS pet_name,
-            COALESCE(b.service_name,'寄养') AS service_name, p.owner_name
+            '寄养' AS service_name, p.owner_name
        FROM boarding_orders b LEFT JOIN pet_profiles p ON p.id=b.pet_id
       WHERE b.store_code=$1 AND b.status='in_house'
       ORDER BY b.check_in ASC, b.id ASC`,
