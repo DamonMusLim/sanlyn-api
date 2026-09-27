@@ -134,6 +134,9 @@ export async function runOrderCollabNotify({ dryRun = true, now = new Date() } =
             COALESCE(NULLIF(o.customer_po,''), regexp_replace(o.order_no, '^[0-9]+-', '')) AS ref, o.id AS order_id
        FROM collab.po_sheet s JOIN orders o ON o.order_no = s.order_no
       WHERE s.side='customer' AND s.status NOT IN ('void','adopted') AND s.sent_at >= $1
+        -- PI 前置闸：工厂已确认采购单，或管理员留痕绕过
+        AND (o.factory_confirmed_at IS NOT NULL
+             OR EXISTS (SELECT 1 FROM collab.po_event e WHERE e.sheet_id = s.id AND e.kind = 'pi_gate_bypass'))
       ORDER BY s.id`, [cutover])).rows;
   for (const s of rows) {
     stats.checked++;

@@ -39,12 +39,22 @@ export async function handleCustomerSendLink(req, res, pool) {
   const { order_no } = req.body || {};
   if (!order_no) return res.status(400).json({ ok: false, error: "order_no 必填" });
   const o = (await pool.query(
-    `SELECT o.id, o.order_no, o.company_code, c.id AS cid, COALESCE(c.name_en, o.customer, '') AS cname
+    `SELECT o.id, o.order_no, o.company_code, c.id AS cid, COALESCE(c.name_en, o.customer, '') AS cname, o.factory_confirmed_at
        FROM orders o LEFT JOIN companies c ON c.code = o.company_code
       WHERE o.order_no = $1 AND COALESCE(o.status,'') NOT IN ('cancelled','voided','void','deleted') LIMIT 1`,
     [order_no])).rows[0];
   if (!o) return res.status(404).json({ ok: false, error: "找不到这一票" });
   if (!o.cid) return res.status(409).json({ ok: false, error: "这票没有对应的客户公司档案（orders.company_code）" });
+  // 🔴 PI 前置闸（Damon 0916「工厂确认了我们才提交正式的流程」；0927「流程你错了,工厂这边还没确认」）：
+  //   工厂在采购单协同里确认 → 艾莎采纳 → 写 orders.factory_confirmed_at → 才准发 PI 给客户。
+  //   绕过（客户催单/返单沿用上票）只许管理员写原因，留痕进 po_event；PO 发出前必须补齐工厂确认。
+  const bypass = String(req.body?.bypass_reason || "").trim().slice(0, 300);
+  if (!o.factory_confirmed_at) {
+    if (!bypass) return res.status(409).json({ ok: false, need_factory_confirm: true,
+      error: "工厂还没确认这张采购单（采购单协同未采纳），不能发 PI 给客户。确需先发，请填写绕过原因（会留痕）。" });
+    if (String(req.user?.role || "").toLowerCase() !== "admin" && Number(req.user?.uid) !== 91)
+      return res.status(403).json({ ok: false, error: "绕过工厂确认只限管理员" });
+  }
 
   await pool.query(`UPDATE collab.po_sheet SET status='void', updated_at=NOW()
                      WHERE order_no=$1 AND side='customer' AND status NOT IN ('void','adopted')`, [order_no]);
@@ -64,6 +74,9 @@ export async function handleCustomerSendLink(req, res, pool) {
       WHERE li.order_id = $2`, [sheetId, o.id]);
   await pool.query(`UPDATE magic_links SET revoked_at=NOW()
                      WHERE recipient_role=$1 AND (meta->>'order_no')=$2 AND revoked_at IS NULL`, [CROLE, order_no]);
+  if (!o.factory_confirmed_at)
+    await pool.query(`INSERT INTO collab.po_event (sheet_id, kind, actor_side, actor_name, detail) VALUES ($1,'pi_gate_bypass','ours',$2,$3::jsonb)`,
+      [sheetId, req.user?.username || null, JSON.stringify({ reason: bypass, rule: "PO 发出前必须补齐工厂确认" })]);
   const raw = genRaw();
   await pool.query(
     `INSERT INTO magic_links (token_hash, recipient_role, meta, expires_at, access_log, created_at)
