@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>订单申请审核 · Sanlyn</title>
+<style>
+:root{--ink:#1A1D21;--ink2:#4A5159;--dim:#8A9199;--bg:#EEF0F3;--page:#fff;--line:#D9DDE2;--line2:#EBEEF1;--head:#2C3E50;--accent:#23395B;--miss:#D64541;--miss-bg:#FDF0EF;--ok:#2E7D5B;--ok-bg:#EDF6F1;--warn:#B8860B;--warn-bg:#FBF5E6}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.65 "PingFang SC","Noto Sans SC",system-ui,sans-serif}button,input,textarea,select{font:inherit}button{cursor:pointer}.topbar{position:sticky;top:0;background:var(--page);border-bottom:1px solid var(--line);padding:9px 16px;display:flex;gap:8px;align-items:center;z-index:5}.btn{font-size:12px;font-weight:600;padding:7px 13px;border-radius:3px;border:1px solid var(--line);background:var(--page);color:var(--ink2)}.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}.btn.no{border-color:var(--miss);color:var(--miss)}.btn:disabled{opacity:.45;cursor:not-allowed}.tag{margin-left:auto;color:var(--dim);font-size:11px}
+.wrap{max-width:1320px;margin:0 auto;padding:16px;display:grid;grid-template-columns:300px minmax(0,1fr);gap:16px}@media(max-width:950px){.wrap{grid-template-columns:1fr}}.card{background:var(--page);border:1px solid var(--line);border-radius:4px;padding:16px 18px;margin-bottom:12px}h1{font-size:19px;margin:0 0 4px}.tabs{display:flex;gap:6px;flex-wrap:wrap}.tabs button.on{background:var(--head);border-color:var(--head);color:#fff}.item{border:1px solid var(--line);border-radius:4px;padding:8px 10px;margin-top:8px;cursor:pointer}.item.on{box-shadow:0 0 0 2px var(--accent)}.item small{display:block;color:var(--dim)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:700px){.grid{grid-template-columns:1fr}}.box{border:1px dashed var(--line);border-radius:4px;padding:10px 12px;margin-top:10px}.box h3{font-size:13px;margin:0 0 6px}table{width:100%;border-collapse:collapse;font-size:12px}th{background:var(--head);color:#fff;border:1px solid var(--head);padding:7px 6px;text-align:left;white-space:nowrap}td{border:1px solid var(--line);padding:5px 6px;vertical-align:middle}td.c{text-align:center}input,textarea,select{width:100%;border:1px solid var(--line);border-radius:4px;padding:7px;background:var(--page);color:var(--ink)}textarea{min-height:68px}.num{text-align:right}.warn{color:var(--warn)}.ret{display:none;margin-top:8px}.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--page);padding:9px 16px;border-radius:6px;display:none;z-index:9}.toast.err{background:var(--miss);color:#fff}.askmask{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px}.askbox{background:#fff;border-radius:6px;max-width:420px;width:100%;padding:18px;box-shadow:0 8px 30px rgba(0,0,0,.25)}
+</style></head>
+<body>
+<div class="topbar"><button class="btn pri" onclick="location.href='/order-request'">代客户下单</button><span class="tag" id="tag">订单申请审核</span></div>
+<div id="state" class="card" style="max-width:420px;margin:40px auto">正在读取...</div>
+<div class="wrap" id="app" style="display:none">
+  <aside><div class="card"><div class="tabs" id="tabs"></div><div id="list"></div></div></aside>
+  <main>
+    <div class="card"><h1>申请 #<span id="rid"></span> <span id="status"></span></h1><div id="meta" class="grid"></div></div>
+    <div class="grid">
+      <div class="card"><h3>申请原件 + 检查结果</h3><div id="files" class="box"></div><div id="checks" class="box"></div></div>
+      <div class="card"><h3>审核行项目</h3><div style="overflow:auto"><table><thead><tr><th>SKU</th><th>品名</th><th>箱数</th><th>客户价</th><th>工厂含税价</th><th>价格来源</th></tr></thead><tbody id="lines"></tbody></table></div></div>
+    </div>
+    <div class="card">
+      <textarea id="reason" placeholder="退回原因（退回时必填）"></textarea>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn no" id="bReturn">退回</button><button class="btn" id="bSave">保存修改</button><button class="btn pri" id="bConfirm">确认建单</button></div>
+    </div>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+<script src="order-request-review.js"></script>
+</body>
+</html>
