@@ -27,6 +27,13 @@ function byDate(emp, d) {
   return emp.days.find((x) => x.date === d);
 }
 
+function paidCounts(emp) {
+  return {
+    holiday_paid_days: emp.days.filter((d) => d.type === "legal_off").length,
+    store_paid_days: emp.days.filter((d) => d.type === "store_off").length,
+  };
+}
+
 const out = buildHolidayCalendar({
   employees, restRules, holidays, storePlans,
   restChanges: [{ employee_id: 1, orig_date: "2026-09-21", new_date: "2026-09-22", status: "approved" }],
@@ -42,6 +49,7 @@ assert.equal(byDate(wang, "2026-10-05").type, "weekly_rest");
 assert.equal(byDate(wang, "2026-10-06").type, "work");
 assert.equal(byDate(wang, "2026-09-20").type, "work");
 assert.equal(byDate(wang, "2026-10-10").type, "work");
+assert.deepEqual(paidCounts(wang), { holiday_paid_days: 3, store_paid_days: 1 });
 
 const wed = out.find((x) => x.employee_id === 2);
 assert.equal(byDate(wed, "2026-09-16").type, "weekly_rest");
