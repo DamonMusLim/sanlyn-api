@@ -50,24 +50,27 @@ async function freshLink(pool, sheet) {
 }
 
 // 邮件正文（英文；署名厦门巴匕 —— pb@ 发信即巴匕抬头）⛔ 不出现内部单号/客户编号/工厂任何信息
+// Damon 0927「文案简单点，没必要的事情不说」（DNA：先说要对方做什么，给关键值，不写背景/功能介绍）→ DeepSeek 改写
 export function composeMail(kind, s, url) {
   const no = s.pi_no || s.contract_no || "";
   const due = s.reply_due_at ? bj(s.reply_due_at) : "";
   const hi = `<p>Dear ${esc(s.customer || "Customer")},</p>`;
   const sign = `<p>Best regards,<br>Xiamen Pet Baby Import and Export Co., Ltd.</p>`;
-  const btn = url ? `<p><a href="${esc(url)}">Open the order (PI ${esc(no)})</a><br><small>Please log in with your company account.</small></p>` : "";
-  const deemedLine = `<p>If we receive no reply within ${REPLY_DAYS} days (by ${esc(due)}), this PI is deemed accepted according to its terms.</p>`;
+  const btn = (label) => url ? `<p><a href="${esc(url)}">${esc(label)}</a></p>` : "";
   if (kind === "link") return {
-    subject: `Proforma Invoice ${no} – please review and confirm`,
-    html: `${hi}<p>Please review Proforma Invoice ${esc(no)} online. You can confirm it, or request changes to quantity, delivery date or shipping marks directly on the page, and update your notification email there.</p>${btn}${deemedLine}${sign}`,
+    subject: `PI ${no} – review and confirm`,
+    html: `${hi}<p>Please review PI ${esc(no)} and confirm it, or request changes to quantity, delivery date or shipping marks on the page.</p>`
+      + `${btn(`Review PI ${no}`)}<p>If we receive no reply within ${REPLY_DAYS} days (by ${esc(due)}), this PI is deemed accepted according to its terms.</p>${sign}`,
   };
   if (kind === "r1" || kind === "r2") return {
-    subject: `Reminder: Proforma Invoice ${no} – please confirm by ${due}`,
-    html: `${hi}<p>This is a friendly reminder that Proforma Invoice ${esc(no)} is waiting for your confirmation.</p>${btn}${deemedLine}${sign}`,
+    subject: `PI ${no} – confirm by ${due}`,
+    html: `${hi}<p>PI ${esc(no)} is still waiting for your confirmation.</p>`
+      + `${btn(`Confirm PI ${no}`)}<p>If we receive no reply by ${esc(due)}, this PI is deemed accepted according to its terms.</p>${sign}`,
   };
   if (kind === "deemed") return {
-    subject: `Proforma Invoice ${no} – deemed accepted`,
-    html: `${hi}<p>We have not received a reply on Proforma Invoice ${esc(no)} by ${esc(due)}. According to its terms, the PI is now deemed accepted and we will proceed with your order.</p>${btn}<p>If anything needs to be changed, please contact us as soon as possible.</p>${sign}`,
+    subject: `PI ${no} – deemed accepted`,
+    html: `${hi}<p>We received no reply on PI ${esc(no)} by ${esc(due)}. According to its terms, the PI is now deemed accepted and we will proceed with your order.</p>`
+      + `${btn(`PI ${no}`)}<p>If anything needs to be changed, contact us as soon as possible.</p>${sign}`,
   };
   throw new Error("unknown mail kind " + kind);
 }
