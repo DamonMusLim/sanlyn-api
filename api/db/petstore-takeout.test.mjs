@@ -35,23 +35,49 @@ function pool() {
         row.manual_count += Number(params[4] || 0);
         return { rows: [{ product_code: row.product_code, quantity: row.quantity, picked: row.picked, manual_count: row.manual_count }] };
       }
+      if (sql.includes("gdc_result=$2")) {
+        state.picks.filter((x) => x.order_no === params[0]).forEach((x) => {
+          x.gdc_result = params[1];
+          if (sql.includes("COALESCE(gdc_synced_at,now())")) x.gdc_synced_at = "now";
+        });
+        return { rows: [] };
+      }
       if (sql.includes("UPDATE petstore_takeout_picks")) return { rows: [] };
       throw new Error(`unexpected sql: ${sql}`);
     },
   };
 }
 
-const gdc = {
-  async unpicked() { return 2; },
-  async list() { return { list: [{ order_no: "O1", day_seq: "18", channel_code: 10, order_status: 20, quantity: 3, recipient_phone: "155****8888" }] }; },
-  async detail() { return { plat: "MEI_TUAN", goods: [
-    { product_name: "猫砂", upc_code: "1111", product_code: "P1", sku_spec: "5L", quantity: 1, actual_price: 9.9 },
-    { product_name: "罐头", upc_code: "2222", product_code: "P2", sku_spec: "80g", quantity: 2, actual_price: 6.8 },
-  ] }; },
-};
+function makeGdc({ status = 20, failPicked = false } = {}) {
+  return {
+    pickedCalls: [],
+    async unpicked() { return 2; },
+    async list() { return { list: [{ order_no: "O1", day_seq: "18", channel_code: 10, order_status: 20, quantity: 4, recipient_phone: "155****8888" }] }; },
+    async detail() { return { plat: "MEI_TUAN", order_status: status, goods: [
+      { product_name: "猫砂", upc_code: "1111", product_code: "P1", sku_spec: "5L", quantity: 1, actual_price: 9.9, product_price: 10.5, food_property: "" },
+      { product_name: "罐头", upc_code: "2222", product_code: "P2", sku_spec: "80g", quantity: 2, actual_price: 6.8, product_price: 7, food_property: "常温" },
+      { product_name: "赠品券", upc_code: "", product_code: null, sku_spec: "", quantity: 1, picked_quantity: 1, actual_price: 0.01, product_price: 0.01, food_property: "" },
+    ] }; },
+    async picked(body) {
+      this.pickedCalls.push(body);
+      if (failPicked) throw new Error("接口超时");
+      return "ok";
+    },
+  };
+}
 const staff = { empId: 7, me: { id: 7, name: "汪卫云", role: "staff", company_code: "JINFANG", employment_status: "active" } };
-function handler(p) { return makeHandler({ poolFactory: () => p, setCorsFn: () => {}, verifyStaff: async () => staff, gdcClient: gdc }); }
+function handler(p, gdc = makeGdc()) { return makeHandler({ poolFactory: () => p, setCorsFn: () => {}, verifyStaff: async () => staff, gdcClient: gdc }); }
 async function call(h, body, method = "POST") { const out = res(); await h({ method, body, query: body }, out); return out; }
+async function completeReady(h) {
+  await call(h, { action: "scan", order_no: "O1", barcode: "1111" });
+  await call(h, { action: "manual_plus", order_no: "O1", product_code: "P2" });
+  await call(h, { action: "manual_plus", order_no: "O1", product_code: "P2" });
+}
+async function withPickedEnv(v, fn) {
+  const old = process.env.GDC_WRITE_PICKED;
+  if (v == null) delete process.env.GDC_WRITE_PICKED; else process.env.GDC_WRITE_PICKED = v;
+  try { await fn(); } finally { if (old == null) delete process.env.GDC_WRITE_PICKED; else process.env.GDC_WRITE_PICKED = old; }
+}
 
 assert.equal(makeSign({ body: "{\"a\":1}", app_id: "app1", timestamp: "1000" }, "sec"), "516908b6f77e2de4ca50fec8fbf21586");
 
@@ -85,13 +111,72 @@ assert.equal(makeSign({ body: "{\"a\":1}", app_id: "app1", timestamp: "1000" }, 
 }
 
 {
-  const p = pool(), h = handler(p);
-  await call(h, { action: "scan", order_no: "O1", barcode: "1111" });
-  await call(h, { action: "manual_plus", order_no: "O1", product_code: "P2" });
-  await call(h, { action: "manual_plus", order_no: "O1", product_code: "P2" });
-  const r = await call(h, { action: "complete", order_no: "O1" });
-  assert.equal(r.statusCode, 200);
-  assert.equal(r.body.message, "已记录，请去果冻橙点拣货完成");
+  await withPickedEnv(null, async () => {
+    const p = pool(), g = makeGdc(), h = handler(p, g);
+    await completeReady(h);
+    const r = await call(h, { action: "complete", order_no: "O1" });
+    assert.equal(r.statusCode, 200);
+    assert.equal(r.body.gdc, "disabled");
+    assert.equal(g.pickedCalls.length, 0);
+  });
+}
+
+{
+  await withPickedEnv("1", async () => {
+    const p = pool(), g = makeGdc(), h = handler(p, g);
+    await completeReady(h);
+    const r = await call(h, { action: "complete", order_no: "O1" });
+    assert.equal(r.statusCode, 200);
+    assert.equal(r.body.gdc, "synced");
+    assert.equal(g.pickedCalls.length, 1);
+    assert.deepEqual(g.pickedCalls[0], {
+      order_no: "O1",
+      store_code: "63350001",
+      is_check_pick_status: true,
+      operator: "汪卫云",
+      goods: [
+        { product_code: "P1", picked_quantity: 1, product_price: 10.5, product_name: "猫砂", food_property: "" },
+        { product_code: "P2", picked_quantity: 2, product_price: 7, product_name: "罐头", food_property: "常温" },
+        { product_code: null, picked_quantity: 1, product_price: 0.01, product_name: "赠品券", food_property: "" },
+      ],
+    });
+  });
+}
+
+{
+  await withPickedEnv("1", async () => {
+    const p = pool(), g = makeGdc({ status: 60 }), h = handler(p, g);
+    await completeReady(h);
+    const r = await call(h, { action: "complete", order_no: "O1" });
+    assert.equal(r.statusCode, 200);
+    assert.equal(r.body.gdc, "skipped");
+    assert.equal(r.body.reason, "果冻橙已是已完成");
+    assert.equal(g.pickedCalls.length, 0);
+  });
+}
+
+{
+  await withPickedEnv("1", async () => {
+    const p = pool(), g = makeGdc({ failPicked: true }), h = handler(p, g);
+    await completeReady(h);
+    const r = await call(h, { action: "complete", order_no: "O1" });
+    assert.equal(r.statusCode, 200);
+    assert.equal(r.body.gdc, "failed");
+    assert.match(r.body.gdc_error, /接口超时/);
+    assert.equal(g.pickedCalls.length, 1);
+  });
+}
+
+{
+  await withPickedEnv("1", async () => {
+    const p = pool(), g = makeGdc(), h = handler(p, g);
+    await completeReady(h);
+    await call(h, { action: "complete", order_no: "O1" });
+    const r = await call(h, { action: "complete", order_no: "O1" });
+    assert.equal(r.statusCode, 200);
+    assert.equal(r.body.gdc, "synced");
+    assert.equal(g.pickedCalls.length, 1);
+  });
 }
 
 {

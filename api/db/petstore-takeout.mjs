@@ -53,7 +53,7 @@ async function listOrders(client, b) {
 }
 
 async function pickRows(pool, orderNo) {
-  const r = await pool.query(`SELECT product_code,barcode,quantity,picked,manual_count FROM petstore_takeout_picks WHERE order_no=$1`, [orderNo]);
+  const r = await pool.query(`SELECT product_code,barcode,quantity,picked,manual_count,gdc_synced_at,gdc_result FROM petstore_takeout_picks WHERE order_no=$1`, [orderNo]);
   const m = new Map();
   r.rows.forEach((x) => m.set(String(x.product_code), x));
   return m;
@@ -121,13 +121,62 @@ async function scan(client, pool, auth, b, manual) {
   return { status: 200, body: { success: true, result: "ok", line: { ...line, ...picked } } };
 }
 
+function orderStatus(data) {
+  return Number(data?.order_status ?? data?.order?.order_status ?? 0);
+}
+
+function gdcError(e) {
+  const msg = String(e?.message || e || "同步失败");
+  if (msg === "gdc_env_missing") return "果冻橙配置缺失";
+  return msg.startsWith("果冻橙") ? msg : `果冻橙返回错误：${msg}`;
+}
+
+function pickedPayload(orderNo, data, picks, auth) {
+  const goods = (data.goods || []).map((g) => {
+    const qty = n(g.quantity);
+    const code = text(g.product_code, 80);
+    const row = code ? picks.get(code) : null;
+    return {
+      product_code: g.product_code ?? null,
+      picked_quantity: Math.min(qty, row ? n(row.picked) : qty),
+      product_price: n(g.product_price),
+      product_name: text(g.product_name, 200),
+      food_property: g.food_property ?? "",
+    };
+  });
+  return { order_no: orderNo, store_code: STORE_CODE, is_check_pick_status: true, operator: text(auth.me?.name, 80), goods };
+}
+
+async function markGdc(pool, orderNo, result, synced) {
+  await pool.query(`UPDATE petstore_takeout_picks SET gdc_synced_at=${synced ? "COALESCE(gdc_synced_at,now())" : "gdc_synced_at"},gdc_result=$2,updated_at=now() WHERE order_no=$1`, [orderNo, result]);
+}
+
 async function complete(client, pool, auth, orderNo) {
   const d = await detail(client, pool, orderNo);
   const missing = d.goods.filter((g) => n(g.picked) < n(g.quantity)).map((g) => ({ product_code: g.product_code, product_name: g.product_name, missing: n(g.quantity) - n(g.picked) }));
   if (missing.length) return { status: 400, body: { success: false, error: "not_enough", missing } };
   const manual = d.goods.reduce((s, g) => s + n(g.manual_count), 0);
   await pool.query(`UPDATE petstore_takeout_picks SET completed_at=COALESCE(completed_at,now()),picker_employee_id=$2,manual_count=manual_count,updated_at=now() WHERE order_no=$1`, [orderNo, auth.empId]);
-  return { status: 200, body: { success: true, write_picked: process.env.GDC_WRITE_PICKED === "1", message: process.env.GDC_WRITE_PICKED === "1" ? "已记录，果冻橙写回待接" : "已记录，请去果冻橙点拣货完成", manual_count: manual } };
+  if (process.env.GDC_WRITE_PICKED !== "1") return { status: 200, body: { success: true, gdc: "disabled", message: "已记录，请去果冻橙点拣货完成", manual_count: manual } };
+  const picks = await pickRows(pool, orderNo);
+  if (Array.from(picks.values()).some((x) => x.gdc_synced_at)) return { status: 200, body: { success: true, gdc: "synced", message: "已同步果冻橙", manual_count: manual } };
+  try {
+    const latest = await client.detail({ order_no: orderNo, store_code: STORE_CODE });
+    const status = orderStatus(latest);
+    if ([40, 60, 80].includes(status)) {
+      const reason = `果冻橙已是${STATUS_LABEL[status]}`;
+      await markGdc(pool, orderNo, `skipped:${reason}`, false);
+      return { status: 200, body: { success: true, gdc: "skipped", reason, message: reason, manual_count: manual } };
+    }
+    if (status !== 20) throw new Error(`订单状态不是待拣货(${status || "未知"})`);
+    await client.picked(pickedPayload(orderNo, latest, picks, auth));
+    await markGdc(pool, orderNo, "synced", true);
+    return { status: 200, body: { success: true, gdc: "synced", message: "已同步果冻橙", manual_count: manual } };
+  } catch (e) {
+    const reason = gdcError(e);
+    await markGdc(pool, orderNo, `failed:${reason}`, false);
+    return { status: 200, body: { success: true, gdc: "failed", gdc_error: reason, message: "果冻橙没同步成功，请在果冻橙手动点拣货完成", manual_count: manual } };
+  }
 }
 
 export function makeHandler({ poolFactory = defaultPoolFactory, setCorsFn = defaultSetCors, verifyStaff = requireStaff, gdcClient = createGdcCashierClient() } = {}) {
