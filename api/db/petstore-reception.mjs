@@ -5,6 +5,8 @@ const UPLOAD_DIR = "/opt/sanlyn-uploads/staff-reception";
 const PUBLIC_HOST = "https://ai.sanlyn.cn";
 const MAX_PHOTO_BYTES = 6 * 1024 * 1024;
 const RECEPTION_ON = { JINFANG: true };
+// 预约/宠物/洗护/寄养表按果冻橙门店号存(金枋=63350001),员工表是公司代码 JINFANG,两套不能混用
+const STORE_BY_COMPANY = { JINFANG: "63350001" };
 const FLOWS = {
   checkin: ["booked", "arrived", "arrived"],
   start: ["arrived", "doing", "doing"],
@@ -83,14 +85,14 @@ async function today(pool, me, b) {
       WHERE a.store_code=$1 AND a.start_at::date=$2::date
         AND COALESCE(a.reception_status, a.status) <> 'cancelled'
       ORDER BY a.start_at ASC, a.id ASC`,
-    [me.company_code, day]);
+    [me.store_code, day]);
   const bo = await pool.query(
     `SELECT b.id, b.pet_id, b.check_in AS start_at, b.status, p.name AS pet_name,
             COALESCE(b.service_name,'寄养') AS service_name, p.owner_name
        FROM boarding_orders b LEFT JOIN pet_profiles p ON p.id=b.pet_id
       WHERE b.store_code=$1 AND b.status='in_house'
       ORDER BY b.check_in ASC, b.id ASC`,
-    [me.company_code]);
+    [me.store_code]);
   const q = { pending: [], doing: [], waiting_pickup: [], boarding: [] };
   for (const r of ap.rows) {
     const s = r.reception_status || "booked";
@@ -109,7 +111,7 @@ async function transition(pool, me, empId, action, b) {
   const r = await pool.query(
     `SELECT id, COALESCE(reception_status, status) AS reception_status
        FROM appointments WHERE id=$1 AND store_code=$2`,
-    [id, me.company_code]);
+    [id, me.store_code]);
   const row = r.rows[0];
   if (!row) return { status: 404, body: { success: false, error: "not_found" } };
   if (row.reception_status !== flow[0]) {
@@ -121,7 +123,7 @@ async function transition(pool, me, empId, action, b) {
         SET reception_status=$3, status=$4, ${col}=now(), reception_operator_id=$5,
             reception_operator_name=$6, updated_at=now()
       WHERE id=$1 AND store_code=$2 RETURNING id, status, reception_status`,
-    [id, me.company_code, flow[1], flow[2], empId, me.name]);
+    [id, me.store_code, flow[1], flow[2], empId, me.name]);
   return { status: 200, body: { success: true, data: rr.rows[0] } };
 }
 
@@ -131,12 +133,12 @@ async function ensurePet(pool, me, b) {
   if (!phone || !petName) throw Object.assign(new Error("phone_pet_required"), { statusCode: 400 });
   const found = await pool.query(
     `SELECT id FROM pet_profiles WHERE store_code=$1 AND owner_phone=$2 AND name=$3 LIMIT 1`,
-    [me.company_code, phone, petName]);
+    [me.store_code, phone, petName]);
   if (found.rows[0]) return found.rows[0].id;
   const ins = await pool.query(
     `INSERT INTO pet_profiles (store_code, name, species, breed, owner_name, owner_phone, remark, is_active)
      VALUES ($1,$2,$3,$4,$5,$6,$7,true) RETURNING id`,
-    [me.company_code, petName, text(b.species, 20) || null, text(b.breed, 60) || null,
+    [me.store_code, petName, text(b.species, 20) || null, text(b.breed, 60) || null,
      text(b.owner_name, 60) || "客户", phone, "接待端最小建档"]);
   return ins.rows[0].id;
 }
@@ -155,7 +157,7 @@ async function createAppointment(pool, me, b) {
      VALUES ($1,$2,$3,$4,$5,$6,$7::timestamp,$7::timestamp + interval '1 hour',
              'booked','booked','staff_reception',$8)
      RETURNING id, pet_id, start_at, service_name, owner_name, status, reception_status`,
-    [me.company_code, petId, text(b.biz_type, 30) || "grooming", service,
+    [me.store_code, petId, text(b.biz_type, 30) || "grooming", service,
      text(b.owner_name, 60) || "客户", text(b.owner_phone || b.phone, 30), startAt, text(b.remark, 300) || null]);
   return { status: 200, body: { success: true, data: r.rows[0] } };
 }
@@ -195,7 +197,7 @@ async function groomReport(pool, me, empId, b, now, photoSaver) {
     `SELECT a.id, a.pet_id, p.name AS pet_name FROM appointments a
       LEFT JOIN pet_profiles p ON p.id=a.pet_id
      WHERE a.id=$1 AND a.store_code=$2`,
-    [id, me.company_code]);
+    [id, me.store_code]);
   const ap = ar.rows[0];
   if (!ap) return { status: 404, body: { success: false, error: "not_found" } };
   let urls;
@@ -213,7 +215,7 @@ async function groomReport(pool, me, empId, b, now, photoSaver) {
         next_advice, owner_message, share_text, operator, created_at)
      VALUES ($1,$2,$3::jsonb,$4::jsonb,$5::jsonb,$6,$7,$8,$9,$10,now())
      RETURNING id, share_text`,
-    [me.company_code, id, JSON.stringify(urls.slice(0, before.length)), JSON.stringify(urls.slice(before.length)),
+    [me.store_code, id, JSON.stringify(urls.slice(0, before.length)), JSON.stringify(urls.slice(before.length)),
      JSON.stringify(checks), checks.skin_normal === false || checks.has_flea, words || null, words || null, msg, me.name]);
   const issue = checks.has_flea ? "有跳蚤" : (checks.skin_normal === false ? "皮肤异常" : "");
   const todo = issue ? await addIssueTodo(pool, me, ap.pet_id, ap.pet_name, issue, now) : false;
@@ -221,7 +223,7 @@ async function groomReport(pool, me, empId, b, now, photoSaver) {
     `INSERT INTO petstore_pet_notes (store_code, pet_id, note_type, title, body, source_ref, created_by)
      VALUES ($1,$2,'groom_issue',$3,$4,$5,$6)
      ON CONFLICT (store_code, pet_id, note_type, source_ref, title) DO NOTHING`,
-    [me.company_code, ap.pet_id, issue, words || issue, `grooming_report:${rr.rows[0].id}`, me.name]);
+    [me.store_code, ap.pet_id, issue, words || issue, `grooming_report:${rr.rows[0].id}`, me.name]);
   return { status: 200, body: { success: true, data: rr.rows[0], share_text: msg, photo_urls: urls, todo_created: todo } };
 }
 
@@ -234,7 +236,7 @@ async function pet(pool, me, b) {
        FROM pet_profiles
       WHERE store_code=$1 AND (($2::int>0 AND id=$2) OR ($3::text<>'' AND owner_phone=$3))
       ORDER BY id LIMIT 20`,
-    [me.company_code, petId, phone]);
+    [me.store_code, petId, phone]);
   const pets = pr.rows;
   const owner = pets[0] ? { name: pets[0].owner_name || "", phone_tail: maskPhone(pets[0].owner_phone) } : { name: "", phone_tail: maskPhone(phone) };
   const ids = pets.map((x) => x.id);
@@ -243,18 +245,18 @@ async function pet(pool, me, b) {
        FROM pet_vaccinations
       WHERE store_code=$1 AND pet_id=ANY($2::int[])
       ORDER BY pet_id, kind, COALESCE(executed_at, planned_at, next_due_at) DESC NULLS LAST, id DESC`,
-    [me.company_code, ids]) : { rows: [] };
+    [me.store_code, ids]) : { rows: [] };
   const cr = await pool.query(
     `SELECT COALESCE(sum(remaining_times),0)::int AS remaining
        FROM member_cards
       WHERE store_code=$1 AND owner_phone=$2 AND status='active'`,
-    [me.company_code, pets[0]?.owner_phone || phone]);
+    [me.store_code, pets[0]?.owner_phone || phone]);
   const sr = ids.length ? await pool.query(
     `SELECT g.appointment_id AS id, a.pet_id, g.created_at, g.owner_message, g.share_text
        FROM grooming_reports g JOIN appointments a ON a.id=g.appointment_id
       WHERE g.store_code=$1 AND a.pet_id=ANY($2::int[])
       ORDER BY g.created_at DESC LIMIT 10`,
-    [me.company_code, ids]) : { rows: [] };
+    [me.store_code, ids]) : { rows: [] };
   const linesByPet = {};
   for (const v of vr.rows) {
     const key = Object.entries(LINE_LABEL).find((x) => x[1] === v.kind)?.[0];
@@ -275,6 +277,8 @@ export function makeHandler({ poolFactory = defaultPoolFactory, setCorsFn = defa
     const pool = await poolFactory();
     const auth = await verifyStaff(req, pool);
     if (auth.error) return json(res, auth.error === "unauthorized" ? 401 : 403, { success: false, error: auth.error });
+    auth.me.store_code = STORE_BY_COMPANY[auth.me.company_code];
+    if (!auth.me.store_code) return json(res, 403, { success: false, error: "feature_off" });
     const b = req.method === "GET" ? req.query || {} : req.body || {};
     const action = text(b.action || (req.method === "GET" ? "today" : ""), 40);
     try {

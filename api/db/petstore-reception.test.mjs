@@ -77,7 +77,7 @@ async function call(h, body) {
 }
 
 {
-  const p = pool({ appointments: [{ id: 1, store_code: "JINFANG", status: "booked", reception_status: "booked" }] });
+  const p = pool({ appointments: [{ id: 1, store_code: "63350001", status: "booked", reception_status: "booked" }] });
   const h = makeHandler({ poolFactory: () => p, setCorsFn: noCors, verifyStaff: async () => staff, now, photoSaver });
   const r = await call(h, { action: "finish", id: 1 });
   assert.equal(r.statusCode, 400);
@@ -85,7 +85,7 @@ async function call(h, body) {
 }
 
 {
-  const p = pool({ appointments: [{ id: 1, store_code: "JINFANG", pet_id: 2, status: "doing", reception_status: "doing" }], pets: [{ id: 2, name: "豆豆" }] });
+  const p = pool({ appointments: [{ id: 1, store_code: "63350001", pet_id: 2, status: "doing", reception_status: "doing" }], pets: [{ id: 2, name: "豆豆" }] });
   const h = makeHandler({ poolFactory: () => p, setCorsFn: noCors, verifyStaff: async () => staff, now, photoSaver });
   const r = await call(h, { action: "groom_report", appointment_id: 1, before_photos: [], after_photos: [{ mime: "image/jpeg", base64: "x" }] });
   assert.equal(r.statusCode, 400);
@@ -93,7 +93,7 @@ async function call(h, body) {
 }
 
 {
-  const p = pool({ appointments: [{ id: 1, store_code: "JINFANG", pet_id: 2, status: "doing", reception_status: "doing" }], pets: [{ id: 2, name: "豆豆" }] });
+  const p = pool({ appointments: [{ id: 1, store_code: "63350001", pet_id: 2, status: "doing", reception_status: "doing" }], pets: [{ id: 2, name: "豆豆" }] });
   const h = makeHandler({ poolFactory: () => p, setCorsFn: noCors, verifyStaff: async () => staff, now, photoSaver });
   const body = { action: "groom_report", appointment_id: 1, before_photos: [{ mime: "image/jpeg", base64: "x" }], after_photos: [{ mime: "image/jpeg", base64: "y" }], skin_normal: false };
   const r1 = await call(h, body);
@@ -107,7 +107,7 @@ async function call(h, body) {
 
 {
   const p = pool({
-    pets: [{ id: 2, store_code: "JINFANG", name: "豆豆", owner_name: "王姐", owner_phone: "13812345678" }],
+    pets: [{ id: 2, store_code: "63350001", name: "豆豆", owner_name: "王姐", owner_phone: "13812345678" }],
     vacc: [
       { pet_id: 2, kind: "疫苗", executed_at: "2025-09-20", next_due_at: "2026-09-20", frequency_days: 365 },
       { pet_id: 2, kind: "体外驱虫", executed_at: "2026-09-25", next_due_at: "2026-10-02", frequency_days: 30 },
