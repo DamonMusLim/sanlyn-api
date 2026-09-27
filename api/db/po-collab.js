@@ -31,6 +31,7 @@ export default async function handler(req, res) {
   const sub = (m && m[1] ? m[1] : "").replace(/\/+$/, "");
 
   try {
+    if (sub === "order-request" || sub.startsWith("order-request/")) return await (await import("./order-request.js")).default(req, res);
     // 订单协同·客户版（Damon 0926）：发链接看 body.side；其余看协同链接是哪一类 token
     if (req.method === "POST" && sub === "send-link" && req.body?.side === "customer") return await handleCustomerSendLink(req, res, pool);
     const tok = req.method === "GET" ? req.query?.token : req.body?.token;
