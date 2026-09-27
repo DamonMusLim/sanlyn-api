@@ -105,6 +105,9 @@ const PUBLIC_PATHS = [
   "/api/db/po-collab/submit",
   "/api/db/po-collab/upload",
   "/api/db/po-collab/pdf",
+  // 订单协同客户版：邮箱验证码首次登录（凭客户协同链接 + 只认该客户在档邮箱；handler 内 login-guard 限流）
+  "/api/db/po-collab/login-code",
+  "/api/db/po-collab/login-verify",
   "/api/factory-fill",    // 工厂 token 填单（无登录；凭 _idx_tokens 授权）
   "/api/factory-confirm", // 工厂订单确认（无登录；凭 _idx_tokens 授权）
   "/api/pending-confirm", // 工厂确认交期（无登录；凭 _idx_tokens 授权，purpose=pending_confirm）
