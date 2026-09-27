@@ -20,6 +20,7 @@ export function registerPetHrRoutes(mount) {
   mount("/api/db/hr-org-settings", () => import("./api/db/hr-org-settings.mjs"));
   mount("/api/db/hr-profile", () => import("./api/db/hr-profile.mjs"));
   mount("/api/db/hr-staff-portal", () => import("./api/db/hr-staff-portal.mjs"));
+  mount("/api/db/petstore-reception", () => import("./api/db/petstore-reception.mjs"));
   mount("/api/db/petstore-stock-report", () => import("./api/db/petstore-stock-report.mjs"));
   mount("/api/db/petstore-takeout", () => import("./api/db/petstore-takeout.mjs"));
   mount("/api/db/hr-staff-auth", () => import("./api/db/hr-staff-auth.mjs"));
