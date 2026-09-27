@@ -57,7 +57,8 @@ async function listRows(req) {
              k.gdc_updated_at AS gdc_updated_at,
              k.gdc_created_by AS gdc_created_by,
              k.gdc_updated_by AS gdc_updated_by,
-             -- 效期真源:petstore_offline_expiry_snapshot(718行,product_code唯一)
+             -- 效期真源:petstore_offline_expiry_snapshot —— 每天追加一行抓取(0927:5047行/724品),
+             -- product_code【不唯一】,下面 LATERAL 只取每品最新一条,⛔别改回普通 JOIN(会一品多行、合计翻倍)
              -- 🔴 没日期的商品这四列必须是 null,⛔不许填0/今天/空串 ——「没有」和「取不到」要分得开
              e.produce_date AS produce_date,
              e.expiration_date AS expiration_date,
@@ -66,7 +67,10 @@ async function listRows(req) {
         FROM public.petstore_ops_row r
         CROSS JOIN sku_key_check
         LEFT JOIN public.petstore_skus k ON k.product_code = r.product_code
-        LEFT JOIN public.petstore_offline_expiry_snapshot e ON e.product_code = r.product_code
+        LEFT JOIN LATERAL (SELECT x.produce_date, x.expiration_date, x.capture_date
+                             FROM public.petstore_offline_expiry_snapshot x
+                            WHERE x.product_code = r.product_code
+                            ORDER BY x.captured_at DESC, x.record_id DESC LIMIT 1) e ON true
        WHERE (
              $1::text IS NULL
           OR r.product_code ILIKE '%' || $1 || '%'
