@@ -42,6 +42,7 @@ en:{dl_pdf:"Download PI PDF",print:"Print",title:"PROFORMA INVOICE",subtitle:"OR
  ship_on:"Shipment collaboration →",ship_off:"Shipment collaboration opens after booking",returned:"We sent this order back for changes: ",
  inner:"You are logged in with an internal account (view only). Confirming and seal changes need the customer's account.",
  req_note:"* Changes requested by the buyer, subject to the seller's confirmation.",
+ first_login:"First time here? Log in with your email",first_t:"Log in with your email",first_hint:"Use the email we send your documents to. We will email you a 6-digit code.",email:"Email",send_code:"Send code",resend:"Send again",code_sent:"Code sent to {e}. Check your inbox (and spam).",code6:"6-digit code",new_pw:"Set a password (at least 8 characters)",back_pw:"I have a password",
  notify_emails:"Notification emails",save:"Save",emails_saved:"Notification emails saved",terms_title:"Terms",
  nt_profile:"We currently send notices to: ",nt_custom:"Notices go to: ",nt_none:"No email on file yet — please add one.",
  due_left:"Please confirm or request changes by {d} ({n} left). If we receive no reply by then, this PI is deemed accepted.",
@@ -72,6 +73,7 @@ zh:{dl_pdf:"下载 PI PDF",print:"打印",title:"形 式 发 票",subtitle:"订�
  ship_on:"发货协同 →",ship_off:"订舱后开放发货协同",returned:"我方已退回，请修改：",
  inner:"你现在是我方账号，只能查看；确认和换章要客户账号登录。",
  req_note:"* 为买方申请的修改，以卖方确认为准。",
+ first_login:"第一次登录？用邮箱登录",first_t:"用邮箱登录",first_hint:"请用我们给贵司发单据的那个邮箱，我们会发 6 位验证码。",email:"邮箱",send_code:"发送验证码",resend:"重新发送",code_sent:"验证码已发到 {e}，请查收（也看看垃圾箱）。",code6:"6 位验证码",new_pw:"设置密码（至少 8 位）",back_pw:"我有密码",
  notify_emails:"通知邮箱",save:"保存",emails_saved:"通知邮箱已保存",terms_title:"条款",
  nt_profile:"目前通知发到：",nt_custom:"通知发到：",nt_none:"还没有邮箱，请填写。",
  due_left:"请在 {d} 前确认或提出修改（还剩 {n}）。逾期未回复，本 PI 视同接受。",
@@ -102,6 +104,7 @@ ms:{dl_pdf:"Muat turun PDF PI",print:"Cetak",title:"INVOIS PROFORMA",subtitle:"K
  ship_on:"Kerjasama penghantaran →",ship_off:"Kerjasama penghantaran dibuka selepas tempahan",returned:"Kami menghantar balik pesanan ini untuk diubah: ",
  inner:"Akaun dalaman (lihat sahaja).",
  req_note:"* Perubahan yang diminta oleh pembeli, tertakluk kepada pengesahan penjual.",
+ first_login:"Kali pertama? Log masuk dengan e-mel",first_t:"Log masuk dengan e-mel",first_hint:"Gunakan e-mel yang kami hantar dokumen anda. Kami akan hantar kod 6 digit.",email:"E-mel",send_code:"Hantar kod",resend:"Hantar semula",code_sent:"Kod dihantar ke {e}. Semak peti masuk (dan spam).",code6:"Kod 6 digit",new_pw:"Tetapkan kata laluan (sekurang-kurangnya 8 aksara)",back_pw:"Saya ada kata laluan",
  notify_emails:"E-mel pemberitahuan",save:"Simpan",emails_saved:"E-mel pemberitahuan disimpan",terms_title:"Terma",
  nt_profile:"Notis kini dihantar ke: ",nt_custom:"Notis dihantar ke: ",nt_none:"Belum ada e-mel — sila tambah.",
  due_left:"Sila sahkan atau minta perubahan sebelum {d} ({n} lagi). Jika tiada jawapan, PI ini dianggap diterima.",
@@ -147,6 +150,35 @@ function showLogin(msg){
         lsSet("order_collab_jwt",j.token);JWT=j.token;$("state").innerHTML="Loading…";load();
       }).catch(function(e){$("lgErr").textContent=e.message;$("lgBtn").disabled=false})};
   $("lgBtn").onclick=go;$("lgP").onkeydown=function(e){if(e.key==="Enter")go()};
+  var bx=$("state").querySelector(".loginbox");
+  bx.insertAdjacentHTML("beforeend",'<div class="lgfirst"><a href="#" id="lgFirst">'+esc(t("first_login"))+'</a></div>');
+  $("lgFirst").onclick=function(e){e.preventDefault();showCodeLogin()};
+}
+// 第一次登录：邮箱收 6 位码 → 填码 + 设密码 → 建账号并登录（只认我们在档的贵司邮箱）
+function showCodeLogin(){
+  $("state").innerHTML='<div class="loginbox"><b style="font-size:15px">'+esc(t("first_t"))+'</b>'
+    +'<div style="font-size:11.5px;color:var(--dim);margin-top:4px">'+esc(t("first_hint"))+'</div>'
+    +'<input id="cdE" type="email" placeholder="'+esc(t("email"))+'" autocomplete="email"><button id="cdSend">'+esc(t("send_code"))+'</button>'
+    +'<div id="cdStep2" style="display:none"><div id="cdSent" style="font-size:12px;color:var(--ok,#2E7D5B);margin-top:8px"></div>'
+    +'<input id="cdC" inputmode="numeric" maxlength="6" placeholder="'+esc(t("code6"))+'" autocomplete="one-time-code">'
+    +'<input id="cdP" type="password" placeholder="'+esc(t("new_pw"))+'" autocomplete="new-password">'
+    +'<button id="cdGo">'+esc(t("login"))+'</button></div>'
+    +'<div id="cdErr" style="color:var(--miss);font-size:12px;margin-top:8px"></div>'
+    +'<div class="lgfirst"><a href="#" id="cdBack">'+esc(t("back_pw"))+'</a></div></div>';
+  var send=function(){var em=$("cdE").value.trim();if(!em)return;$("cdSend").disabled=true;$("cdErr").textContent="";
+    fetch(API+"/login-code",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:TOKEN,email:em})})
+      .then(function(r){return r.json()}).then(function(j){$("cdSend").disabled=false;
+        if(!j.ok){$("cdErr").textContent=j.error||"Error";return}
+        $("cdSent").textContent=t("code_sent").replace("{e}",em);$("cdStep2").style.display="";$("cdSend").textContent=t("resend");$("cdC").focus()})
+      .catch(function(e){$("cdSend").disabled=false;$("cdErr").textContent=e.message})};
+  var go=function(){var em=$("cdE").value.trim(),c=$("cdC").value.trim(),pw=$("cdP").value;if(!em||!c||!pw)return;$("cdGo").disabled=true;$("cdErr").textContent="";
+    fetch(API+"/login-verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:TOKEN,email:em,code:c,password:pw})})
+      .then(function(r){return r.json()}).then(function(j){
+        if(!j.token){$("cdGo").disabled=false;$("cdErr").textContent=j.error||t("login_fail");return}
+        lsSet("order_collab_jwt",j.token);JWT=j.token;$("state").innerHTML="Loading…";load()})
+      .catch(function(e){$("cdGo").disabled=false;$("cdErr").textContent=e.message})};
+  $("cdSend").onclick=send;$("cdGo").onclick=go;$("cdP").onkeydown=function(e){if(e.key==="Enter")go()};
+  $("cdBack").onclick=function(e){e.preventDefault();showLogin("")};
 }
 
 function eff(l,k){var th=l.theirs||{},o=l.ours||{};return th[k]!=null&&th[k]!==""?th[k]:(o[k]!=null?o[k]:"")}
