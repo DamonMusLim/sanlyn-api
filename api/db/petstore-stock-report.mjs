@@ -57,34 +57,28 @@ function shelfText(v) {
 async function lookupProduct(pool, q) {
   const query = text(q, 120);
   if (!query) return [];
+  // 口径跟果冻橙后台复刻版(jdc 商品库 petstore-goods-list.js)同一套:petstore_ops_row + 效期快照,⛔别再另起一套查询
   const r = await pool.query(`
-    SELECT s.product_code, b.barcode,
-           s.product_name, s.spec, COALESCE(l.out_price, s.out_price) AS out_price, s.stock_num,
-           COALESCE(l.img_url, s.img_url) AS img_url,
-           COALESCE(c.shelf_no, s.shelf_list) AS shelf_location,
-           sup.expire_date_batch AS recent_expiry
-      FROM public.petstore_skus s
-      LEFT JOIN LATERAL (
-        SELECT pb.barcode
-          FROM public.petstore_product_barcodes pb
-         WHERE pb.product_code=s.product_code
-         ORDER BY CASE WHEN pb.barcode=$1 THEN 0 ELSE 1 END, pb.barcode
-         LIMIT 1
-      ) b ON true
-      LEFT JOIN public.petstore_product_status_current c
-        ON c.product_code=s.product_code AND c.store_code=$2
-      LEFT JOIN public.petstore_sku_supp sup ON sup.product_code=s.product_code
-      LEFT JOIN public.petstore_shop_listing l ON l.product_code=s.product_code AND l.store_code=$2
-     WHERE s.product_code=$1 OR b.barcode=$1 OR s.product_name ILIKE '%' || $1 || '%'
-     ORDER BY CASE WHEN b.barcode=$1 THEN 0 WHEN s.product_code=$1 THEN 1 ELSE 2 END,
-              s.product_code LIMIT 20`,
-    [query, STORE_CODE]);
+    SELECT r.product_code, r.barcode, r.product_name, r.spec_text, r.pic_url,
+           r.store_price, COALESCE(k.stock_num, r.cur_stock) AS stock, r.shelf_code,   -- skus 每15分钟同步果冻橙,跟收银机同源
+           e.expiration_date, (e.expiration_date - current_date)::int AS days_to_expire
+      FROM public.petstore_ops_row r
+      LEFT JOIN public.petstore_skus k ON k.product_code = r.product_code
+      -- 效期快照现在每天追加一行(0927 实测 5047 行/724 品),只取最新一次
+      LEFT JOIN LATERAL (SELECT x.expiration_date FROM public.petstore_offline_expiry_snapshot x
+                          WHERE x.product_code = r.product_code ORDER BY x.captured_at DESC LIMIT 1) e ON true
+     WHERE r.product_code = $1 OR r.barcode = $1 OR r.product_name ILIKE '%' || $1 || '%'
+     ORDER BY CASE WHEN r.barcode = $1 THEN 0 WHEN r.product_code = $1 THEN 1 ELSE 2 END,
+              COALESCE(k.month_sale, 0) DESC, r.product_code
+     LIMIT 20`, [query]);
   return r.rows.map((x) => ({
     product_code: x.product_code || "", barcode: x.barcode || "",
-    product_name: x.product_name || "", spec: x.spec || "",
-    price: x.out_price ?? null, stock: x.stock_num ?? null,
-    location: shelfText(x.shelf_location), recent_expiry: x.recent_expiry || "",
-    img: x.img_url || "",
+    product_name: x.product_name || "", spec: x.spec_text || "",
+    price: x.store_price ?? null, stock: x.stock ?? null,
+    location: shelfText(x.shelf_code),
+    // 没日期就是空,⛔不填今天/0
+    recent_expiry: x.expiration_date ? String(x.expiration_date instanceof Date ? x.expiration_date.toISOString().slice(0, 10) : x.expiration_date).slice(0, 10) + (x.days_to_expire == null ? "" : x.days_to_expire < 0 ? "(已过期)" : `(剩 ${x.days_to_expire} 天)`) : "",
+    img: x.pic_url || "",
   }));
 }
 
