@@ -1,17 +1,17 @@
-import { capSources } from "./authz.js";
-
 const MANAGER_ROLE_FALLBACKS = new Set(["store_manager", "manager", "boss"]);
+const DEFAULT_BOSS_EMPLOYEE_IDS = "35";
 
 function actorName(me) {
   return me?.name || me?.employee_code || `employee:${me?.id || ""}`;
 }
 
 async function capsForEmployee(pool, empId, me) {
+  if (me?.__authForTest) return me.__authForTest;
   const reqLike = { user: { employee_id: empId } };
-  const { resolvePerson } = await import("./authz.js");
+  const { resolvePerson, capSources } = await import("./authz.js");
   const person = await resolvePerson(reqLike, { pool, audit: false });
   const fallback = MANAGER_ROLE_FALLBACKS.has(String(me.role || ""));
-  return { person, fallback };
+  return { person, fallback, capSources };
 }
 
 function hasCap(auth, cap) {
@@ -20,7 +20,8 @@ function hasCap(auth, cap) {
 
 function reimbLimit(auth) {
   let n = 0;
-  for (const src of capSources(auth.person, "reimb.approve")) {
+  const sources = auth.capSources || (() => []);
+  for (const src of sources(auth.person, "reimb.approve")) {
     const c = src.constraints || {};
     const amount = Number(c.amount || c.limit || c.final_limit_cny || 0);
     if (amount > n) n = amount;
@@ -28,16 +29,156 @@ function reimbLimit(auth) {
   return n || (auth.fallback ? 200 : 0);
 }
 
+function countRows(rows) {
+  return rows?.[0]?.pending;
+}
+
+function isBossEmployee(me, empId) {
+  const ids = String(process.env.BOSS_EMPLOYEE_IDS || DEFAULT_BOSS_EMPLOYEE_IDS)
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  const mine = String(me?.id || me?.employee_id || empId || "");
+  return ids.includes(mine);
+}
+
+async function safePart(errors, key, label, fallback, fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    errors.push(`${label}: ${err?.message || err}`);
+    return fallback;
+  }
+}
+
+function approvalTotal(summary) {
+  return ["nearexp_ready", "price", "restock", "writeoff", "boss_tasks", "leave", "reimb"]
+    .reduce((n, key) => n + (Number.isFinite(Number(summary[key])) ? Number(summary[key]) : 0), 0);
+}
+
+export async function buildApprovalsSummary(pool, { caps, me, empId, leaves, reimb }) {
+  const errors = [];
+  const canApprove = !!caps.approvals;
+  const boss = isBossEmployee(me, empId);
+
+  const nearexpReady = canApprove ? await safePart(errors, "nearexp_ready", "临期降价待批", null, async () => {
+    const r = await pool.query(
+      `SELECT DISTINCT
+              COALESCE(NULLIF(product_code,''), '__nearexp:' || id::text) AS item_key,
+              NULLIF(product_code,'') AS product_code
+         FROM petstore_nearexp_proposals
+        WHERE status='proposed' AND date_verified=true`);
+    return r.rows || [];
+  }) : [];
+
+  const nearexpUnverified = canApprove ? await safePart(errors, "nearexp_unverified", "临期降价待核日期", null, async () => {
+    const r = await pool.query(
+      `SELECT COUNT(*)::int AS pending
+         FROM petstore_nearexp_proposals
+        WHERE status='proposed' AND COALESCE(date_verified,false)=false`);
+    return countRows(r.rows) || 0;
+  }) : 0;
+
+  const priceRows = canApprove ? await safePart(errors, "price", "价格意图待批", null, async () => {
+    const r = await pool.query(
+      `SELECT DISTINCT
+              COALESCE(NULLIF(product_code,''), '__price:' || id::text) AS item_key,
+              NULLIF(product_code,'') AS product_code
+         FROM petstore_price_intents
+        WHERE status IN ('proposed','mgr_ok','pending')`);
+    return r.rows || [];
+  }) : [];
+
+  const restock = canApprove && boss ? await safePart(errors, "restock", "补货意向待批", null, async () => {
+    const r = await pool.query(
+      `SELECT COUNT(*)::int AS pending
+         FROM petstore_restock_intents
+        WHERE status='proposed'`);
+    return countRows(r.rows) || 0;
+  }) : null;
+
+  const writeoffRows = canApprove ? await safePart(errors, "writeoff", "报损待批", null, async () => {
+    const r = await pool.query(
+      `SELECT id, title, next_action, created_at
+         FROM tasks
+        WHERE status IN ('open','pending_review')
+          AND source='dataops'
+          AND (COALESCE(title,'') ~ '报损' OR COALESCE(dedupe_key,'') ~ 'writeoff|loss|risk')
+        ORDER BY created_at DESC NULLS LAST, id DESC`);
+    return r.rows || [];
+  }) : [];
+
+  const bossTaskRows = canApprove ? await safePart(errors, "boss_tasks", "CAW需人工工单", null, async () => {
+    const r = await pool.query(
+      `SELECT id, title, next_action, created_at
+         FROM tasks
+        WHERE status=$1 AND task_prefix=$2 AND needs_human=$3
+          AND lower(COALESCE(next_holder,''))='damon'
+        ORDER BY created_at DESC NULLS LAST, id DESC`,
+      ["open", "CAW", true]);
+    return r.rows || [];
+  }) : [];
+
+  // 0927 Damon:「这些问题都可以转工单任务,不该到我这」—— 交给别人(AI/店员/技术)的工单只通知,不计入待审批
+  const ticketsFyi = canApprove ? await safePart(errors, "tickets_fyi", "工单进行中", null, async () => {
+    const r = await pool.query(
+      `SELECT COUNT(*)::int AS pending
+         FROM tasks
+        WHERE status=$1 AND task_prefix=$2 AND needs_human=$3
+          AND lower(COALESCE(next_holder,''))<>'damon'`,
+      ["open", "CAW", true]);
+    return countRows(r.rows) || 0;
+  }) : null;
+
+  const readyCodes = new Set((Array.isArray(nearexpReady) ? nearexpReady : [])
+    .map((x) => x.product_code)
+    .filter(Boolean));
+  const price = Array.isArray(priceRows)
+    ? priceRows.filter((x) => !x.product_code || !readyCodes.has(x.product_code)).length
+    : null;
+  const writeoffIds = new Set((Array.isArray(writeoffRows) ? writeoffRows : []).map((x) => String(x.id)));
+  const bossTaskDeduped = Array.isArray(bossTaskRows)
+    ? bossTaskRows.filter((x) => !writeoffIds.has(String(x.id)))
+    : null;
+
+  const summary = {
+    nearexp_ready: Array.isArray(nearexpReady) ? nearexpReady.length : null,
+    nearexp_unverified: nearexpUnverified,
+    price,
+    restock,
+    writeoff: Array.isArray(writeoffRows) ? writeoffRows.length : null,
+    boss_tasks: Array.isArray(bossTaskDeduped) ? bossTaskDeduped.length : null,
+    leave: Array.isArray(leaves) ? leaves.length : null,
+    reimb: Array.isArray(reimb) ? reimb.length : null,
+    tickets_fyi: ticketsFyi,
+    total: 0,
+  };
+  summary.total = approvalTotal(summary);
+  if (errors.length) summary.errors = errors;
+  return {
+    summary,
+    pricing_pending: summary.price,
+    boss_tasks_pending: summary.boss_tasks,
+    boss_tasks: Array.isArray(bossTaskDeduped) ? bossTaskDeduped.slice(0, 5).map((x) => ({
+      id: x.id,
+      title: x.title,
+      next_action: x.next_action,
+    })) : [],
+  };
+}
+
 export async function managerExtras(pool, empId, me) {
   const auth = await capsForEmployee(pool, empId, me);
+  const boss = isBossEmployee(me, empId);
   const caps = {
     dashboard: hasCap(auth, "store.dashboard.view") || hasCap(auth, "boss.dashboard.view"),
-    approvals: hasCap(auth, "leave.approve") || hasCap(auth, "reimb.approve") || hasCap(auth, "pricing.review"),
+    approvals: hasCap(auth, "leave.approve") || hasCap(auth, "reimb.approve") || hasCap(auth, "pricing.review") || boss,
   };
   if (!caps.dashboard && !caps.approvals) return null;
 
-  const [leaves, reimb, prices, bossTasks, failures] = await Promise.all([
-    caps.approvals ? pool.query(
+  const errors = [];
+  const [leaves, reimb, failures] = await Promise.all([
+    caps.approvals ? safePart(errors, "leave", "请假待批", { rows: null }, () => pool.query(
       `SELECT l.id, l.employee_id, l.employee_name, l.store_id,
               to_char(l.leave_date_start,'YYYY-MM-DD') AS leave_date_start,
               to_char(l.leave_date_end,'YYYY-MM-DD') AS leave_date_end,
@@ -52,52 +193,45 @@ export async function managerExtras(pool, empId, me) {
                  AND COALESCE(s.is_rest_day,false)=false
             ) s ON true
         WHERE l.status='pending' AND COALESCE(l.company_code,$1)=$1
-        ORDER BY l.created_at LIMIT 50`, [me.company_code]) : { rows: [] },
-    caps.approvals ? pool.query(
+        ORDER BY l.created_at LIMIT 50`, [me.company_code])) : { rows: [] },
+    caps.approvals ? safePart(errors, "reimb", "报销待批", { rows: null }, () => pool.query(
       `SELECT id, employee_id, employee_name, store_id, amount, item_desc,
               to_char(purchase_date,'YYYY-MM-DD') AS purchase_date,
               receipt_url, status, created_at
          FROM hr_reimbursements
         WHERE status='pending' AND COALESCE(company_code,$1)=$1
-        ORDER BY created_at LIMIT 50`, [me.company_code]) : { rows: [] },
-    caps.approvals ? pool.query(
-      `SELECT COUNT(*)::int AS pending
-         FROM petstore_price_intents
-        WHERE status IN ('proposed','mgr_ok','pending','approved')`) : { rows: [{ pending: 0 }] },
-    caps.approvals ? pool.query(
-      `WITH boss_tasks AS (
-         SELECT id, title, next_action, created_at
-           FROM tasks
-          WHERE status=$1 AND task_prefix=$2 AND needs_human=$3
-          ORDER BY created_at DESC NULLS LAST, id DESC
-       )
-       SELECT
-         (SELECT COUNT(*)::int FROM boss_tasks) AS pending,
-         COALESCE((
-           SELECT json_agg(json_build_object('id', id, 'title', title, 'next_action', next_action)
-                           ORDER BY created_at DESC NULLS LAST, id DESC)
-             FROM (SELECT id, title, next_action, created_at FROM boss_tasks LIMIT 5) t
-         ), '[]'::json) AS tasks`,
-      ["open", "CAW", true]) : { rows: [{ pending: 0, tasks: [] }] },
-    caps.dashboard ? pool.query(
+        ORDER BY created_at LIMIT 50`, [me.company_code])) : { rows: [] },
+    caps.dashboard ? safePart(errors, "failures", "失败红灯", { rows: [] }, () => pool.query(
       `SELECT id, source, impact, error_message, first_seen_at, last_seen_at, seen_count
          FROM job_failures WHERE status='open'
-        ORDER BY last_seen_at DESC LIMIT 20`) : { rows: [] },
+        ORDER BY last_seen_at DESC LIMIT 20`)) : { rows: [] },
   ]);
+  const reimbRows = (reimb.rows || []).map((x) => ({
+    id: x.id, employee_id: x.employee_id, employee_name: x.employee_name,
+    store_id: x.store_id, amount: x.amount, item_desc: x.item_desc,
+    purchase_date: x.purchase_date, receipt_url: x.receipt_url, status: x.status, created_at: x.created_at,
+  }));
+  const rollup = await buildApprovalsSummary(pool, {
+    caps,
+    me,
+    empId,
+    leaves: leaves.rows,
+    reimb: reimb.rows,
+  });
+  if (errors.length) {
+    rollup.summary.errors = [...(rollup.summary.errors || []), ...errors];
+  }
 
   return {
     capabilities: caps,
     constraints: { reimb_final_limit_cny: reimbLimit(auth) },
     approvals: {
-      leave: leaves.rows,
-      reimbursements: reimb.rows.map((x) => ({
-        id: x.id, employee_id: x.employee_id, employee_name: x.employee_name,
-        store_id: x.store_id, amount: x.amount, item_desc: x.item_desc,
-        purchase_date: x.purchase_date, receipt_url: x.receipt_url, status: x.status, created_at: x.created_at,
-      })),
-      pricing_pending: prices.rows[0]?.pending || 0,
-      boss_tasks_pending: bossTasks.rows[0]?.pending || 0,
-      boss_tasks: bossTasks.rows[0]?.tasks || [],
+      leave: leaves.rows || [],
+      reimbursements: reimbRows,
+      pricing_pending: rollup.pricing_pending,
+      boss_tasks_pending: rollup.boss_tasks_pending,
+      boss_tasks: rollup.boss_tasks,
+      summary: rollup.summary,
     },
     failures: failures.rows,
   };
