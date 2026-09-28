@@ -4,7 +4,7 @@ import fs from "node:fs";
 process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret";
 
 const { handleFactoryLoginCode, handleFactoryLoginVerify } = await import("../api/db/lib/po-collab-factory-login.js");
-const { handleCustomerLoginCode, hashCode } = await import("../api/db/lib/po-collab-customer-login.js");
+const { handleCustomerLoginCode, handleCustomerLoginVerify, hashCode } = await import("../api/db/lib/po-collab-customer-login.js");
 const { isCustomerToken } = await import("../api/db/lib/po-collab-customer.js");
 
 function res() {
@@ -18,20 +18,41 @@ class FakePool {
     this.sheet = opts.sheet || { id: 501, order_no: "PO-1", side: "factory", factory_company_id: 42, status: "sent" };
     this.company = opts.company || { id: 42, code: "VEN-LL", name_cn: "中砂", active: true,
       contact_email: "867623700@qq.com", biz_contact_email: "", fin_contact_email: "", cc_emails: ["568622322@qq.com"] };
-    this.customerCompany = { id: 7, code: "CUS-1", name_en: "Customer", contact_email: "buyer@example.com", biz_contact_email: "", cc_emails: [] };
+    this.customerCompany = opts.customerCompany || { id: 7, code: "CUS-1", name_en: "Customer", active: true,
+      contact_email: "buyer@example.com", biz_contact_email: "", cc_emails: [] };
     this.customerSheet = { id: 701, order_no: "SO-1", side: "customer", status: "sent" };
     this.customerMagic = !!opts.customerMagic;
     this.codes = [];
     this.outbox = [];
     this.accounts = opts.accounts || [];
     this.events = [];
+    this.attempts = [];
     this.attemptId = 1;
+  }
+  codeSide(c) {
+    if (c.side) return c.side;
+    if (c.sheet_id === this.sheet.id) return "factory";
+    if (c.sheet_id === this.customerSheet.id) return "customer";
+    return "";
+  }
+  matchesSide(sql, c) {
+    if (sql.includes("side='factory'")) return this.codeSide(c) === "factory";
+    if (sql.includes("side='customer'")) return this.codeSide(c) === "customer";
+    return true;
   }
   async connect() { return { query: (s, p) => this.query(s, p), release() {} }; }
   async query(sql, params = []) {
     sql = String(sql);
-    if (sql.includes("INSERT INTO auth_login_attempts")) return { rows: [{ id: this.attemptId++ }] };
-    if (sql.includes("UPDATE auth_login_attempts")) return { rows: [] };
+    if (sql.includes("INSERT INTO auth_login_attempts")) {
+      const id = this.attemptId++;
+      this.attempts.push({ id, bucket: params[0], ip: params[1], outcome: "pending" });
+      return { rows: [{ id }] };
+    }
+    if (sql.includes("UPDATE auth_login_attempts")) {
+      const a = this.attempts.find((x) => x.id === params[0]);
+      if (a) a.outcome = params[1];
+      return { rows: [] };
+    }
     if (sql.includes("WITH last_ok")) return { rows: [{ acct_ip: 0, ip_fails: 0, ip_buckets: 0, trusted: false, acct_hour: 0 }] };
     if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK" || sql.includes("pg_advisory_xact_lock")) return { rows: [] };
     if (sql.includes("FROM magic_links") && params[1] === "customer_order") return { rows: this.customerMagic ? [{ meta: { sheet_id: 701 } }] : [] };
@@ -40,11 +61,11 @@ class FakePool {
     if (sql.includes("FROM collab.po_sheet") && sql.includes("side='customer'")) return { rows: [this.customerSheet] };
     if (sql.includes("FROM companies WHERE id=$1")) return { rows: [this.company] };
     if (sql.includes("FROM orders o JOIN companies c")) return { rows: [this.customerCompany] };
-    if (sql.includes("COUNT(*)::int n FROM collab.customer_login_code WHERE email=$1")) {
-      return { rows: [{ n: this.codes.filter((c) => c.email === params[0]).length }] };
+    if (sql.includes("COUNT(*)::int n FROM collab.customer_login_code") && sql.includes("email=$1")) {
+      return { rows: [{ n: this.codes.filter((c) => c.email === params[0] && this.matchesSide(sql, c)).length }] };
     }
-    if (sql.includes("COUNT(*)::int n FROM collab.customer_login_code WHERE ip=$1")) {
-      return { rows: [{ n: this.codes.filter((c) => c.ip === params[0]).length }] };
+    if (sql.includes("COUNT(*)::int n FROM collab.customer_login_code") && sql.includes("ip=$1")) {
+      return { rows: [{ n: this.codes.filter((c) => c.ip === params[0] && this.matchesSide(sql, c)).length }] };
     }
     if (sql.includes("INSERT INTO collab.customer_login_code")) {
       this.codes.push({ id: this.codes.length + 1, email: params[0], company_code: params[1], sheet_id: params[2],
@@ -56,11 +77,11 @@ class FakePool {
       return { rows: [] };
     }
     if (sql.includes("COALESCE(SUM(tries),0)::int n")) {
-      return { rows: [{ n: this.codes.filter((c) => c.email === params[0]).reduce((a, c) => a + c.tries, 0) }] };
+      return { rows: [{ n: this.codes.filter((c) => c.email === params[0] && this.matchesSide(sql, c)).reduce((a, c) => a + c.tries, 0) }] };
     }
     if (sql.includes("SELECT id, code_hash, tries FROM collab.customer_login_code")) {
       const row = [...this.codes].reverse().find((c) => c.email === params[0] && c.company_code === params[1]
-        && (!sql.includes("sheet_id=$3") || c.sheet_id === params[2]) && !c.used_at && c.tries < 5);
+        && (!sql.includes("sheet_id=$3") || c.sheet_id === params[2]) && !c.used_at && !c.expired && c.tries < 5);
       return { rows: row ? [row] : [] };
     }
     if (sql.includes("SET tries = tries + 1")) { this.codes.find((c) => c.id === params[0]).tries += 1; return { rows: [] }; }
@@ -73,7 +94,7 @@ class FakePool {
       return { rows: [{ token_version: a.token_version }] };
     }
     if (sql.includes("INSERT INTO accounts")) {
-      const a = { id: 100 + this.accounts.length, username: params[0], role: "factory", company: params[2],
+      const a = { id: 100 + this.accounts.length, username: params[0], role: sql.includes("'customer'") ? "customer" : "factory", company: params[2],
         company_code: params[3], company_codes: [params[3]], email: params[0], token_version: 1, raw: JSON.parse(params[4]) };
       this.accounts.push(a); return { rows: [a] };
     }
@@ -97,6 +118,11 @@ async function sendCode() {
 await sendCode();
 
 {
+  const pool = await sendCode();
+  assert(pool.attempts.some((a) => a.bucket === "po-code:568622322@qq.com" && a.outcome === "ok"));
+}
+
+{
   const pool = new FakePool();
   const r = res();
   await handleFactoryLoginCode(req({ email: "nope@example.com" }), r, pool);
@@ -113,6 +139,8 @@ await sendCode();
 
 {
   const pool = new FakePool();
+  pool.codes.push({ id: 99, email: "568622322@qq.com", company_code: "OTHER", sheet_id: 999, side: "factory",
+    code_hash: hashCode("568622322@qq.com", "123456"), tries: 0 });
   pool.codes.push({ id: 1, email: "568622322@qq.com", company_code: "VEN-LL", sheet_id: 501, code_hash: hashCode("568622322@qq.com", "123456"), tries: 0 });
   const r = res();
   await handleFactoryLoginVerify(req({ email: "568622322@qq.com", code: "123456", password: "password1" }), r, pool);
@@ -120,6 +148,27 @@ await sendCode();
   assert.equal(pool.accounts[0].role, "factory");
   assert.deepEqual(pool.accounts[0].company_codes, ["VEN-LL"]);
   assert.equal(decode(r.body.token).companyCode, "VEN-LL");
+}
+
+{
+  const acct = { id: 9, username: "568622322@qq.com", email: "568622322@qq.com", role: "factory", company: "中砂",
+    company_code: "VEN-LL", company_codes: ["VEN-LL"], is_active: false, token_version: 2, raw: {}, password: "old" };
+  const pool = new FakePool({ accounts: [acct] });
+  pool.codes.push({ id: 1, email: "568622322@qq.com", company_code: "VEN-LL", sheet_id: 501, code_hash: hashCode("568622322@qq.com", "123456"), tries: 0 });
+  const r = res();
+  await handleFactoryLoginVerify(req({ email: "568622322@qq.com", code: "123456", password: "password1" }), r, pool);
+  assert.equal(r.statusCode, 403);
+  assert.match(r.body.error, /已停用/);
+  assert.equal(pool.accounts[0].password, "old");
+}
+
+{
+  const pool = new FakePool();
+  pool.codes.push({ id: 1, email: "568622322@qq.com", company_code: "VEN-LL", sheet_id: 501,
+    code_hash: hashCode("568622322@qq.com", "123456"), tries: 0, expired: true });
+  const r = res();
+  await handleFactoryLoginVerify(req({ email: "568622322@qq.com", code: "123456", password: "password1" }), r, pool);
+  assert.equal(r.statusCode, 401);
 }
 
 {
@@ -165,6 +214,28 @@ for (const acct of [
   await handleCustomerLoginCode(req({ email: "other@example.com" }, "customer-token"), r, pool);
   assert.equal(r.statusCode, 403);
   assert.match(r.body.error, /not registered/);
+}
+
+{
+  const pool = new FakePool({ customerMagic: true, customerCompany: { id: 7, code: "DEPRECATED-CUS",
+    name_en: "Old Customer", active: true, contact_email: "buyer@example.com", biz_contact_email: "", cc_emails: [] } });
+  const r = res();
+  await handleCustomerLoginCode(req({ email: "buyer@example.com" }, "customer-token"), r, pool);
+  assert.equal(r.statusCode, 403);
+  assert.match(r.body.error, /not registered/);
+}
+
+{
+  const acct = { id: 12, username: "buyer@example.com", email: "buyer@example.com", role: "customer",
+    company: "Customer", company_code: "CUS-1", company_codes: ["CUS-1"], is_active: false, token_version: 1, raw: {}, password: "old" };
+  const pool = new FakePool({ customerMagic: true, accounts: [acct] });
+  pool.codes.push({ id: 1, email: "buyer@example.com", company_code: "CUS-1", sheet_id: 701,
+    code_hash: hashCode("buyer@example.com", "123456"), tries: 0 });
+  const r = res();
+  await handleCustomerLoginVerify(req({ email: "buyer@example.com", code: "123456", password: "password1" }, "customer-token"), r, pool);
+  assert.equal(r.statusCode, 403);
+  assert.match(r.body.error, /disabled/);
+  assert.equal(pool.accounts[0].password, "old");
 }
 
 console.log("po factory email login tests passed");

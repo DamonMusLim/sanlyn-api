@@ -14,10 +14,6 @@ function codesOf(u) {
   return (Array.isArray(u.company_codes) && u.company_codes.length) ? u.company_codes : [u.company_code].filter(Boolean);
 }
 
-function publicCodesOf(u) {
-  return (Array.isArray(u.company_codes) && u.company_codes.length) ? u.company_codes : [u.company_code].filter(Boolean);
-}
-
 async function companyOfSheet(pool, sheet) {
   const r = await pool.query(
     `SELECT id, code, name_cn, name_en, active, contact_email, biz_contact_email, fin_contact_email, cc_emails
@@ -30,10 +26,14 @@ async function companyOfSheet(pool, sheet) {
 
 async function checkSendLimits(pool, email, ip) {
   const sent = (await pool.query(
-    `SELECT COUNT(*)::int n FROM collab.customer_login_code WHERE email=$1 AND created_at > NOW() - interval '1 hour'`, [email])).rows[0].n;
+    `SELECT COUNT(*)::int n FROM collab.customer_login_code
+      WHERE email=$1 AND created_at > NOW() - interval '1 hour'
+        AND sheet_id IN (SELECT id FROM collab.po_sheet WHERE side='factory')`, [email])).rows[0].n;
   if (sent >= MAX_SENDS_PER_HOUR) return "email";
   const byIp = (await pool.query(
-    `SELECT COUNT(*)::int n FROM collab.customer_login_code WHERE ip=$1 AND created_at > NOW() - interval '1 hour'`, [ip])).rows[0].n;
+    `SELECT COUNT(*)::int n FROM collab.customer_login_code
+      WHERE ip=$1 AND created_at > NOW() - interval '1 hour'
+        AND sheet_id IN (SELECT id FROM collab.po_sheet WHERE side='factory')`, [ip])).rows[0].n;
   return byIp >= MAX_SENDS_PER_IP_HOUR ? "ip" : "";
 }
 
@@ -43,7 +43,7 @@ export async function handleFactoryLoginCode(req, res, pool) {
   const { sheet, err } = await resolveToken(pool, req.body?.token);
   if (err) return res.status(403).json({ ok: false, error: err });
   const ip = clientIp(req);
-  const g = await guardStart(pool, email, ip);
+  const g = await guardStart(pool, email, ip, "po-code");
   if (g.lock) return res.status(429).json({ ok: false, error: "尝试次数过多，请稍后再试", retry_after_s: g.lock.retry_after_s });
 
   const co = await companyOfSheet(pool, sheet);
@@ -78,7 +78,7 @@ export async function handleFactoryLoginVerify(req, res, pool) {
   const { sheet, err } = await resolveToken(pool, req.body?.token);
   if (err) return res.status(403).json({ ok: false, error: err });
   const ip = clientIp(req);
-  const g = await guardStart(pool, email, ip);
+  const g = await guardStart(pool, email, ip, "po-code");
   if (g.lock) return res.status(429).json({ ok: false, error: "尝试次数过多，请稍后再试", retry_after_s: g.lock.retry_after_s });
 
   const co = await companyOfSheet(pool, sheet);
@@ -89,7 +89,9 @@ export async function handleFactoryLoginVerify(req, res, pool) {
     await client.query("BEGIN");
     await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, ["po-factory-login:" + email]);
     const fails = (await client.query(
-      `SELECT COALESCE(SUM(tries),0)::int n FROM collab.customer_login_code WHERE email=$1 AND created_at > NOW() - interval '1 hour'`, [email])).rows[0].n;
+      `SELECT COALESCE(SUM(tries),0)::int n FROM collab.customer_login_code
+        WHERE email=$1 AND created_at > NOW() - interval '1 hour'
+          AND sheet_id IN (SELECT id FROM collab.po_sheet WHERE side='factory')`, [email])).rows[0].n;
     if (fails >= MAX_FAILS_PER_HOUR) { await client.query("ROLLBACK"); await guardEnd(pool, g, "blocked"); return res.status(429).json({ ok: false, error: "尝试次数过多，请一小时后再试" }); }
     const row = (await client.query(
       `SELECT id, code_hash, tries FROM collab.customer_login_code
@@ -107,17 +109,21 @@ export async function handleFactoryLoginVerify(req, res, pool) {
 
     const hash = await bcrypt.hash(pw, 12);
     let acct = (await client.query(
-      `SELECT id, username, role, company, supplier_role, company_code, company_codes, token_version, raw
+      `SELECT id, username, role, company, supplier_role, company_code, company_codes, is_active, token_version, raw
          FROM accounts WHERE lower(email)=$1 OR lower(username)=$1 ORDER BY id LIMIT 2`, [email])).rows;
     if (acct.length > 1) { await client.query("ROLLBACK"); await guardEnd(pool, g, "fail"); return res.status(409).json({ ok: false, error: "请联系我们处理这个邮箱的登录" }); }
     let u = acct[0];
     if (u) {
+      if (u.is_active === false) {
+        await client.query("ROLLBACK"); await guardEnd(pool, g, "fail");
+        return res.status(403).json({ ok: false, error: "这个账号已停用，请联系我们" });
+      }
       if (!FACTORY_ROLES.includes(String(u.role || "").toLowerCase()) || !codesOf(u).includes(co.code)) {
         await client.query("ROLLBACK"); await guardEnd(pool, g, "fail");
         return res.status(403).json({ ok: false, error: "请联系我们处理这个邮箱的登录" });
       }
       await client.query(
-        `UPDATE accounts SET password=$2, is_active=true, updated_at=NOW(), token_version = COALESCE(token_version,1) + 1,
+        `UPDATE accounts SET password=$2, updated_at=NOW(), token_version = COALESCE(token_version,1) + 1,
                 raw = COALESCE(raw,'{}'::jsonb) - 'must_reset_password' || jsonb_build_object('pw_set_via','po_collab_email_code','pw_set_at',NOW())
           WHERE id=$1 RETURNING token_version`, [u.id, hash]).then((r) => { u.token_version = r.rows[0].token_version; });
     } else {
@@ -137,7 +143,7 @@ export async function handleFactoryLoginVerify(req, res, pool) {
     const raw = u.raw && typeof u.raw === "object" ? u.raw : {};
     const token = generateToken({
       uid: u.id, username: u.username, role: u.role, company: u.company, supplierRole: u.supplier_role,
-      companyCode: u.company_code, companyCodes: publicCodesOf(u), access: Array.isArray(raw.access) ? raw.access : [], tv: u.token_version || 1,
+      companyCode: u.company_code, companyCodes: codesOf(u), access: Array.isArray(raw.access) ? raw.access : [], tv: u.token_version || 1,
     });
     return res.json({ ok: true, token, new_account: !acct[0] });
   } catch (e) {

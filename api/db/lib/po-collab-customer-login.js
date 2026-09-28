@@ -28,12 +28,13 @@ export const hashCode = (email, code) => {
   if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET 未设置");   // ⛔ 不留回退 key
   return crypto.createHmac("sha256", process.env.JWT_SECRET).update(`${norm(email)}:${code}`).digest("hex");
 };
-const guardKey = (email) => `oc-code:${norm(email)}`;
+const guardKey = (email, prefix = "oc-code") => `${prefix}:${norm(email)}`;
 
 // 接 login-guard v2（跟 auth-login 同一套：先记一次尝试 → 查锁 → 收尾 ok/fail/blocked）
-export async function guardStart(pool, email, ip) {
-  const attempt = await beginLoginAttempt(pool, guardKey(email), ip);
-  let lock = await checkLoginLock(pool, guardKey(email), ip, attempt?.id || null);
+export async function guardStart(pool, email, ip, prefix = "oc-code") {
+  const key = guardKey(email, prefix);
+  const attempt = await beginLoginAttempt(pool, key, ip);
+  let lock = await checkLoginLock(pool, key, ip, attempt?.id || null);
   if (lock?.disabled) lock = null;               // 防护表坏了 → 放行（与 auth-login 一致）
   if (lock) await finishLoginAttempt(pool, attempt, "blocked");
   return { attempt, lock };
@@ -43,10 +44,10 @@ export const guardEnd = (pool, g, outcome) => finishLoginAttempt(pool, g.attempt
 // 这张单的客户公司 + 在档邮箱
 async function companyOfSheet(pool, sheet) {
   const r = await pool.query(
-    `SELECT c.id, c.code, c.name_en, c.name_cn, c.contact_email, c.biz_contact_email, c.cc_emails
+    `SELECT c.id, c.code, c.name_en, c.name_cn, c.active, c.contact_email, c.biz_contact_email, c.cc_emails
        FROM orders o JOIN companies c ON c.code = o.company_code WHERE o.order_no=$1 LIMIT 1`, [sheet.order_no]);
   const c = r.rows[0];
-  if (!c) return null;
+  if (!c || c.active === false || String(c.code || "").startsWith("DEPRECATED")) return null;
   const emails = new Set(splitEmails([c.contact_email, c.biz_contact_email, c.cc_emails]));
   return { ...c, emails };
 }
@@ -69,10 +70,14 @@ export async function handleCustomerLoginCode(req, res, pool) {
     return res.status(403).json({ ok: false, error: NOT_ON_FILE });
   }
   const sent = (await pool.query(
-    `SELECT COUNT(*)::int n FROM collab.customer_login_code WHERE email=$1 AND created_at > NOW() - interval '1 hour'`, [email])).rows[0].n;
+    `SELECT COUNT(*)::int n FROM collab.customer_login_code
+      WHERE email=$1 AND created_at > NOW() - interval '1 hour'
+        AND sheet_id IN (SELECT id FROM collab.po_sheet WHERE side='customer')`, [email])).rows[0].n;
   if (sent >= MAX_SENDS_PER_HOUR) { await guardEnd(pool, g, "blocked"); return res.status(429).json({ ok: false, error: "Too many codes requested. Please try again in an hour." }); }
   const byIp = (await pool.query(
-    `SELECT COUNT(*)::int n FROM collab.customer_login_code WHERE ip=$1 AND created_at > NOW() - interval '1 hour'`, [ip])).rows[0].n;
+    `SELECT COUNT(*)::int n FROM collab.customer_login_code
+      WHERE ip=$1 AND created_at > NOW() - interval '1 hour'
+        AND sheet_id IN (SELECT id FROM collab.po_sheet WHERE side='customer')`, [ip])).rows[0].n;
   if (byIp >= MAX_SENDS_PER_IP_HOUR) { await guardEnd(pool, g, "blocked"); return res.status(429).json({ ok: false, error: "Too many codes requested. Please try again in an hour." }); }
 
   const code = String(crypto.randomInt(0, 1e6)).padStart(6, "0");
@@ -110,7 +115,9 @@ export async function handleCustomerLoginVerify(req, res, pool) {
     await client.query("BEGIN");
     await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, ["oc-login:" + email]);   // 同邮箱串行，防并发建两个号
     const fails = (await client.query(
-      `SELECT COALESCE(SUM(tries),0)::int n FROM collab.customer_login_code WHERE email=$1 AND created_at > NOW() - interval '1 hour'`, [email])).rows[0].n;
+      `SELECT COALESCE(SUM(tries),0)::int n FROM collab.customer_login_code
+        WHERE email=$1 AND created_at > NOW() - interval '1 hour'
+          AND sheet_id IN (SELECT id FROM collab.po_sheet WHERE side='customer')`, [email])).rows[0].n;
     if (fails >= MAX_FAILS_PER_HOUR) { await client.query("ROLLBACK"); await guardEnd(pool, g, "blocked"); return res.status(429).json({ ok: false, error: "Too many attempts. Please try again in an hour." }); }
     // 最新一条未用、未过期、未超次数的码
     const row = (await client.query(
@@ -129,19 +136,23 @@ export async function handleCustomerLoginVerify(req, res, pool) {
 
     const hash = await bcrypt.hash(pw, 12);
     let acct = (await client.query(
-      `SELECT id, username, role, company, supplier_role, company_code, company_codes, token_version, raw
+      `SELECT id, username, role, company, supplier_role, company_code, company_codes, is_active, token_version, raw
          FROM accounts WHERE lower(email)=$1 OR lower(username)=$1 ORDER BY id LIMIT 2`, [email])).rows;
-    if (acct.length > 1) { await client.query("ROLLBACK"); return res.status(409).json({ ok: false, error: "Please contact us to log in with this email." }); }
+    if (acct.length > 1) { await client.query("ROLLBACK"); await guardEnd(pool, g, "fail"); return res.status(409).json({ ok: false, error: "Please contact us to log in with this email." }); }
     let u = acct[0];
     if (u) {
+      if (u.is_active === false) {
+        await client.query("ROLLBACK"); await guardEnd(pool, g, "fail");
+        return res.status(403).json({ ok: false, error: "This account is disabled. Please contact us." });
+      }
       // 已有账号：只允许本公司的客户账号用验证码重设密码
       const codes = (u.company_codes && u.company_codes.length) ? u.company_codes : [u.company_code].filter(Boolean);
       if (String(u.role || "").toLowerCase() !== "customer" || !codes.includes(co.code)) {
-        await client.query("ROLLBACK");
+        await client.query("ROLLBACK"); await guardEnd(pool, g, "fail");
         return res.status(403).json({ ok: false, error: "Please contact us to log in with this email." });
       }
       await client.query(
-        `UPDATE accounts SET password=$2, is_active=true, updated_at=NOW(), token_version = COALESCE(token_version,1) + 1,
+        `UPDATE accounts SET password=$2, updated_at=NOW(), token_version = COALESCE(token_version,1) + 1,
                 raw = COALESCE(raw,'{}'::jsonb) - 'must_reset_password' || jsonb_build_object('pw_set_via','order_collab_email_code','pw_set_at',NOW())
           WHERE id=$1 RETURNING token_version`, [u.id, hash]).then((r) => { u.token_version = r.rows[0].token_version; });
     } else {
@@ -167,6 +178,7 @@ export async function handleCustomerLoginVerify(req, res, pool) {
     return res.json({ ok: true, token, new_account: !acct[0] });
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
+    await guardEnd(pool, g, "fail");
     throw e;
   } finally { client.release(); }
 }
