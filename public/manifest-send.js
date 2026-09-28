@@ -1,7 +1,7 @@
 (function(){
   "use strict";
   var API="/api/db/manifest-send";
-  var VERSION="v2026.09.27-1";
+  var VERSION="v2026.09.05-1";
   var state={rows:[],selected:null,coverage:null,lineSummary:null,send:null,generatedAt:null,version:null};
   var $=function(id){return document.getElementById(id)};
   function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
@@ -40,10 +40,6 @@
     if(!f||f.state!=="ready"||!Number(f.total))return "未接入";
     return pct(f.filled,f.total);
   }
-  function sourceFor(name){
-    var fields=((state.coverage||{}).business_fields)||[],f=fields.find(function(x){return x.name===name});
-    return f&&f.source||name;
-  }
   function lineRate(){
     var line=state.lineSummary||{}, fields=line.fields||[];
     if(line.state==="not_connected"||!fields.length)return "未接入";
@@ -56,7 +52,6 @@
   function businessText(r,name,value){
     var m=(r.business_missing||[]).find(function(x){return x.name===name});
     if(m&&m.reason==="not_connected")return "未接入 · 缺 "+m.source+"；当前填充率 "+rateFor(name,"business_fields");
-    if(m&&m.reason==="empty")return "未接入 · 当前记录缺已填值 "+(m.source||sourceFor(name))+"；当前填充率 "+rateFor(name,"business_fields");
     return value;
   }
   function renderMetrics(){
@@ -121,11 +116,11 @@
     if(!r){box.appendChild(el("div","empty","未接入 · 缺可读取舱单记录，当前填充率 未接入。"));text($("businessPill"),"未接入");return}
     var grid=el("div","mini-grid");
     grid.appendChild(kv("订单编号",r.order_no||r.contract_no));
-    grid.appendChild(kv("订单进程",businessText(r,"order_status",r.order_status),!r.order_status));
-    grid.appendChild(kv("海运进程",businessText(r,"plan_status",r.plan_status),!r.plan_status));
-    grid.appendChild(kv("订单类型",businessText(r,"order_type",r.order_type),!r.order_type));
-    grid.appendChild(kv("业务类型",businessText(r,"business_type",r.business_type),!r.business_type));
-    grid.appendChild(kv("业务异常",businessText(r,"business_exception",r.business_exception),!r.business_exception));
+    grid.appendChild(kv("订单进程",businessText(r,"order_status",r.order_status)));
+    grid.appendChild(kv("海运进程",businessText(r,"plan_status",r.plan_status)));
+    grid.appendChild(kv("订单类型",businessText(r,"order_type",r.order_type)));
+    grid.appendChild(kv("业务类型",businessText(r,"business_type",r.business_type)));
+    grid.appendChild(kv("业务异常",businessText(r,"business_exception",r.business_exception),r.business_exception));
     box.appendChild(grid);
     if(r.business_missing&&r.business_missing.length){
       box.appendChild(el("p","muted block-note","未接入/未填字段："+r.business_missing.map(function(x){

@@ -19,7 +19,7 @@
   function yes(v){return v===true?"是":(v===false?"否":'<span class="na">未设置</span>');}
   function countText(rows,unit,key){return rows.length?esc(rows.length+" "+unit):(window.disconnectedText?esc(window.disconnectedText(key)):"未接入");}
   function panel(title,rows,unit,key,body){var kind=key==="matrices"?"matrix":key,canAdd=key!=="tariff";return '<section class="hgj-card section"><div class="section-head"><h2 class="hgj-panel-title">'+esc(title)+'</h2><span class="mini">'+countText(rows,unit,key)+'</span>'+(canAdd?'<button type="button" data-charge-new="'+attr(kind)+'">新增</button>':"")+'</div>'+body+"</section>";}
-  function tariffNote(){return '<div class="mini charge-note">官方费率是船司标准基线，只做确认与停用；调价请重传新版本，不在这里改金额。</div>';}
+  function tariffNote(){return '<div class="mini" style="padding:0 14px 10px;color:#6b7280;">官方费率是船司标准基线，只做确认与停用；调价请重传新版本，不在这里改金额。</div>';}
   function empty(key,span){return '<tr><td colspan="'+span+'"><div class="empty">'+(window.emptyState?window.emptyState(key,"",[]):"未接入")+"</div></td></tr>";}
   function value(r,k){
     if(k==="valid")return cell(validText(r));
@@ -60,7 +60,7 @@
   }
   function itemBlock(matrix,items,ics,span){
     var html='<tr><td colspan="'+span+'"><div class="table-wrap"><table><thead><tr>'+ics.map(function(c){return "<th>"+esc(c[1])+"</th>";}).join("")+"</tr></thead><tbody>";
-    if(!items.length)html+=empty("matrix_items",ics.length);
+    if(!items.length)html+='<tr><td colspan="'+ics.length+'"><span class="na">未添加明细</span></td></tr>';
     items.forEach(function(r){html+="<tr>"+ics.map(function(c){var k=c[0],v=k==="_actions"?rowActions("item",r.id):value(r,k);return '<td'+(c[2]==="num"?' class="num"':"")+">"+v+"</td>";}).join("")+"</tr>"+editorRow("item",r,ics.length);});
     var add=window.state.expanded[editKey("item",{matrix_code:matrix.code})]?editorPanel("item",{matrix_code:matrix.code}):"";
     return html+'</tbody></table></div><button type="button" data-charge-new="item" data-matrix-code="'+attr(matrix.code)+'">新增明细</button>'+add+"</td></tr>";
@@ -106,8 +106,8 @@
   function dateDialog(defaultDate){
     return new Promise(function(resolve){
       var wrap=document.createElement("div");
-      wrap.className="charge-dialog-mask";
-      wrap.innerHTML='<div class="charge-dialog"><label>停用日期</label><input type="date" value="'+attr(defaultDate)+'"><div class="row-actions"><button type="button" data-cancel>取消</button><button type="button" class="primary" data-ok>确认</button></div></div>';
+      wrap.style.cssText="position:fixed;inset:0;background:rgba(17,24,39,.35);display:flex;align-items:center;justify-content:center;z-index:9999;";
+      wrap.innerHTML='<div style="background:#fff;border:1px solid #d1d5db;border-radius:8px;padding:16px;min-width:280px;box-shadow:0 12px 30px rgba(0,0,0,.18);"><label style="display:block;font-size:13px;font-weight:700;color:#374151;margin-bottom:8px;">停用日期</label><input type="date" value="'+attr(defaultDate)+'" style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:6px;padding:8px;font-size:14px;"><div class="row-actions" style="justify-content:flex-end;margin-top:12px;"><button type="button" data-cancel>取消</button><button type="button" class="primary" data-ok>确认</button></div></div>';
       function close(v){document.body.removeChild(wrap);resolve(v);}
       wrap.querySelector("[data-cancel]").onclick=function(){close(null);};
       wrap.querySelector("[data-ok]").onclick=function(){close(wrap.querySelector("input").value||defaultDate);};

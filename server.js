@@ -192,29 +192,12 @@ function mount(route, handlerModule) {
 // Route Registration — mirrors Vercel's file-based routing
 // ── /api/db/* endpoints ──
 registerCoreRoutes(app, mount);
-mount("/api/db/hgj-template-195", () => import("./api/db/hgj-template-195.js"));
-mount("/api/db/manifest-fields", () => import("./api/db/manifest-fields.js"));
-mount("/api/db/manifest-send", () => import("./api/db/manifest-send.js"));
-mount("/api/db/manifest-message-channel", () => import("./api/db/manifest-message-channel.js"));
-mount("/api/db/booking-platform", () => import("./api/db/booking-platform.js"));
 registerRfqRoutes(app, mount);
 // ── Static files (driver-evidence page) ──
 import { join } from "path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 app.use("/public", express.static(join(__dirname, "public")));
 app.use("/templates", express.static(join(__dirname, "public/templates")));
-app.get("/hgj-template-195", (_req, res) => {
-  res.sendFile(join(__dirname, "public/hgj-template-195.html"));
-});
-app.get("/hgj-template-195.html", (_req, res) => {
-  res.sendFile(join(__dirname, "public/hgj-template-195.html"));
-});
-app.get("/hgj-booking-download.html", (_req, res) => {
-  res.sendFile(join(__dirname, "public/hgj-booking-download.html"));
-});
-app.get("/hgj-booking-download", (_req, res) => {
-  res.redirect("/hgj-booking-download.html");
-});
 // Short link for factory fill: /f/<token> → static page
 app.get("/f/:token", (req, res) => {
   res.redirect("/public/factory-fill.html?t=" + encodeURIComponent(req.params.token));

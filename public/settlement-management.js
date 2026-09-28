@@ -1,7 +1,7 @@
 (function(){
   "use strict";
-  var API="/api/db/settlement-management",VERSION="v2026.09.28-3";
-  var state={rows:[],payments:[],selected:null,selectedPayment:null,coverage:null,metrics:{},generatedAt:null,reason:"",connectionNote:""};
+  var API="/api/db/settlement-management",VERSION="v2026.08.27-1";
+  var state={rows:[],payments:[],selected:null,coverage:null,metrics:{},generatedAt:null,reason:""};
   var $=function(id){return document.getElementById(id);};
   var NF=new Intl.NumberFormat("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
   function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||"";}
@@ -36,21 +36,6 @@
     if(raw===null)return;
     try{await save("POST",parseLines(raw));await load();}catch(e){alert(e.message);}
   }
-  async function addForPayment(r){
-    var seed={
-      payment_id:r&&r.db_id||r&&r.payment_id||"",
-      target_type:"ar",
-      target_id:"",
-      amount_applied:r&&has(r.pending_amount)?r.pending_amount:"",
-      currency:r&&r.currency||"CNY",
-      status:"applied",
-      source:"manual",
-      created_by:""
-    };
-    var raw=prompt("用此收款新增核销链接。对象编号必须人工填真实合同/订单/发票号，金额不确定请留空。",editable(seed));
-    if(raw===null)return;
-    try{await save("POST",parseLines(raw));await load();}catch(e){alert(e.message);}
-  }
   async function editRow(){
     var r=state.selected;if(!r){alert("未选择记录");return;}
     var raw=prompt("编辑核销链接，逐行填写 field=value。留空会保存为空，不会编造金额。",editable(r));
@@ -72,23 +57,12 @@
     return d;
   }
   function setMetric(id,v){text($(id),has(v)?v:"未接入");}
-  function unlinkedReceipts(m){
-    var linked=m.linked_receipts;
-    if(has(m.total_receipts)&&has(linked))return Math.max(Number(m.total_receipts)-Number(linked),0);
-    return m.unlinked_receipts;
-  }
-  function bestMatchBasis(m){
-    var rows=(m&&m.payment_match_basis)||[],best=null;
-    rows.forEach(function(r){if(!best||Number(r.matched_refs||0)>Number(best.matched_refs||0))best=r;});
-    if(!best)return"匹配诊断未接入";
-    return best.basis+" 命中 "+fmt(best.matched_refs,"未接入")+" 个链接引用";
-  }
   function renderMetrics(){
     var m=state.metrics||{};
     setMetric("mTotal",m.total_links);setMetric("mApplied",m.applied_links);setMetric("mAlerts",m.alert_count);
-    setMetric("mReceipts",m.total_receipts);setMetric("mLinkedReceipts",has(m.linked_receipts)?m.linked_receipts:m.settlement_link_payment_refs);setMetric("mUnlinkedReceipts",unlinkedReceipts(m));
+    setMetric("mReceipts",m.total_receipts);setMetric("mLinkedReceipts",m.linked_receipts);setMetric("mUnlinkedReceipts",m.unlinked_receipts);
     text($("mState"),state.rows.length?"核销已接入":(state.payments.length?"收款已接入":"未接入"));$("mState").className=state.rows.length||state.payments.length?"num":"num warn";
-    $("summary").textContent=VERSION+" · 生成时间 "+new Date(state.generatedAt||Date.now()).toLocaleString("zh-CN")+" · 链接收款引用 "+fmt(m.settlement_link_payment_refs,"未接入")+" · 链接收付引用 "+fmt(m.settlement_link_refs,"未接入")+" · 收付字段已核销 "+fmt(m.payment_field_settled_receipts,"未接入")+" · 未匹配引用 "+fmt(m.payment_unmatched_refs,"未接入")+" · "+bestMatchBasis(m)+" · "+(state.connectionNote||"未接入: 缺核销接线诊断；当前填充率 未接入");
+    $("summary").textContent=VERSION+" · 生成时间 "+new Date(state.generatedAt||Date.now()).toLocaleString("zh-CN");
   }
   function renderAmounts(){
     var box=$("amounts");clear(box);var rows=(state.metrics&&state.metrics.by_currency)||[];
@@ -112,11 +86,8 @@
     state.payments.forEach(function(r){
       var d=el("div","pay");
       d.appendChild(el("b","",paymentTitle(r)));
-      d.appendChild(el("span","",money(r.amount,r.currency)+" · "+fmt(r.currency)+" · "+fmt(r.payment_date)+" · 收款主键 "+fmt(r.db_id)+" · 流水 "+fmt(r.bank_ref)));
-      d.appendChild(el("span","",("收付已核销 "+money(r.paid_amount,r.currency)+" · 待核销 "+money(r.pending_amount,r.currency))));
-      d.appendChild(el("span","",has(r.settlement_link_count)&&Number(r.settlement_link_count)>0?("核销链接命中 "+r.settlement_link_count+" 条 · "+money(r.linked_amount,r.currency)):"未接入 · finance_settlement_links 未命中该收款；当前填充率和匹配口径见字段填充率/页头诊断"));
-      if(r.settlement_match_basis&&r.settlement_match_basis.length)d.appendChild(el("span","",("匹配口径 "+r.settlement_match_basis.join(" / "))));
-      var b=el("button","mini","用此收款新增核销");b.type="button";b.dataset.payId=r.db_id||r.payment_id||"";d.appendChild(b);
+      d.appendChild(el("span","",money(r.amount,r.currency)+" · "+fmt(r.currency)+" · "+fmt(r.payment_date)+" · 流水 "+fmt(r.bank_ref)));
+      d.appendChild(el("span","",Number(r.settlement_link_count||0)>0?("已接 "+r.settlement_link_count+" 条核销链接 · 已核销 "+money(r.settled_amount,r.currency)):"未接核销链接 · 缺 finance_settlement_links.payment_id/target_id 对应记录"));
       box.appendChild(d);
     });
   }
@@ -142,11 +113,10 @@
   }
   function render(){renderMetrics();renderPayments();renderAmounts();renderList();renderAlerts();renderDetail();renderCoverage();}
   async function load(){
-    try{var d=await api();state.rows=d.data||[];state.payments=d.payments||[];state.selected=d.selected||state.rows[0]||null;state.coverage=d.coverage;state.metrics=d.metrics||{};state.generatedAt=d.generated_at;state.reason=d.reason||"";state.connectionNote=d.connection_note||"";render();}
+    try{var d=await api();state.rows=d.data||[];state.payments=d.payments||[];state.selected=d.selected||state.rows[0]||null;state.coverage=d.coverage;state.metrics=d.metrics||{};state.generatedAt=d.generated_at;state.reason=d.reason||"";render();}
     catch(e){$("summary").textContent=VERSION+" · 读取失败";["payments","amounts","list","alerts","detail","coverage"].forEach(function(id){clear($(id));$(id).appendChild(el("div","error",e.message));});}
   }
   $("list").addEventListener("click",function(e){var b=e.target.closest(".row");if(!b)return;var id=b.dataset.id;state.selected=state.rows.find(function(r){return String(r.id||"")===id;})||state.selected;render();});
-  $("payments").addEventListener("click",function(e){var b=e.target.closest("button[data-pay-id]");if(!b)return;var id=b.dataset.payId;state.selectedPayment=state.payments.find(function(r){return String(r.db_id||r.payment_id||"")===id;})||null;if(state.selectedPayment)addForPayment(state.selectedPayment);});
   $("reload").addEventListener("click",load);$("q").addEventListener("keydown",function(e){if(e.key==="Enter")load();});
   $("targetType").addEventListener("change",load);$("status").addEventListener("change",load);
   $("add").addEventListener("click",addRow);
