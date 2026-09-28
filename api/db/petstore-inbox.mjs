@@ -93,7 +93,8 @@ async function relayFetch(pathname, { method = "GET", query = {}, body, fetchFn 
 // 2026-09-28 止血:宠物店没有个人微信号。inbox 6(wechat)= Damon 个人混合号(银行短信/供应商/私人联系人),
 // SSOT ~/.openclaw/cs_accounts.json 标 owner_only。这里只放行宠物店渠道,白名单制(没列的一律不给)。
 // 等宠物店独立微信号建好进 SSOT,再把 wechat 加回来。
-const PET_CHANNELS = new Set(["meituan", "eleme", "wework"]);
+// "inbox #7" = 金枋店AI客服(SSOT company=宠物店),转发服务没给它映射渠道名,原样放行
+const PET_CHANNELS = new Set(["meituan", "eleme", "wework", "inbox #7"]);
 function petRows(data) {
   return (Array.isArray(data) ? data : []).filter((x) => PET_CHANNELS.has(String(x?.channel || "")));
 }
