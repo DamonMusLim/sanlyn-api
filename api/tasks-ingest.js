@@ -27,9 +27,13 @@ function cleanString(value) {
   return s ? s : null;
 }
 
-function cleanOwnerStaffNo(rawExtra) {
-  const staffNo = cleanString(rawExtra && rawExtra.owner_staff_no);
+function cleanStaffNo(rawExtra, key) {
+  const staffNo = cleanString(rawExtra && rawExtra[key]);
   return staffNo && STAFF_NO_RE.test(staffNo) ? staffNo : null;
+}
+
+function cleanOwnerStaffNo(rawExtra) {
+  return cleanStaffNo(rawExtra, "owner_staff_no");
 }
 
 function buildRaw(body) {
@@ -37,7 +41,8 @@ function buildRaw(body) {
     ? body.raw_extra
     : {};
 
-  return {
+  const originMachine = cleanString(body.origin_machine) || cleanString(rawExtra.origin_machine);
+  const raw = {
     closure_substatus: "open",
     recommended_action: cleanString(body.recommended_action),
     entity_type: cleanString(body.entity_type),
@@ -46,6 +51,8 @@ function buildRaw(body) {
     issue_type: cleanString(body.issue_type),
     raw_extra: rawExtra,
   };
+  if (originMachine) raw.origin_machine = originMachine;
+  return raw;
 }
 
 function eventMetadata(source, dedupeKey, priority, rawPatch, body) {
@@ -107,6 +114,8 @@ export default async function handler(req, res) {
 
   const rawPatch = buildRaw(b);
   const assignedTo = cleanOwnerStaffNo(rawPatch.raw_extra);
+  const verifier = cleanStaffNo(rawPatch.raw_extra, "reviewer_staff_no");
+  const domain = cleanString(b.domain) || cleanString(rawPatch.raw_extra.domain);
   let ownerObjectType =
     cleanString(b.owner_object_type) ||
     (cleanString(b.related_order_no) ? "order" : cleanString(b.entity_type)) ||
@@ -135,6 +144,9 @@ export default async function handler(req, res) {
     dedupeKey,
     priority,
     assignedTo,
+    currentHolder: assignedTo,
+    verifier,
+    domain,
   };
 
   const pool = getPool();
@@ -148,12 +160,14 @@ export default async function handler(req, res) {
          id, title, task_type, level, status, risk_level,
          owner_object_type, owner_object_id, related_order_no, company_code,
          mode, due_at, reason, raw,
-         source, dedupe_key, priority, notify_stage, assigned_to
+         source, dedupe_key, priority, notify_stage, assigned_to,
+         current_holder, verifier, domain
        ) VALUES (
          $1, $2, $3, $4, 'open', $5,
          $6, $7, $8, $9,
          'owned', $10::timestamptz, $11, $12::jsonb,
-         $13, $14, $15, 0, $16
+         $13, $14, $15, 0, $16,
+         $17, $18, $19
        )
        ON CONFLICT (source, dedupe_key)
          WHERE status NOT IN ('done', 'cancelled')
@@ -170,7 +184,10 @@ export default async function handler(req, res) {
          reason = EXCLUDED.reason,
          raw = COALESCE(tasks.raw, '{}'::jsonb) || EXCLUDED.raw,
          priority = EXCLUDED.priority,
-         assigned_to = COALESCE(NULLIF(tasks.assigned_to, ''), EXCLUDED.assigned_to)
+         assigned_to = COALESCE(NULLIF(tasks.assigned_to, ''), EXCLUDED.assigned_to),
+         current_holder = COALESCE(NULLIF(tasks.current_holder, ''), EXCLUDED.current_holder),
+         verifier = COALESCE(NULLIF(tasks.verifier, ''), EXCLUDED.verifier),
+         domain = COALESCE(NULLIF(tasks.domain, ''), EXCLUDED.domain)
        RETURNING id, status, (xmax = 0) AS created`,
       [
         values.id,
@@ -189,6 +206,9 @@ export default async function handler(req, res) {
         values.dedupeKey,
         values.priority,
         values.assignedTo,
+        values.currentHolder,
+        values.verifier,
+        values.domain,
       ]
     );
 
