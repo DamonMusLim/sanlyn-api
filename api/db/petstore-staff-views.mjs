@@ -17,7 +17,16 @@ const VIEWS = {
   profit:       { mod: "./petstore-stocktake.js", query: { diff: "profit", pageSize: "100" } },
   sale:         { mod: "./petstore-stock-moves.js", query: { kind: "sale", pageSize: "100" } },
   purchase:     { mod: "./petstore-purchase-orders.js", query: { pageSize: "100" } },
+  // 0928 果冻橙业务页下半截:实用小工具后半 + 数据分析
+  shelf_stock:  { mod: "./petstore-goods-shelf.js", query: { pageSize: "200" } },                 // 货位库存
+  reviews:      { mod: "./petstore-reviews.js", query: { pageSize: "100" } },                     // 评论管理
+  suggest:      { mod: "./petstore-gdc-suggest.js", query: { pageSize: "100" } },                 // 智能补货(果冻橙建议已全量入库)
+  ai_pic:       { mod: "./petstore-ai-tasks.js", query: { task_type: "optimize_pic", pageSize: "100" } }, // AI修图
+  // 数据分析:含营业额/毛利,⛔只给老板;老板看不去字段
+  biz_daily:    { mod: "./petstore-platform-daily.js", query: { pageSize: "60" }, boss: true },   // 经营分析
+  pnl:          { mod: "./petstore-order-pnl.js", query: { pageSize: "60" }, boss: true },        // 利润统计
 };
+const BOSS_IDS = String(process.env.BOSS_EMPLOYEE_IDS || "35").split(",").map((x) => x.trim()).filter(Boolean);
 
 // 拉取外卖新品 = 果冻橙「立即同步」:跟 jdc 自助收银机页(petstore-kiosk-settings)共用同一个触发旗文件,Studio 每分钟轮询
 import { readFileSync, writeFileSync, renameSync } from "node:fs";
@@ -58,9 +67,11 @@ async function requireStaff(req, pool) {
 }
 
 // 调原模块 handler:模拟一个 GET 请求,把它的 json 截下来
-export async function runView(key, raw, extra = {}) {
+export async function runView(key, raw, extra = {}, empId = null) {
   const v = VIEWS[key];
   if (!v) return { status: 400, body: { success: false, error: "bad_view" } };
+  const boss = BOSS_IDS.includes(String(empId || ""));
+  if (v.boss && !boss) return { status: 403, body: { success: false, error: "boss_only" } };
   const mod = await import(v.mod);
   let status = 200, body = null;
   const res = {
@@ -73,7 +84,7 @@ export async function runView(key, raw, extra = {}) {
   const req = { method: "GET", headers: { authorization: "Bearer " + raw }, query: { ...v.query, ...extra } };
   await mod.default(req, res);
   if (status >= 400) return { status, body: { success: false, error: (body && (body.error || body.message)) || "view_failed" } };
-  return { status: 200, body: { success: true, data: scrub(body) } };
+  return { status: 200, body: { success: true, data: v.boss && boss ? body : scrub(body) } };
 }
 
 export default async function handler(req, res) {
@@ -88,7 +99,17 @@ export default async function handler(req, res) {
       if (req.method === "POST") requestSync(String(auth.empId));
       return res.status(200).json({ success: true, data: syncStatus() });
     }
-    const out = await runView(String(req.query?.view || ""), auth.raw, req.query?.q ? { q: String(req.query.q).slice(0, 40) } : {});
+    if (req.query?.view === "pick_perf") {
+      // 拣货绩效:我们自己的拣货记录(petstore_takeout_picks),果冻橙那边没有这份数据
+      const r = await pool.query(
+        `SELECT COALESCE(e.name, '未记名') AS picker, COUNT(DISTINCT p.order_no)::int AS orders,
+                COALESCE(SUM(p.picked),0)::int AS items, MAX(p.completed_at) AS last_at
+           FROM petstore_takeout_picks p LEFT JOIN hr_employees e ON e.id = p.picker_employee_id
+          WHERE p.completed_at >= now() - interval '30 days'
+          GROUP BY 1 ORDER BY 2 DESC`);
+      return res.status(200).json({ success: true, data: r.rows });
+    }
+    const out = await runView(String(req.query?.view || ""), auth.raw, req.query?.q ? { q: String(req.query.q).slice(0, 40) } : {}, auth.empId);
     return res.status(out.status).json(out.body);
   } catch (e) {
     return res.status(500).json({ success: false, error: e.message || "server_error" });
