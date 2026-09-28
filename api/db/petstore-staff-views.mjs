@@ -99,6 +99,30 @@ export default async function handler(req, res) {
       if (req.method === "POST") requestSync(String(auth.empId));
       return res.status(200).json({ success: true, data: syncStatus() });
     }
+    if (req.query?.view === "label_print" && req.method === "POST") {
+      // 标签打印:复用门店电脑上的价签服务(JF label-svc,0809 跑通的那条链路,TSC TE344)。
+      // Damon 0919「价签先审后打」:这里只打【果冻橙当前在售价】,⛔不接受手填价格,所以打出来的就是已经生效的价。
+      const code = String(req.body?.product_code || "").slice(0, 40);
+      const r = await pool.query(
+        `SELECT product_code, barcode, product_name, store_price, shelf_code FROM petstore_ops_row WHERE product_code=$1`, [code]);
+      const x = r.rows[0];
+      if (!x) return res.status(404).json({ success: false, error: "没找到这个商品" });
+      if (!(Number(x.store_price) > 0)) return res.status(400).json({ success: false, error: "这个商品没有售价,不能打" });
+      let shelf = String(x.shelf_code || "");
+      try { const j = JSON.parse(shelf); if (Array.isArray(j)) shelf = String(j[0] || ""); } catch { /* 不是 JSON */ }
+      const [shelfA, shelfB] = shelf.includes("-") ? shelf.split("-", 2) : [shelf, ""];
+      const token = readFileSync("/opt/sanlyn-api-test/.label_token", "utf8").trim();
+      const pr = await fetch("http://100.115.46.45:8781/print", {
+        method: "POST", headers: { "Content-Type": "application/json", "X-Label-Token": token },
+        body: JSON.stringify({ tpl: "price", n: 1, params: {
+          name_full: x.product_name, name_short: String(x.product_name || "").slice(0, 12),
+          price: Number(x.store_price).toFixed(2).replace(/\.00$/, ""), barcode: x.barcode || x.product_code,
+          shelf_a: shelfA, shelf_b: shelfB } }),
+        signal: AbortSignal.timeout(15000),
+      }).catch((e) => ({ ok: false, status: 0, _err: e.message }));
+      if (!pr.ok) return res.status(502).json({ success: false, error: "打印机没响应" + (pr.status ? "(" + pr.status + ")" : "") + ",看一下门店电脑和价签机是不是开着" });
+      return res.status(200).json({ success: true, message: "已发到价签机", price: Number(x.store_price) });
+    }
     if (req.query?.view === "pick_perf") {
       // 拣货绩效:我们自己的拣货记录(petstore_takeout_picks),果冻橙那边没有这份数据
       const r = await pool.query(
