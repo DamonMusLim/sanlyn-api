@@ -311,8 +311,7 @@ export async function authMiddleware(req, res, next) {
   // 自动化心跳上报:仅 POST + 正确 x-cron-secret 才免登录;GET 看板仍需登录
   // (2026-07-31: 之前被全局鉴权挡死,导致没有任何 job 能报心跳,美团/饿了么掉线 18 天没人看见)
   if (req.path === "/api/db/automation-hub" && req.method === "POST" &&
-      (req.headers["x-cron-secret"] || "") ===
-        (process.env.CRON_SECRET || "a931e0008d84d0e1a6f69129457dbe54")) {
+      process.env.CRON_SECRET && (req.headers["x-cron-secret"] || "") === process.env.CRON_SECRET) {  // 0928:去掉写死的默认值(它跟线上真值一样,且在 git 里)
     return next();
   }
 

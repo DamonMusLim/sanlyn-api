@@ -6,7 +6,7 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
-const CRON_SECRET = process.env.CRON_SECRET || "a931e0008d84d0e1a6f69129457dbe54";
+const CRON_SECRET = process.env.CRON_SECRET || "";  // 0928:去掉写死默认值;没配就谁都不放行
 const EDIT_ROLES = new Set(["admin", "finance"]);
 // 只允许改这些列(白名单,防注入任意列)
 const PROJECT_EDITABLE = new Set(["name", "description", "is_active", "tpl_key", "sender_key", "recipient_config"]);
@@ -52,7 +52,7 @@ export default async function handler(req, res) {
       const b = req.body || {};
       // ---- 心跳上报(自动任务自报状态):cron-secret,无 action ----
       if (b.job_key && !b.action) {
-        if ((req.headers["x-cron-secret"] || "") !== CRON_SECRET) return res.status(403).json({ error: "forbidden" });
+        if (!CRON_SECRET || (req.headers["x-cron-secret"] || "") !== CRON_SECRET) return res.status(403).json({ error: "forbidden" });
         await pool.query(
           `INSERT INTO automation_heartbeats(job_key,name,machine,schedule,category,status,metric,message,last_run,updated_at)
            VALUES($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9::timestamptz,now()),now())
