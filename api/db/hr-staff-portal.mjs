@@ -16,6 +16,7 @@ import { getPool, setCors } from "./db.js";
 import { verifyToken } from "./auth.js";
 import { restWeekdayOn } from "./hr-rest.mjs";
 import { tryStaffSubmit } from "./hr-staff-submits.mjs";
+import { savePhoto as savePhotoRequest } from "./hr-photo-todo.mjs";
 import {
   D, PRIVATE_ROOT, agendaFor, reviewPhoto, openChecklist,
   todoFor, saveReceipt, savePrivateIdCard, monthOf,
@@ -316,6 +317,15 @@ export default async function handler(req, res) {
         if (!id) return res.status(400).json({ success: false, error: "缺 id" });
         const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
         const done = b.status !== "open";
+        // 「客户要实拍」(kind=photo,hr-photo-todo 建的):完成必须带照片,照片进 hr_agenda_photos 给客服台取
+        const kind = (await pool.query(
+          "SELECT kind FROM hr_day_agenda WHERE id=$1 AND company_code=$2", [id, me.company_code])).rows[0]?.kind;
+        let photoPath = null;
+        if (kind === "photo" && done) {
+          if (!b.photo_base64) return res.status(400).json({ success: false, error: "要先拍照再点完成" });
+          try { photoPath = savePhotoRequest(b.photo_mime, b.photo_base64); }
+          catch (e) { return res.status(400).json({ success: false, error: e.message }); }
+        }
         const r = await pool.query(
           `UPDATE hr_day_agenda
               SET status=$1, done_by=$2, done_at=CASE WHEN $1='done' THEN now() ELSE NULL END
@@ -324,7 +334,12 @@ export default async function handler(req, res) {
             RETURNING id`,
           [done ? "done" : "open", done ? me.name : null, id, me.company_code, today, empId]);
         if (!r.rowCount) return res.status(400).json({ success: false, error: "没有这件事" });
-        return res.status(200).json({ success: true, message: done ? "已完成" : "已取消" });
+        if (photoPath) {
+          await pool.query(
+            "INSERT INTO hr_agenda_photos (agenda_id, photo_path, employee_id, employee_name) VALUES ($1,$2,$3,$4)",
+            [id, photoPath, empId, me.name]);
+        }
+        return res.status(200).json({ success: true, message: done ? (photoPath ? "照片已交，客服会发给顾客" : "已完成") : "已取消" });
       }
 
       // 开店点检:勾一条 或 跳过一条。跳过也留痕——店长看得到谁跳了什么。
