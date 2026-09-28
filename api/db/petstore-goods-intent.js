@@ -96,7 +96,7 @@ async function createIntent(pool, body, actor) {
     INSERT INTO public.petstore_shelf_action_intents
       (product_code, product_name, action, payload, reason, status, source)
     VALUES ($1, $2, $3, $4::jsonb, $5, 'proposed', $6)
-    ON CONFLICT (product_code) WHERE status IN ('proposed','approved','applying')
+    ON CONFLICT (product_code, action) WHERE status IN ('proposed','approved','applying')   -- 0929 跟 M137 新唯一索引对齐(按商品+动作)
     DO NOTHING
     RETURNING id, product_code, action, status, payload, reason, created_at`;
   const r = await pool.query(sql, [
