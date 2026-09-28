@@ -11,6 +11,7 @@
 import fs from "fs";
 import path from "path";
 import { getPool, setCors } from "./db.js";
+import { signUploadList, unsignUploadUrl } from "./lib/upload-link.mjs";
 
 const UPLOAD_DIR = "/opt/sanlyn-uploads/handbook";
 const PUBLIC_HOST = "https://ai.sanlyn.cn";
@@ -35,10 +36,15 @@ function normalizeImages(list) {
     if (im && im.base64) {
       out.push({ url: saveImage(im.filename, im.mime, im.base64), caption: im.caption || "" });
     } else if (im && im.url) {
-      out.push({ url: im.url, caption: im.caption || "" });
+      out.push({ url: unsignUploadUrl(im.url), caption: im.caption || "" });
     }
   }
   return out;
+}
+
+// 读出时把配图换成限时签名链接(ai.sanlyn.cn/uploads/… 是死链,见 lib/upload-link.mjs);库里仍存原 URL
+function withSigned(row) {
+  return row && Array.isArray(row.images) ? { ...row, images: signUploadList(row.images) } : row;
 }
 
 export default async function handler(req, res) {
@@ -55,7 +61,7 @@ export default async function handler(req, res) {
         const r = await pool.query("SELECT * FROM hr_handbook WHERE id=$1", [id]);
         if (!r.rows.length) return res.status(404).json({ success: false, error: "文章不存在" });
         pool.query("UPDATE hr_handbook SET view_count=view_count+1 WHERE id=$1", [id]).catch(() => {});
-        return res.status(200).json({ success: true, data: r.rows[0] });
+        return res.status(200).json({ success: true, data: withSigned(r.rows[0]) });
       }
 
       const params = [company]; const conds = ["company_code=$1"];
@@ -71,7 +77,7 @@ export default async function handler(req, res) {
                 is_published, view_count, updated_by, updated_at
            FROM hr_handbook WHERE ${conds.join(" AND ")}
           ORDER BY category, sort_order, id LIMIT $${params.length}`, params);
-      return res.status(200).json({ success: true, data: r.rows, count: r.rows.length, categories: CATEGORIES });
+      return res.status(200).json({ success: true, data: r.rows.map(withSigned), count: r.rows.length, categories: CATEGORIES });
     }
 
     if (req.method === "POST") {
@@ -86,7 +92,7 @@ export default async function handler(req, res) {
          RETURNING *`,
         [company, b.category || null, b.title, b.body || null, JSON.stringify(imgs),
          b.tags || null, b.visibility || null, b.sort_order ?? null, b.is_published ?? null, b.updated_by || null]);
-      return res.status(200).json({ success: true, data: r.rows[0] });
+      return res.status(200).json({ success: true, data: withSigned(r.rows[0]) });
     }
 
     if (req.method === "PATCH") {
@@ -107,7 +113,7 @@ export default async function handler(req, res) {
       params.push(b.id);
       const r = await pool.query(`UPDATE hr_handbook SET ${sets.join(", ")} WHERE id=$${params.length} RETURNING *`, params);
       if (!r.rows.length) return res.status(404).json({ success: false, error: "文章不存在" });
-      return res.status(200).json({ success: true, data: r.rows[0] });
+      return res.status(200).json({ success: true, data: withSigned(r.rows[0]) });
     }
 
     if (req.method === "DELETE") {
@@ -115,7 +121,7 @@ export default async function handler(req, res) {
       if (!id) return res.status(400).json({ success: false, error: "id 必填" });
       const r = await pool.query("DELETE FROM hr_handbook WHERE id=$1 RETURNING id,title", [id]);
       if (!r.rows.length) return res.status(404).json({ success: false, error: "文章不存在" });
-      return res.status(200).json({ success: true, data: r.rows[0] });
+      return res.status(200).json({ success: true, data: withSigned(r.rows[0]) });
     }
 
     return res.status(405).json({ success: false, error: "不支持的方法" });

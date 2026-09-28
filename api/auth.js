@@ -127,6 +127,8 @@ const PUBLIC_PATHS = [
   // handler 内 timingSafeEqual 比对,未配令牌 503 fail-closed。0928 实测:没列在这里时两个口都被全局鉴权挡成 401,从没通过。
   "/api/db/hr-ship-todo",
   "/api/db/hr-photo-todo",
+  // 员工端图片(点检/小票/手册/盘点):<img> 带不了登录头,凭 HMAC 限时签名放行,handler 自验(0928)
+  "/api/db/upload-file",
   "/api/db/hr-apply",   // 招聘自助投递(候选人无账号;接口内限流+字段截断+状态锁死new) [Claude 0728]
   "/api/db/forwarder-booking-submit",
   // Billing tab read-only lens — handler validates raw magic-link token itself

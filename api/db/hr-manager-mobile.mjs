@@ -1,3 +1,4 @@
+import { signUploadUrl } from "./lib/upload-link.mjs";
 const MANAGER_ROLE_FALLBACKS = new Set(["store_manager", "manager", "boss"]);
 const DEFAULT_BOSS_EMPLOYEE_IDS = "35";
 
@@ -217,7 +218,7 @@ export async function managerExtras(pool, empId, me) {
   const reimbRows = (reimb.rows || []).map((x) => ({
     id: x.id, employee_id: x.employee_id, employee_name: x.employee_name,
     store_id: x.store_id, amount: x.amount, item_desc: x.item_desc,
-    purchase_date: x.purchase_date, receipt_url: x.receipt_url, status: x.status, created_at: x.created_at,
+    purchase_date: x.purchase_date, receipt_url: signUploadUrl(x.receipt_url), status: x.status, created_at: x.created_at,
   }));
   const rollup = await buildApprovalsSummary(pool, {
     caps,

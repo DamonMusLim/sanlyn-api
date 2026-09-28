@@ -6,6 +6,7 @@
 // ⚠️打卡关联的已知弱点：mini 源表 staff_checkin 只有 staff_name 自由文本、无工号，
 // 故打卡只能按【姓名字面匹配】挂到员工上。改名/同名会断。要根治须在打卡录入端接花名册选人。
 import { getPool, setCors } from "./db.js";
+import { signUploadUrl } from "./lib/upload-link.mjs";
 
 function monthRange(month) {
   const m = /^\d{4}-\d{2}$/.test(String(month || "")) ? month : null;
@@ -102,7 +103,7 @@ async function oneProfile(pool, employeeId, range) {
     shifts: shifts.rows.map((s) => ({ ...s, hours: Math.round(hoursOf(s) * 100) / 100 })),
     checkins: checkins.rows,
     leaves: leaves.rows,
-    reimbursements: reimb.rows,
+    reimbursements: reimb.rows.map((x) => ({ ...x, receipt_url: signUploadUrl(x.receipt_url) })),
     stats: {
       scheduled_days: scheduledDates.size,
       scheduled_hours: scheduledHours,

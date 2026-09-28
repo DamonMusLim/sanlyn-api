@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { signUploadList } from "./lib/upload-link.mjs";
 
 const UPLOAD_DIR = "/opt/sanlyn-uploads/staff-stock-report";
 const PUBLIC_HOST = "https://ai.sanlyn.cn";
@@ -232,7 +233,7 @@ async function listReports(pool, me, empId, b) {
       GROUP BY product_code HAVING COUNT(*) >= 2
       ORDER BY reports DESC, product_code LIMIT 20`,
     [me.company_code]) : { rows: [] };
-  return { status: 200, body: { success: true, rows: r.rows, frequent_rank: rank.rows, manager } };
+  return { status: 200, body: { success: true, rows: r.rows.map((x) => ({ ...x, photos: signUploadList(x.photos), found_photos: signUploadList(x.found_photos) })), frequent_rank: rank.rows, manager } };
 }
 
 async function confirmLoss(pool, me, b, now) {

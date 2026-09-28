@@ -4,6 +4,7 @@
 // 走 ai.sanlyn.cn/uploads/reimbursement/... 静态访问，≤6MB，仅图片。
 import fs from "fs";
 import path from "path";
+import { signUploadUrl } from "./lib/upload-link.mjs";
 import { getPool, setCors } from "./db.js";
 import { requireAuth } from "./auth.js";
 import { reportFailure } from "./lib/report-failure.mjs";
@@ -53,7 +54,7 @@ export default async function handler(req, res) {
         "SELECT COUNT(*) AS total, count(*) FILTER (WHERE status='pending') AS pending, "
         + "COALESCE(SUM(amount) FILTER (WHERE status='approved'),0) AS approved_total FROM hr_reimbursements"
       );
-      return res.status(200).json({ success: true, data: rows.rows, count: parseInt(c.rows[0].total), stats: c.rows[0] });
+      return res.status(200).json({ success: true, data: rows.rows.map((x) => ({ ...x, receipt_url: signUploadUrl(x.receipt_url) })), count: parseInt(c.rows[0].total), stats: c.rows[0] });
     }
 
     if (req.method === "POST") {

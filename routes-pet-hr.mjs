@@ -8,6 +8,7 @@ export function registerPetHrRoutes(mount) {
   mount("/api/db/hr-rest", () => import("./api/db/hr-rest.mjs"));
   mount("/api/db/hr-ship-todo", () => import("./api/db/hr-ship-todo.mjs"));
   mount("/api/db/hr-photo-todo", () => import("./api/db/hr-photo-todo.mjs")); // 客户要实拍→店员今日待办(0928)
+  mount("/api/db/upload-file", () => import("./api/db/upload-file.mjs")); // 员工端图片限时签名链接(0928)
   mount("/api/db/hr-holiday", () => import("./api/db/hr-holiday.mjs"));
   mount("/api/db/hr-contract", () => import("./api/db/hr-contract.mjs"));
   mount("/api/db/hr-shifts", () => import("./api/db/hr-shifts.mjs"));
