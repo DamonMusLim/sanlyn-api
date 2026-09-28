@@ -73,7 +73,22 @@ export async function todayReport(pool) {
        FROM petstore_takeout_picks
       WHERE completed_at IS NOT NULL AND (completed_at AT TIME ZONE 'Asia/Shanghai')::date = ${TODAY}
       GROUP BY order_no ORDER BY max(completed_at)`);
+  // 0929 店员核对卡 → 系统自动改果冻橙(货位 SET_SHELF / 库存 SET_STOCK),结果都要让老板看见
+  const checks = await pool.query(
+    `SELECT id, action, product_name, status, COALESCE(result,'') AS result, payload
+       FROM petstore_shelf_action_intents
+      WHERE source LIKE 'clerk_card%'
+        AND (COALESCE(applied_at, created_at) AT TIME ZONE 'Asia/Shanghai')::date = ${TODAY}
+      ORDER BY id`);
   return {
+    checks: checks.rows.map((r) => {
+      const p = r.payload || {};
+      const res = String(r.result || "");
+      const state = r.status === "applied" ? (/^no_change/.test(res) ? "无需改" : "已改好")
+        : r.status === "failed" ? "没改成" : /^held/.test(res) ? "留给店长看" : (r.action === "SET_SHELF" && !p.to ? "只有照片,待看" : "排队中");
+      return { id: r.id, kind: r.action === "SET_SHELF" ? "货位" : "库存", name: r.product_name, state,
+               result: res.replace(/^(ok|no_change|held|unverified): ?/, ""), photo: p.photo || "" };
+    }),
     takeout: takeout.rows.map((r) => ({ order_no: r.order_no, ok: !!r.ok, result: r.result || "" })),
     price_done: did,
     price_skipped: skippedOther,
