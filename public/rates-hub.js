@@ -1,4 +1,4 @@
-var VERSION="v2026.09.13-3";
+var VERSION="v2026.09.28-3";
 var state={tab:"ocean",view:"manual",filters:{pol:"",pod:"",carrier:""},expanded:{},coverage:{},data:{ocean:[],ocean_plans:[],ocean_bills:[],tariff:[],matrices:[],matrix_items:[],local:[],local_charge_options:[],truck:[],truck_legacy:[],customs:[],insurance:[]},count:{}};
 var tabSources={ocean:["ocean","ocean_plans","ocean_bills"],charges:["tariff","matrices","matrix_items","local"],truck:["truck","truck_legacy"],customs:["customs"],insurance:["insurance"]};
 var cols={
@@ -30,8 +30,14 @@ function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return
 function blank(v){return v===null||v===undefined||v==="";}
 function cell(v){return blank(v)?'<span class="na">未设置</span>':esc(v);}
 function attr(v){return esc(v).replace(/'/g,"&#39;");}
+function moduleUrl(extra){
+  var p=new URLSearchParams(query());p.set("tab",state.tab);p.set("view",state.view);
+  Object.keys(extra||{}).forEach(function(k){p.set(k,extra[k]);});
+  return location.pathname+"?"+p.toString();
+}
 function openWorkbenchTab(title,url){var msg={type:"sanlyn:open-tab",protocol:"sanlyn:open-tab",title:title,url:url};if(window.parent!==window)window.parent.postMessage(msg,location.origin);else window.open("/wb-tabs?open="+encodeURIComponent(url),"_blank","noopener");}
-function postReady(){if(window.parent!==window)window.parent.postMessage({type:"sanlyn:module-ready",protocol:"sanlyn:open-tab",module:"rates-hub",title:"运价管理",url:location.pathname+location.search,accepts:["sanlyn:rates-hub:set-tab","sanlyn:rates-hub:set-view","sanlyn:rates-hub:refresh"]},location.origin);}
+function postReady(){if(window.parent!==window)window.parent.postMessage({type:"sanlyn:module-ready",protocol:"sanlyn:open-tab",module:"rates-hub",title:"运价管理",url:moduleUrl(),accepts:["sanlyn:rates-hub:set-tab","sanlyn:rates-hub:set-view","sanlyn:rates-hub:refresh"]},location.origin);}
+function markEmbedded(){if(window.parent!==window)document.body.classList.add("sanlyn-embedded");}
 function initFromUrl(){var p=new URLSearchParams(location.search),tab=p.get("tab"),view=p.get("view");if(tabSources[tab])state.tab=tab;if(view==="manual"||view==="data")state.view=view;}
 function onShellMessage(event){
   if(event.origin!==location.origin)return;
@@ -77,10 +83,10 @@ function renderValue(r,c){
   if(mode2==="margin40")return money(diff(r.customer_hq40,r.hq40));
   return cell(v);
 }
-function fillRate(rows,keys){var total=rows.length*keys.length,filled=0;if(!total)return "未接入";rows.forEach(function(r){keys.forEach(function(k){if(!blank(r[k]))filled++;});});return Math.round(filled*100/total)+"%";}
+function fillRate(rows,keys){var total=rows.length*keys.length,filled=0;if(!total)return "未接入";rows.forEach(function(r){keys.forEach(function(k){if(!blank(r[k]))filled++;});});return filled?Math.round(filled*100/total)+"%":"未接入";}
 function cov(key){return state.coverage&&state.coverage[key]||null;}
 function pctText(filled,total){if(!total)return "未接入";return (Math.round(filled*1000/total)/10).toFixed(1).replace(/\.0$/,"")+"%";}
-function covRate(key){var c=cov(key);if(!c||!c.fields||!c.fields.length)return fillRate(state.data[key]||[],required[key]||[]);var total=0,filled=0,ready=false;c.fields.forEach(function(f){if(f.state==="ready"){ready=true;total+=Number(f.total||0);filled+=Number(f.filled||0);}});return ready&&total?pctText(filled,total):"未接入";}
+function covRate(key){var c=cov(key);if(!c||!c.fields||!c.fields.length)return fillRate(state.data[key]||[],required[key]||[]);var total=0,filled=0,ready=false;c.fields.forEach(function(f){if(f.state==="ready"){ready=true;total+=Number(f.total||0);filled+=Number(f.filled||0);}});return ready&&total&&filled?pctText(filled,total):"未接入";}
 function requiredSummary(key){var c=cov(key),table=(c&&c.table)||key;return (required[key]||[]).map(function(x){return table+"."+x;}).join(" / ");}
 function rowMissing(key){return "真实记录；需验证字段 "+requiredSummary(key);}
 function covMissing(key){var c=cov(key);if(!c)return requiredSummary(key);var m=c.missing_fields||[];return m.length?m.map(function(x){return x.indexOf(".")>=0?x:((c.table?c.table+".":"")+x);}).join(" / "):(Number(c.total_rows||0)?"真实记录":rowMissing(key));}
@@ -156,7 +162,7 @@ function fieldRows(key){
   else (required[key]||[]).forEach(function(name){rows.push({table:key,name:name,state:"not_connected",total:0,filled:0,rate:null});});
   return rows;
 }
-function fillText(f){return f.state==="ready"&&f.total&&f.filled?esc(f.filled+"/"+f.total):"未接入：缺 "+esc(f.table+"."+f.name);}
+function fillText(f){var rate=f.state==="ready"&&f.total&&f.filled?pctText(f.filled,f.total):"未接入";return f.state==="ready"&&f.total&&f.filled?esc(f.filled+"/"+f.total+"；当前填充率 "+rate):"未接入：缺 "+esc(f.table+"."+f.name)+"；当前填充率 "+esc(rate);}
 function fieldStateLabel(f){if(f.state!=="ready"||!f.total||!f.filled)return "未接入";return f.filled<f.total?"部分接入":"已接入";}
 function tabFieldStats(){
   var total=0,filled=0,missing=0,rows=0;
@@ -228,8 +234,8 @@ async function load(){
     state.data=defaultData();state.count={};state.coverage={};
     $("stamp").textContent=VERSION+" · 生成时间 "+new Date().toLocaleString("zh-CN");
     draw();
-    $("sub").textContent="读取失败："+e.message;
-    $("content").insertAdjacentHTML("afterbegin",'<section class="hgj-card"><div class="err">读取失败：'+esc(e.message)+"；未接入：缺 /api/db/rates-hub 响应；当前填充率 未接入。</div></section>");
+    $("sub").textContent="未接入：缺 /api/db/rates-hub requireAuth 后的真实响应；当前填充率 未接入。";
+    $("content").insertAdjacentHTML("afterbegin",'<section class="hgj-card"><div class="err">未接入：缺 /api/db/rates-hub requireAuth 后的真实响应；错误 '+esc(e.message)+"；当前填充率 未接入。</div></section>");
   }
 }
 function csvValue(v){return '"' + String(blank(v)?"":v).replace(/"/g,'""') + '"';}
@@ -248,13 +254,14 @@ document.querySelectorAll("[data-view]").forEach(function(b){b.onclick=function(
 document.querySelectorAll("#manualMenu [data-step]").forEach(function(b){b.onclick=function(){setTab(b.dataset.step);};});
 ["polFilter","podFilter","carrierFilter"].forEach(function(id){$(id).addEventListener("change",function(e){var t=e.target;if(t&&t.id){state.filters[t.id]=t.value;load();}});});
 $("active").onchange=load;$("showVoid").onchange=load;$("search").onclick=load;$("csv").onclick=exportCsv;$("newRate").onclick=function(){window.RatesHubEdit.openNew();};
-$("openShell").onclick=function(){openWorkbenchTab("运价管理",location.pathname+"?"+query());};
+$("openShell").onclick=function(){openWorkbenchTab("运价管理",moduleUrl());};
 $("content").onclick=function(e){if(window.RatesHubEdit&&window.RatesHubEdit.handleClick(e))return;if(window.RatesHubCharges&&window.RatesHubCharges.handleClick(e))return;var m=e.target.closest("[data-matrix]");if(m){state.expanded[m.dataset.matrix]=!state.expanded[m.dataset.matrix];draw();return;}var rr=e.target.closest("tr[data-rate-row]");if(rr){window.RatesHubEdit.openDetail(findOceanRow(rr.dataset.rateRow));return;}var row=e.target.closest("tr[data-url]");if(!row||e.target.closest("button"))return;openWorkbenchTab(row.dataset.title,row.dataset.url);};
 $("manualStrip").onclick=function(e){var b=e.target.closest("[data-step-tab]");if(b)setTab(b.dataset.stepTab);};
 window.addEventListener("message",onShellMessage);
 function findOceanRow(id){return state.data.ocean.find(function(r){return String(r.id)===String(id);})||null;}
 window.RatesHubEdit.init({token:function(){return SanlynTable.token();},refresh:load,findRow:findOceanRow,localChargeOptions:function(){return state.data.local_charge_options||[];}});
 initFromUrl();
+markEmbedded();
 setView(state.view);
 postReady();
 load();

@@ -2,8 +2,9 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { normalizeCargoType } from "./lib/cargo-type-enum.js";
+import { businessCoverage, businessLens, businessMissing } from "./manifest-business-lens.js";
 
-const VERSION = "v2026.09.05-1";
+const VERSION = "v2026.09.27-1";
 const READ_ROLES = new Set(["admin", "logistics", "sales", "ops", "finance"]);
 const HEADER_FIELDS = [
   ["shipment_no", "舱单编号"], ["company_code", "委托单位"], ["carrier", "船公司"],
@@ -26,13 +27,6 @@ const HEADER_FIELDS = [
 const LINE_FIELDS = [
   ["declaration_name", "申报品名"], ["hs_code", "HS编码"], ["ctns", "箱数"],
   ["gw_kg", "毛重"], ["amount", "逐项货值"],
-];
-const BUSINESS_FIELDS = [
-  ["order_status", "订单进程", "orders", "status"],
-  ["plan_status", "海运进程", "shipping_plans", "status"],
-  ["order_type", "订单类型", "orders", "type"],
-  ["business_type", "业务类型", "orders", "mode"],
-  ["business_exception", "业务异常", "shipping_plans", "dq_status"],
 ];
 const SEND_FIELDS = [
   ["declaration_channel_status", "申报通道状态"],
@@ -63,11 +57,13 @@ function pct(filled, total) {
 
 async function columns(pool, table) {
   const r = await pool.query(
-    `SELECT column_name FROM information_schema.columns
+    `SELECT column_name, data_type, udt_name FROM information_schema.columns
       WHERE table_schema = current_schema() AND table_name = $1`,
     [table]
   );
-  return new Set(r.rows.map((x) => x.column_name));
+  const set = new Set(r.rows.map((x) => x.column_name));
+  set.types = new Map(r.rows.map((x) => [x.column_name, x.udt_name || x.data_type]));
+  return set;
 }
 
 async function tableExists(pool, table) {
@@ -91,16 +87,6 @@ function coverage(rows, fields, colSet) {
     }
     const filled = rows.filter((r) => hasValue(r[name])).length;
     return { name, label, state: "ready", filled, total, fill_rate: pct(filled, total) };
-  });
-}
-
-function derivedCoverage(rows, fields, availability) {
-  const total = rows.length;
-  return fields.map(([name, label, table, column]) => {
-    const ok = availability[`${table}.${column}`] === true;
-    if (!ok) return { name, label, source: `${table}.${column}`, state: "not_connected", filled: 0, total, fill_rate: null };
-    const filled = rows.filter((r) => hasValue(r[name])).length;
-    return { name, label, source: `${table}.${column}`, state: "ready", filled, total, fill_rate: pct(filled, total) };
   });
 }
 
@@ -143,24 +129,13 @@ function missingFor(row, fields, colSet) {
     .map(([name, label]) => ({ name, label, reason: colSet.has(name) ? "empty" : "not_connected" }));
 }
 
-function businessMissing(row, availability) {
-  return BUSINESS_FIELDS
-    .filter(([name, label, table, column]) => availability[`${table}.${column}`] !== true || !hasValue(row[name]))
-    .map(([name, label, table, column]) => ({
-      name,
-      label,
-      source: `${table}.${column}`,
-      reason: availability[`${table}.${column}`] === true ? "empty" : "not_connected",
-    }));
-}
-
-function rowOut(row, colSet, availability) {
+function rowOut(row, colSet, businessFields) {
   const missing = missingFor(row, HEADER_FIELDS, colSet);
   const cargoType = normalizeCargoType(colSet.has("cargo_type") ? row.cargo_type : null);
   if (cargoType.state === "unmapped") {
     missing.push({ name: "cargo_type_enum", label: "货物属性内部枚举", reason: "unmapped" });
   }
-  const bizMissing = businessMissing(row, availability);
+  const bizMissing = businessMissing(row, businessFields);
   return {
     id: row.id,
     shipment_no: row.shipment_no,
@@ -181,12 +156,17 @@ function rowOut(row, colSet, availability) {
     consignee_name: row.consignee_name,
     notify_name: row.notify_name,
     order_no: row.order_no,
-    contract_no: row.contract_no,
+    contract_no: row.order_contract_no || row.contract_no,
     order_status: row.order_status,
+    order_status_source: row.order_status_source,
     plan_status: row.plan_status,
+    plan_status_source: row.plan_status_source,
     order_type: row.order_type,
+    order_type_source: row.order_type_source,
     business_type: row.business_type,
+    business_type_source: row.business_type_source,
     business_exception: row.business_exception,
+    business_exception_source: row.business_exception_source,
     business_missing_count: bizMissing.length,
     business_missing: bizMissing,
     cargo_type_enum: cargoType.code,
@@ -198,35 +178,6 @@ function rowOut(row, colSet, availability) {
     missing_count: missing.length,
     missing,
   };
-}
-
-function orderJoin(ctx) {
-  const c = ctx.shipmentCols, o = ctx.orderCols, conds = [];
-  if (!ctx.hasOrders) return "";
-  if (c.has("order_id") && o.has("id")) conds.push("o.id = s.order_id");
-  if (c.has("contract_no") && o.has("contract_no")) conds.push("NULLIF(o.contract_no,'') = NULLIF(s.contract_no,'')");
-  if (c.has("bl_no") && o.has("bl_no")) conds.push("NULLIF(o.bl_no,'') = NULLIF(s.bl_no,'')");
-  if (c.has("shipping_plan_id") && o.has("shipping_plan_id")) conds.push("o.shipping_plan_id::text = s.shipping_plan_id::text");
-  if (!conds.length) return "";
-  return `LEFT JOIN LATERAL (
-    SELECT ${expr("o", o, "order_no")}, ${expr("o", o, "contract_no")},
-      ${expr("o", o, "status", "order_status")}, ${expr("o", o, "type", "order_type")},
-      ${expr("o", o, "mode", "business_type")}
-    FROM orders o WHERE ${conds.join(" OR ")} ORDER BY ${o.has("id") ? "o.id DESC" : "1"} LIMIT 1
-  ) o ON true`;
-}
-
-function planJoin(ctx) {
-  const c = ctx.shipmentCols, p = ctx.planCols, conds = [];
-  if (!ctx.hasPlans) return "";
-  if (c.has("shipping_plan_id") && p.has("id")) conds.push("sp.id::text = s.shipping_plan_id::text");
-  if (c.has("shipping_plan_id") && p.has("_id")) conds.push("sp._id::text = s.shipping_plan_id::text");
-  if (c.has("bl_no") && p.has("bl_no")) conds.push("NULLIF(sp.bl_no,'') = NULLIF(s.bl_no,'')");
-  if (!conds.length) return "";
-  return `LEFT JOIN LATERAL (
-    SELECT ${expr("sp", p, "status", "plan_status")}, ${expr("sp", p, "dq_status", "business_exception")}
-    FROM shipping_plans sp WHERE ${conds.join(" OR ")} ORDER BY ${p.has("id") ? "sp.id DESC" : "1"} LIMIT 1
-  ) sp ON true`;
 }
 
 async function listShipments(pool, ctx, q) {
@@ -247,20 +198,22 @@ async function listShipments(pool, ctx, q) {
   const lineAgg = ctx.hasLines && colSet.has("id")
     ? ", (SELECT COUNT(*)::int FROM customs_shipment_lines ln WHERE ln.shipment_id = s.id) AS line_count"
     : ", NULL::int AS line_count";
-  const orderLens = orderJoin(ctx);
-  const planLens = planJoin(ctx);
+  const lens = ctx.businessLens;
+  const companyParts = ctx.hasCompanies && colSet.has("company_code") && ctx.companyCols.has("code")
+    ? ["name_cn", "name_en", "name"].filter((name) => ctx.companyCols.has(name)).map((name) => `c.${name}`).concat("s.company_code")
+    : [];
+  const companyName = companyParts.length ? `COALESCE(${companyParts.join(", ")})` : (colSet.has("company_code") ? "s.company_code" : "NULL::text");
   params.push(limit);
   const sql = `
     SELECT ${idExpr} AS id, ${HEADER_FIELDS.map(([name]) => expr("s", colSet, name)).join(", ")},
       ${expr("s", colSet, "contract_no")}, ${expr("s", colSet, "etd")}, ${expr("s", colSet, "status")},
-      ${colSet.has("company_code") ? "COALESCE(c.name_cn, c.name_en, s.company_code)" : "NULL::text"} AS company_name,
-      ${orderLens ? "o.order_no, o.contract_no AS order_contract_no, o.order_status, o.order_type, o.business_type" : "NULL::text AS order_no, NULL::text AS order_contract_no, NULL::text AS order_status, NULL::text AS order_type, NULL::text AS business_type"},
-      ${planLens ? "sp.plan_status, sp.business_exception" : "NULL::text AS plan_status, NULL::text AS business_exception"}
+      ${companyName} AS company_name,
+      ${lens.select}
       ${containerAgg}${lineAgg}
     FROM customs_shipments s
-    ${colSet.has("company_code") ? "LEFT JOIN companies c ON c.code = s.company_code" : ""}
-    ${orderLens}
-    ${planLens}
+    ${ctx.hasCompanies && colSet.has("company_code") && ctx.companyCols.has("code") ? "LEFT JOIN companies c ON c.code = s.company_code" : ""}
+    ${lens.joins.order}
+    ${lens.joins.plan}
     ${conds.length ? "WHERE " + conds.join(" AND ") : ""}
     ORDER BY ${orderSql(colSet)} LIMIT $${params.length}`;
   const r = await pool.query(sql, params);
@@ -284,24 +237,6 @@ async function lineSummary(pool, hasLines, lineCols, id) {
     total_rows: total,
     fields: lineCoverageRows(total, row, lineCols),
   };
-}
-
-function businessAvailability(ctx) {
-  return {
-    "orders.status": ctx.hasOrders && ctx.hasOrderJoin && ctx.orderCols.has("status"),
-    "orders.type": ctx.hasOrders && ctx.hasOrderJoin && ctx.orderCols.has("type"),
-    "orders.mode": ctx.hasOrders && ctx.hasOrderJoin && ctx.orderCols.has("mode"),
-    "shipping_plans.status": ctx.hasPlans && ctx.hasPlanJoin && ctx.planCols.has("status"),
-    "shipping_plans.dq_status": ctx.hasPlans && ctx.hasPlanJoin && ctx.planCols.has("dq_status"),
-  };
-}
-
-function hasOrderJoin(ctx) {
-  return Boolean(orderJoin(ctx));
-}
-
-function hasPlanJoin(ctx) {
-  return Boolean(planJoin(ctx));
 }
 
 export default async function handler(req, res) {
@@ -334,26 +269,26 @@ export default async function handler(req, res) {
     const hasLines = await tableExists(pool, "customs_shipment_lines");
     const hasOrders = await tableExists(pool, "orders");
     const hasPlans = await tableExists(pool, "shipping_plans");
+    const hasCompanies = await tableExists(pool, "companies");
     const orderCols = hasOrders ? await columns(pool, "orders") : new Set();
     const planCols = hasPlans ? await columns(pool, "shipping_plans") : new Set();
     const lineCols = hasLines ? await columns(pool, "customs_shipment_lines") : new Set();
-    const ctx = { shipmentCols, hasContainers, hasLines, hasOrders, hasPlans, orderCols, planCols };
-    ctx.hasOrderJoin = hasOrderJoin(ctx);
-    ctx.hasPlanJoin = hasPlanJoin(ctx);
-    const availability = businessAvailability(ctx);
+    const companyCols = hasCompanies ? await columns(pool, "companies") : new Set();
+    const ctx = { shipmentCols, hasContainers, hasLines, hasOrders, hasPlans, hasCompanies, orderCols, planCols, companyCols };
+    ctx.businessLens = businessLens(ctx);
     const rows = await listShipments(pool, ctx, req.query || {});
     const fields = coverage(rows, HEADER_FIELDS, shipmentCols).concat(cargoEnumCoverage(rows, shipmentCols));
-    const businessFields = derivedCoverage(rows, BUSINESS_FIELDS, availability);
+    const businessFields = businessCoverage(rows, ctx.businessLens.availability);
     const sendCoverage = coverage(rows, SEND_FIELDS, shipmentCols);
     const wantId = clean(req.query?.id, 80);
     const selectedRow = rows.find((r) => String(r.id) === wantId) || rows[0] || null;
-    const selected = selectedRow ? rowOut(selectedRow, shipmentCols, availability) : null;
+    const selected = selectedRow ? rowOut(selectedRow, shipmentCols, businessFields) : null;
     const lines = selected ? await lineSummary(pool, hasLines, lineCols, selected.id) : { state: "not_connected", total_rows: 0, fields: lineCoverageRows(0, null, lineCols) };
     return res.status(200).json({
       success: true,
       version: VERSION,
       generated_at: new Date().toISOString(),
-      data: rows.map((r) => rowOut(r, shipmentCols, availability)),
+      data: rows.map((r) => rowOut(r, shipmentCols, businessFields)),
       selected,
       line_summary: lines,
       coverage: { total_rows: rows.length, fields, business_fields: businessFields, line_fields: lines.fields, send_fields: sendCoverage },

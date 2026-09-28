@@ -411,6 +411,7 @@ async function runSource(pool, key, built) {
   const r = await pool.query(built.sql, built.params);
   return { rows: r.rows, coverage: sourceCoverage(key, r.rows, new Set([...cols, ...joinedCols]), false) };
 }
+const optionalRows = (promise) => promise.then((r) => r.rows || r).catch(() => []);
 
 export async function loadRatesHub(pool, q = {}) {
   const activeOnly = truthy(q.active_only, false);
@@ -432,12 +433,12 @@ export async function loadRatesHub(pool, q = {}) {
   const portOptionsQuery = buildPortOptions(), carrierOptionsQuery = buildCarrierOptions(), sailingLanesQuery = buildSailingLanes();
   const [packs, localChargeOptions, containerTypeOptions, portOptions, carrierOptions, forwarderOptions, sailingLanes] = await Promise.all([
     Promise.all(keys.map((key) => runSource(pool, key, built[key]))),
-    pool.query(localChargeOptionsQuery.sql, localChargeOptionsQuery.params).then((r) => r.rows),
-    loadContainerTypeOptions(pool),
-    pool.query(portOptionsQuery.sql, portOptionsQuery.params).then((r) => r.rows),
-    pool.query(carrierOptionsQuery.sql, carrierOptionsQuery.params).then((r) => r.rows),
-    loadForwarderOptions(pool),
-    pool.query(sailingLanesQuery.sql, sailingLanesQuery.params).then((r) => r.rows)
+    optionalRows(pool.query(localChargeOptionsQuery.sql, localChargeOptionsQuery.params)),
+    optionalRows(loadContainerTypeOptions(pool)),
+    optionalRows(pool.query(portOptionsQuery.sql, portOptionsQuery.params)),
+    optionalRows(pool.query(carrierOptionsQuery.sql, carrierOptionsQuery.params)),
+    optionalRows(loadForwarderOptions(pool)),
+    optionalRows(pool.query(sailingLanesQuery.sql, sailingLanesQuery.params))
   ]);
   const byKey = Object.fromEntries(keys.map((key, i) => [key, packs[i]]));
   const oceanRows = await attachFreightRateBoxes(pool, byKey.ocean.rows);

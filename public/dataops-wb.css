@@ -167,7 +167,7 @@ table.mini td.ttl{white-space:normal;max-width:420px;line-height:1.45}
    只剩经营台,竞品/采购建议/选品表都点不到。窄屏改成顶部一排横滑页签,不藏。 */
 @media(max-width:900px){
   .app{display:block}
-  .app>.side{display:flex!important;width:auto;flex:none;padding:6px 8px;gap:4px;overflow-x:auto;
+  .app>.side{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;height:auto!important;min-height:0!important;position:static!important;width:auto!important;flex:none;padding:6px 8px;gap:4px;overflow-x:auto;
    white-space:nowrap;align-items:center;border-bottom:1px solid rgba(128,140,165,.22);-webkit-overflow-scrolling:touch}
   .side .brand,.side .sgrp{display:none}
   .side .snav{flex:none;padding:6px 11px;border-left:0;border-radius:999px;font-size:12.5px}

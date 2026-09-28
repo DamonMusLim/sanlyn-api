@@ -2,7 +2,7 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
-const READ_ROLES = new Set(["admin", "logistics", "sales", "ops", "finance", "operator", "ceo", "superadmin"]);
+const READ_ROLES = new Set(["admin", "logistics", "sales", "ops", "finance", "operator", "ceo", "superadmin", "super_admin"]);
 const CORE_FIELDS = [
   ["shipment_no", "CY号"], ["booking_no", "订舱号"], ["forwarder_booking_no", "货代订舱号"],
   ["so_no", "SO号"], ["bl_no", "提单号"], ["carrier_code", "船公司"], ["forwarder_cn", "货代"],
@@ -20,6 +20,8 @@ const DOC_LINK_FIELDS = [
   ["file_url", "资料下载URL"],
   ["doc_type", "资料类型"],
 ];
+const DOC_REF_FIELDS = ["order_no", "contract_no", "shipping_plan_id"];
+const DOC_TABLE_LABEL = "document_files/ocean_doc_intake";
 
 function fail(res, status, error) {
   return res.status(status).json({ success: false, error });
@@ -115,13 +117,14 @@ function stateConds(colSet, params, q) {
   const refSql = bookingRefSql(colSet);
   if (state === "ready" && refSql) return [`${refSql} IS NOT NULL`];
   if (state === "missing_booking" && refSql) return [`${refSql} IS NULL`];
+  if (state === "not_connected") return [refSql ? "FALSE" : "TRUE"];
   params.push(state);
   return ["$" + params.length + " = 'not_connected'"];
 }
 
 async function listRows(pool, colSet, q) {
-  const limit = Math.min(parseInt(q.limit, 10) || 100, 200);
   const nextOnly = clean(q.next, 4) === "1";
+  const limit = Math.min(parseInt(q.limit, 10) || (nextOnly ? 1 : 100), 200);
   const params = [];
   const conds = [];
   if (colSet.has("deleted_at")) conds.push("s.deleted_at IS NULL");
@@ -129,14 +132,15 @@ async function listRows(pool, colSet, q) {
   conds.push(...searchConds(colSet, params, q));
   conds.push(...stateConds(colSet, params, q));
   params.push(limit);
-  const fields = CORE_FIELDS.concat(CHANNEL_FIELDS).map(([name]) => colExpr(name, colSet)).join(", ");
+  const fields = CORE_FIELDS.concat(CHANNEL_FIELDS).map(([name]) => colExpr(name, colSet));
+  DOC_REF_FIELDS.forEach((name) => fields.push(colExpr(name, colSet)));
   const id = colSet.has("id") ? "s.id" : "NULL::int AS id";
   const sid = colSet.has("_id") ? "s._id" : "NULL::text AS _id";
   const order = colSet.has("etd")
     ? (nextOnly ? "s.etd ASC NULLS LAST" : "s.etd DESC NULLS LAST")
     : (colSet.has("updated_at") ? "s.updated_at DESC NULLS LAST" : "1");
   const r = await pool.query(
-    `SELECT ${id}, ${sid}, ${fields}
+    `SELECT ${id}, ${sid}, ${fields.join(", ")}
        FROM shipping_plans s
       ${conds.length ? "WHERE " + conds.join(" AND ") : ""}
       ORDER BY ${order}
@@ -146,11 +150,16 @@ async function listRows(pool, colSet, q) {
   return r.rows;
 }
 
-function docKind(type, name) {
+function docKind(type, name, signed) {
+  if (signed === true || signed === "true" || signed === "1") return "signed";
   const s = `${type || ""} ${name || ""}`.toLowerCase();
-  if (/bl|b\/l|bill\s*of\s*lading|提单/.test(s)) return "bl";
-  if (/sign|signed|seal|stamp|签|盖章|签单/.test(s)) return "signed";
+  if (/sign|signed|seal|stamp|release|telex|surrender|original|签|盖章|签单|电放|放单/.test(s)) return "signed";
+  if (/\bbl\b|b\/l|bill\s*of\s*lading|lading|提单|提貨單|提货单/.test(s)) return "bl";
   return "other";
+}
+
+function isTargetDoc(d) {
+  return hasValue(d?.url) && (d.kind === "bl" || d.kind === "signed");
 }
 
 function rememberDoc(docsByKey, key, doc) {
@@ -173,9 +182,39 @@ function docCoverage(rows, docStatus) {
     if (name === "doc_type" && !docStatus.typeCol) {
       return { name, label, table: "document_files/ocean_doc_intake", state: "not_connected", filled: 0, total: rows.length, fill_rate: null };
     }
-    const filled = rows.filter((r) => (r.docs || []).some((d) => name === "file_url" ? hasValue(d.url) : hasValue(d.type))).length;
+    const filled = rows.filter((r) => (r.docs || []).some((d) => name === "file_url" ? isTargetDoc(d) : isTargetDoc(d) && hasValue(d.type))).length;
     return { name, label, table: "document_files/ocean_doc_intake", state: "ready", filled, total: rows.length, fill_rate: pct(filled, rows.length) };
   });
+}
+
+function channelStatus(rows, colSet) {
+  const channelFields = coverage(rows, CHANNEL_FIELDS, colSet);
+  const ready = channelFields.filter((f) => f.state === "ready");
+  const readyWithData = ready.filter((f) => Number(f.filled || 0) > 0);
+  return {
+    state: ready.length === CHANNEL_FIELDS.length && readyWithData.length === CHANNEL_FIELDS.length ? "ready" : "not_connected",
+    fields: channelFields,
+    missing_fields: channelFields
+      .filter((f) => f.state !== "ready" || !Number(f.filled || 0))
+      .map(({ name, label, state, filled, total }) => ({ name, label, state, filled, total })),
+  };
+}
+
+function documentMissingFields(docStatus, documentFields) {
+  const missing = [...(docStatus.missing || [])];
+  const seen = new Set(missing.map((f) => `${f.table || ""}.${f.name}`));
+  const byName = new Map(documentFields.map((f) => [f.name, f]));
+  for (const [name, label] of DOC_LINK_FIELDS) {
+    const f = byName.get(name);
+    const key = `${DOC_TABLE_LABEL}.${name}`;
+    if (seen.has(key)) continue;
+    if (!f || f.state !== "ready") {
+      missing.push({ name, label, table: DOC_TABLE_LABEL, state: "not_connected", filled: f?.filled || 0, total: f?.total || 0 });
+    } else if (!Number(f.filled || 0)) {
+      missing.push({ name, label, table: DOC_TABLE_LABEL, state: "empty", filled: f.filled, total: f.total });
+    }
+  }
+  return missing;
 }
 
 async function docsForRows(pool, rows) {
@@ -183,7 +222,10 @@ async function docsForRows(pool, rows) {
   const status = { connected: false, docsByKey, urlCol: null, typeCol: null, missing: [] };
   if (!rows.length) return status;
   const shipNos = [...new Set(rows.map((r) => clean(r.shipment_no)).filter(Boolean))];
-  const planIds = [...new Set(rows.flatMap((r) => [r.id, r._id]).map((v) => clean(v)).filter(Boolean))];
+  const blNos = [...new Set(rows.map((r) => clean(r.bl_no)).filter(Boolean))];
+  const orderNos = [...new Set(rows.map((r) => clean(r.order_no)).filter(Boolean))];
+  const contractNos = [...new Set(rows.map((r) => clean(r.contract_no)).filter(Boolean))];
+  const planIds = [...new Set(rows.flatMap((r) => [r.id, r._id, r.shipping_plan_id]).map((v) => clean(v)).filter(Boolean))];
 
   if (await tableExists(pool, "document_files")) {
     status.connected = true;
@@ -195,16 +237,30 @@ async function docsForRows(pool, rows) {
     const timeCol = firstCol(colSet, ["uploaded_at", "created_at", "updated_at"]);
     status.urlCol = status.urlCol || urlCol;
     status.typeCol = status.typeCol || typeCol;
-    if (!urlCol) status.missing.push({ name: "file_url", label: "资料下载URL", table: "document_files" });
-    if (!typeCol) status.missing.push({ name: "doc_type", label: "资料类型", table: "document_files" });
     const conds = [], params = [];
     if (colSet.has("shipment_no") && shipNos.length) {
       params.push(shipNos);
       conds.push("d.shipment_no = ANY($" + params.length + "::text[])");
     }
+    if (colSet.has("bl_no") && blNos.length) {
+      params.push(blNos);
+      conds.push("d.bl_no = ANY($" + params.length + "::text[])");
+    }
+    if (colSet.has("order_no") && orderNos.length) {
+      params.push(orderNos);
+      conds.push("d.order_no = ANY($" + params.length + "::text[])");
+    }
+    if (colSet.has("contract_no") && contractNos.length) {
+      params.push(contractNos);
+      conds.push("d.contract_no = ANY($" + params.length + "::text[])");
+    }
     if (colSet.has("bound_subject_type") && colSet.has("bound_subject_id") && planIds.length) {
       params.push(planIds);
       conds.push("(d.bound_subject_type = 'shipping_plan' AND d.bound_subject_id::text = ANY($" + params.length + "::text[]))");
+    }
+    if (colSet.has("shipping_plan_id") && planIds.length) {
+      params.push(planIds);
+      conds.push("d.shipping_plan_id::text = ANY($" + params.length + "::text[])");
     }
     if (conds.length) {
       const deleted = colSet.has("deleted_at") ? "AND d.deleted_at IS NULL" : "";
@@ -212,7 +268,11 @@ async function docsForRows(pool, rows) {
         `SELECT ${docExpr("type", typeCol)}, ${docExpr("name", nameCol)}, ${docExpr("url", urlCol)},
                 ${docExpr("signed", signedCol)}, ${docExpr("uploaded_at", timeCol)},
                 ${colSet.has("shipment_no") ? "d.shipment_no::text" : "NULL::text"} AS shipment_no,
+                ${colSet.has("bl_no") ? "d.bl_no::text" : "NULL::text"} AS bl_no,
+                ${colSet.has("order_no") ? "d.order_no::text" : "NULL::text"} AS order_no,
+                ${colSet.has("contract_no") ? "d.contract_no::text" : "NULL::text"} AS contract_no,
                 ${colSet.has("bound_subject_id") ? "d.bound_subject_id::text" : "NULL::text"} AS bound_subject_id
+                ${colSet.has("shipping_plan_id") ? ", d.shipping_plan_id::text" : ", NULL::text"} AS shipping_plan_id
            FROM document_files d
           WHERE (${conds.join(" OR ")}) ${deleted}
           ORDER BY ${timeCol ? `d.${timeCol} DESC NULLS LAST` : "1"}
@@ -220,8 +280,8 @@ async function docsForRows(pool, rows) {
         params
       );
       for (const d of r.rows) {
-        const doc = { type: d.type, name: d.name, url: d.url, signed: d.signed, uploaded_at: d.uploaded_at, kind: docKind(d.type, d.name), source: "document_files" };
-        for (const key of [d.shipment_no, d.bound_subject_id]) rememberDoc(docsByKey, key, doc);
+        const doc = { type: d.type, name: d.name, url: d.url, signed: d.signed, uploaded_at: d.uploaded_at, kind: docKind(d.type, d.name, d.signed), source: "document_files" };
+        for (const key of [d.shipment_no, d.bl_no, d.order_no, d.contract_no, d.bound_subject_id, d.shipping_plan_id]) rememberDoc(docsByKey, key, doc);
       }
     }
   }
@@ -229,36 +289,54 @@ async function docsForRows(pool, rows) {
   if (await tableExists(pool, "ocean_doc_intake")) {
     status.connected = true;
     const colSet = await columns(pool, "ocean_doc_intake");
-    const urlCol = colSet.has("file_url") ? "file_url" : null;
-    const typeCol = colSet.has("doc_type") ? "doc_type" : null;
+    const urlCol = firstCol(colSet, ["file_url", "url", "oss_url", "path"]);
+    const typeCol = firstCol(colSet, ["doc_type", "doc_kind", "type", "category"]);
     status.urlCol = status.urlCol || urlCol;
     status.typeCol = status.typeCol || typeCol;
-    if (!urlCol) status.missing.push({ name: "file_url", label: "资料下载URL", table: "ocean_doc_intake" });
-    if (!typeCol) status.missing.push({ name: "doc_type", label: "资料类型", table: "ocean_doc_intake" });
-    if (urlCol && colSet.has("matched_shipping_plan_id") && planIds.length) {
-      const typeExpr = typeCol ? "doc_type" : "NULL::text";
+    if (urlCol && ((colSet.has("matched_shipping_plan_id") && planIds.length) || (colSet.has("matched_order_no") && orderNos.length))) {
+      const typeExpr = typeCol ? `${typeCol}::text` : "NULL::text";
       const nameExpr = colSet.has("extracted") ? `COALESCE(extracted->>'filename', ${typeExpr})` : typeExpr;
       const timeExpr = colSet.has("created_at") ? "created_at" : "NULL::timestamptz";
+      const conds = [], params = [];
+      if (colSet.has("matched_shipping_plan_id") && planIds.length) {
+        params.push(planIds);
+        conds.push("matched_shipping_plan_id::text = ANY($" + params.length + "::text[])");
+      }
+      if (colSet.has("matched_order_no") && orderNos.length) {
+        params.push(orderNos);
+        conds.push("matched_order_no = ANY($" + params.length + "::text[])");
+      }
       const r = await pool.query(
-        `SELECT ${typeExpr} AS type, ${nameExpr} AS name, file_url AS url,
-                ${timeExpr} AS uploaded_at, matched_shipping_plan_id::text AS plan_id
+        `SELECT ${typeExpr} AS type, ${nameExpr} AS name, ${urlCol} AS url,
+                ${timeExpr} AS uploaded_at,
+                ${colSet.has("matched_shipping_plan_id") ? "matched_shipping_plan_id::text" : "NULL::text"} AS plan_id,
+                ${colSet.has("matched_order_no") ? "matched_order_no::text" : "NULL::text"} AS order_no
            FROM ocean_doc_intake
-          WHERE matched_shipping_plan_id::text = ANY($1::text[])
-            AND NULLIF(BTRIM(file_url), '') IS NOT NULL
+          WHERE (${conds.join(" OR ")})
+            AND NULLIF(BTRIM(${urlCol}::text), '') IS NOT NULL
           ORDER BY ${colSet.has("created_at") ? "created_at DESC NULLS LAST" : "1"}
           LIMIT 500`,
-        [planIds]
+        params
       );
       for (const d of r.rows) {
-        rememberDoc(docsByKey, d.plan_id, { type: d.type, name: d.name, url: d.url, uploaded_at: d.uploaded_at, kind: docKind(d.type, d.name), source: "ocean_doc_intake" });
+        const doc = { type: d.type, name: d.name, url: d.url, uploaded_at: d.uploaded_at, kind: docKind(d.type, d.name), source: "ocean_doc_intake" };
+        rememberDoc(docsByKey, d.plan_id, doc);
+        rememberDoc(docsByKey, d.order_no, doc);
       }
     }
+  }
+  if (!status.connected) {
+    status.missing = DOC_LINK_FIELDS.map(([name, label]) => ({ name, label, table: DOC_TABLE_LABEL }));
+  } else {
+    status.missing = [];
+    if (!status.urlCol) status.missing.push({ name: "file_url", label: "资料下载URL", table: DOC_TABLE_LABEL });
+    if (!status.typeCol) status.missing.push({ name: "doc_type", label: "资料类型", table: DOC_TABLE_LABEL });
   }
   return status;
 }
 
 function rowDocs(row, docsByKey) {
-  const keys = [row.shipment_no, row.id, row._id].map((v) => clean(v)).filter(Boolean);
+  const keys = [row.shipment_no, row.bl_no, row.order_no, row.contract_no, row.id, row._id, row.shipping_plan_id].map((v) => clean(v)).filter(Boolean);
   const seen = new Set();
   return keys.flatMap((key) => docsByKey.get(key) || []).filter((d) => {
     const k = `${d.type}|${d.name}|${d.url}`;
@@ -294,7 +372,7 @@ function rowOut(row, colSet, docs) {
     customer: row.customer,
     status: row.flow_status || row.status,
     docs,
-    doc_ready: docs.some((d) => hasValue(d.url) && (d.kind === "bl" || d.kind === "signed")),
+    doc_ready: docs.some(isTargetDoc),
     state: stateOf(row, colSet),
     missing_count: missing.length,
     missing,
@@ -324,7 +402,7 @@ export default async function handler(req, res) {
         },
         documents: {
           state: "not_connected",
-          missing_fields: DOC_LINK_FIELDS.map(([name, label]) => ({ name, label, table: "document_files/ocean_doc_intake" })),
+          missing_fields: DOC_LINK_FIELDS.map(([name, label]) => ({ name, label, table: DOC_TABLE_LABEL })),
           note: "缺 shipping_plans 真源表，无法定位 document_files/ocean_doc_intake 资料。",
         },
         booking_channel: { state: "not_connected", missing_fields: CHANNEL_FIELDS.map(([name, label]) => ({ name, label })), note: "缺 shipping_plans 真源表；当前填充率 未接入。" },
@@ -333,31 +411,37 @@ export default async function handler(req, res) {
     const colSet = await columns(pool, "shipping_plans");
     const rows = await listRows(pool, colSet, req.query || {});
     const docStatus = await docsForRows(pool, rows);
+    const bookingChannel = channelStatus(rows, colSet);
     const data = rows.map((r) => rowOut(r, colSet, rowDocs(r, docStatus.docsByKey)));
+    const documentFields = docCoverage(data, docStatus);
+    const documentMissing = documentMissingFields(docStatus, documentFields);
     return res.status(200).json({
       success: true,
       generated_at: new Date().toISOString(),
+      mode: clean(req.query?.next, 4) === "1" ? "next_ticket" : "list",
       data,
       selected: data[0] || null,
       coverage: {
         total_rows: rows.length,
         fields: coverage(rows, CORE_FIELDS, colSet),
-        channel_fields: coverage(rows, CHANNEL_FIELDS, colSet),
-        document_fields: docCoverage(data, docStatus),
+        channel_fields: bookingChannel.fields,
+        document_fields: documentFields,
       },
       documents: {
-        state: docStatus.connected && docStatus.urlCol ? "ready" : "not_connected",
-        missing_fields: docStatus.missing,
-        note: "只读展示 document_files/ocean_doc_intake 中已上传的提单/签单资料；缺 URL 时不生成下载入口。",
+        state: documentMissing.length ? "not_connected" : "ready",
+        missing_fields: documentMissing,
+        note: "只读展示 document_files/ocean_doc_intake 中已上传且可识别为提单/签单的资料；缺 URL 或资料类型无法识别时不生成下载入口。",
       },
       booking_channel: {
-        state: "not_connected",
-        missing_fields: CHANNEL_FIELDS.map(([name, label]) => ({ name, label })),
-        note: "缺订舱外部发送通道、通道状态字段和回执字段；本页只读，不向货代或船公司发送订舱。",
+        state: bookingChannel.state,
+        missing_fields: bookingChannel.missing_fields,
+        note: bookingChannel.state === "ready"
+          ? "已读取 shipping_plans 的订舱通道字段；本页仍只读，不向货代或船公司发送订舱。"
+          : "缺订舱外部发送通道、通道状态字段和回执字段；本页只读，不向货代或船公司发送订舱。",
       },
     });
   } catch (err) {
     console.error("[booking-platform]", err);
-    return fail(res, 500, err.message);
+    return fail(res, 500, "booking_platform_failed");
   }
 }

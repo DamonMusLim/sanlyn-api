@@ -47,12 +47,25 @@
   .manual-menu{background:var(--panel)}
   .manual-menu div{height:48px;padding:0 14px;border-bottom:1px solid var(--line);color:var(--muted);font-size:13px;line-height:48px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .manual-menu .on{border-left:3px solid var(--accent);padding-left:11px;color:var(--accent);font-weight:700;background:var(--chip)}
-  .manual-main{min-width:0;background:var(--panel)}
-  .manual-head{min-height:48px;display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:0;border-bottom:1px solid var(--line)}
+  .manual-main{min-width:0;background:var(--panel);border:1px solid var(--line)}
+  .manual-head{min-height:48px;display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:0;border-bottom:1px solid var(--line);background:var(--bg)}
   .manual-head-main{display:flex;align-items:center;gap:12px;padding:0 14px}
   .manual-title{padding-left:10px;border-left:3px solid var(--accent);color:var(--hgj-title);font-weight:700;line-height:16px}
   .manual-page-name{margin-left:auto;color:var(--muted);font-size:12px}
   .manual-state{display:flex;align-items:center;justify-content:flex-end;padding:8px 14px;border-left:1px solid var(--line);color:var(--muted);font-size:12px;text-align:right}
+  .manual-identity{display:grid;grid-template-columns:118px minmax(0,1fr) 118px minmax(0,1fr);border-bottom:1px solid var(--line);background:var(--panel)}
+  .manual-identity b,.manual-identity span{min-height:36px;padding:8px 12px;border-right:1px solid var(--line);font-size:12px;line-height:1.55}
+  .manual-identity b{background:var(--bg);color:var(--hgj-title);font-weight:700}.manual-identity span{color:var(--muted)}
+  .manual-identity span:nth-child(4n){border-right:0}
+  .manual-cover{display:grid;grid-template-columns:180px minmax(0,1fr) 180px;border-bottom:1px solid var(--line);background:var(--panel)}
+  .manual-cover div{min-height:58px;padding:10px 13px;border-right:1px solid var(--line);font-size:12px;line-height:1.55}
+  .manual-cover div:last-child{border-right:0}.manual-cover b{display:block;color:var(--hgj-title);font-size:13px}.manual-cover span{display:block;margin-top:4px;color:var(--muted)}
+  .manual-cover-title{display:flex;align-items:center;justify-content:center;text-align:center;color:var(--hgj-title);font-size:18px;font-weight:700;line-height:1.4}
+  .manual-title-block{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;text-align:center}.manual-title-block strong{color:var(--hgj-title);font-size:18px}.manual-title-block span{margin:0;color:var(--muted);font-size:12px}
+  .manual-book-head{display:grid;grid-template-columns:96px minmax(0,1fr) 96px minmax(0,1fr);gap:0;border-bottom:1px solid var(--line)}
+  .manual-book-head b,.manual-book-head span{min-height:38px;padding:8px 12px;border-right:1px solid var(--line);font-size:12px;line-height:1.55}
+  .manual-book-head b{background:var(--bg);color:var(--hgj-title);font-weight:700}.manual-book-head span{color:var(--muted)}
+  .manual-book-head span:nth-child(4n){border-right:0}
   .manual-toolbar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;border-bottom:1px solid var(--line)}
   .manual-toolbar div{min-height:44px;padding:8px 13px;border-right:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1.45}
   .manual-toolbar div:last-child{border-right:0}.manual-toolbar b{display:block;color:var(--hgj-title);font-size:13px}
@@ -78,6 +91,14 @@
   .manual-register th,.manual-register td{height:36px;padding:7px 12px;border-right:1px solid var(--line);font-size:12px;line-height:1.55;white-space:normal;overflow-wrap:anywhere}
   .manual-register th{width:108px;background:var(--bg);color:var(--hgj-title);font-weight:700}.manual-register td{color:var(--muted)}
   .manual-register td:nth-child(4n),.manual-register th:nth-child(4n){border-right:0}
+  .manual-catalog{width:100%;border-collapse:collapse;table-layout:fixed;background:var(--panel);border-bottom:1px solid var(--line)}
+  .manual-catalog th,.manual-catalog td{height:34px;padding:7px 12px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);font-size:12px;line-height:1.55;white-space:normal;overflow-wrap:anywhere}
+  .manual-catalog th{background:var(--bg);color:var(--hgj-title);font-weight:700}.manual-catalog td{color:var(--muted)}
+  .manual-catalog td:last-child,.manual-catalog th:last-child{border-right:0}.manual-catalog .manual-num{width:48px;text-align:center;color:var(--accent);font-weight:700}
+  .manual-warning{display:grid;grid-template-columns:116px minmax(0,1fr);border-bottom:1px solid var(--line)}
+  .manual-warning b,.manual-warning span{min-height:38px;padding:8px 13px;border-right:1px solid var(--line);font-size:12px;line-height:1.6}
+  .manual-warning b{background:var(--bg);color:var(--hgj-title);text-align:center}.manual-warning span{color:var(--warn);font-weight:700}.manual-warning span:nth-child(2n){border-right:0}
+  .manual-note{min-height:38px;padding:9px 13px;border-bottom:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1.6}
   .manual-form{display:grid;grid-template-columns:132px minmax(0,1fr) 132px minmax(0,1fr);border-bottom:1px solid var(--line)}
   .manual-form b,.manual-form span{min-height:42px;padding:9px 13px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);font-size:12px;line-height:1.6}
   .manual-form b{background:var(--bg);color:var(--hgj-title)}.manual-form span{color:var(--muted)}
@@ -108,11 +129,17 @@
   .expired td,.draft td{color:var(--muted);background:var(--bg)}
   .tag,.pill{display:inline-block;border:1px solid var(--accent);border-radius:0;background:var(--chip);color:var(--accent);padding:2px 7px;font-size:12px}.tag{margin-left:6px;padding:1px 5px;font-size:11px}
   .pill.bad{border-color:var(--bad);background:transparent;color:var(--bad)}
-  .status-badge{display:inline-block;border:1px solid var(--line);padding:1px 7px;font-size:11px;font-weight:700}.status-active{border-color:#16a34a;background:#dcfce7;color:#166534}.status-draft{background:#f3f4f6;color:#6b7280}.status-expired{border-color:#dc2626;background:#fee2e2;color:#991b1b}.status-void{border-color:#a16207;background:#fef3c7;color:#92400e}
+  .status-badge{display:inline-block;border:1px solid var(--line);padding:1px 7px;font-size:11px;font-weight:700}.status-active{border-color:var(--accent);background:var(--chip);color:var(--accent)}.status-draft{background:var(--bg);color:var(--muted)}.status-expired{border-color:var(--bad);background:transparent;color:var(--bad)}.status-withdrawn{border-color:var(--warn);background:transparent;color:var(--warn)}
   .group td{position:sticky;top:31px;z-index:2;background:var(--chip);color:var(--accent);font-weight:700}
   .empty,.err{padding:24px;color:var(--muted);line-height:1.7;white-space:normal;text-align:center}.err{color:var(--bad)}
   .linkbtn{border:0;background:transparent;color:var(--accent);cursor:pointer;padding:0;height:auto}.row-actions{display:flex;gap:8px;align-items:center}.mini-btn{height:24px;padding:0 7px;font-size:12px}.danger{border-color:var(--bad);color:var(--bad);background:transparent}.forwarder-cell{display:flex;gap:6px;align-items:center}.portal-btn{height:22px;padding:0 6px;border-color:var(--warn);background:transparent;color:var(--warn);font-size:11px}
-  .drawer-mask{position:fixed;inset:0;background:rgba(15,23,42,.28);z-index:50}.rate-drawer{position:fixed;top:0;right:0;bottom:0;width:min(720px,100vw);z-index:51;background:var(--panel);border-left:1px solid var(--line);box-shadow:-8px 0 28px rgba(15,23,42,.18);display:flex;flex-direction:column}.drawer-head{height:58px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--line)}.drawer-title{min-width:0;flex:1}.drawer-title b{display:block;color:var(--hgj-title)}.drawer-title span{display:block;color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.drawer-body{flex:1;overflow:auto;padding:14px 16px}.drawer-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid var(--line)}.drawer-section{margin-bottom:14px;border:1px solid var(--line)}.drawer-section h3{margin:0;padding:9px 11px;border-bottom:1px solid var(--line);background:var(--bg);font-size:13px}.drawer-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:11px}.drawer-field{display:grid;gap:4px}.drawer-field.full{grid-column:1/-1}.drawer-field label{color:var(--muted);font-size:12px}.drawer-field input,.drawer-field textarea{width:auto}.drawer-error{margin-bottom:10px;padding:9px 11px;border-left:3px solid var(--bad);color:var(--bad);background:var(--bg)}.dirty-actions[hidden]{display:none}
+  .drawer-mask{position:fixed;inset:0;background:color-mix(in srgb,var(--side) 28%,transparent);z-index:50}.rate-drawer{position:fixed;top:0;right:0;bottom:0;width:min(720px,100vw);z-index:51;background:var(--panel);border-left:1px solid var(--line);box-shadow:none;display:flex;flex-direction:column}.drawer-head{height:58px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--line)}.drawer-title{min-width:0;flex:1}.drawer-title b{display:block;color:var(--hgj-title)}.drawer-title span{display:block;color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.drawer-body{flex:1;overflow:auto;padding:14px 16px}.drawer-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid var(--line)}.drawer-section{margin-bottom:14px;border:1px solid var(--line)}.drawer-section h3{margin:0;padding:9px 11px;border-bottom:1px solid var(--line);background:var(--bg);font-size:13px}.drawer-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:11px}.drawer-field{display:grid;gap:4px}.drawer-field.full{grid-column:1/-1}.drawer-field label{color:var(--muted);font-size:12px}.drawer-field input,.drawer-field textarea{width:auto}.drawer-error{margin-bottom:10px;padding:9px 11px;border-left:3px solid var(--bad);color:var(--bad);background:var(--bg)}.dirty-actions[hidden]{display:none}
+  .charge-note{padding:0 14px 10px;color:var(--hgj-muted)}
+  .charge-dialog-mask{position:fixed;inset:0;background:color-mix(in srgb,var(--hgj-side-bg) 35%,transparent);display:flex;align-items:center;justify-content:center;z-index:9999}
+  .charge-dialog{min-width:280px;padding:16px;border:1px solid var(--line);border-radius:0;background:var(--panel);box-shadow:none}
+  .charge-dialog label{display:block;margin-bottom:8px;color:var(--hgj-title);font-size:13px;font-weight:700}
+  .charge-dialog input{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:0;background:var(--panel);color:var(--text);padding:8px;font-size:14px}
+  .charge-dialog .row-actions{justify-content:flex-end;margin-top:12px}
   .manual-strip{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;background:var(--line);margin-bottom:10px}
   .manual-strip button{height:40px;border:0;background:var(--panel);padding:0 12px;color:var(--muted);font-size:13px;line-height:40px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .manual-strip .on{color:var(--accent);font-weight:700}
@@ -124,26 +151,29 @@
   .manual-check th{background:var(--bg);color:var(--hgj-title);font-weight:700}.manual-check td{color:var(--muted)}
   .manual-check td:last-child,.manual-check th:last-child{border-right:0}.manual-check .state-ready{color:var(--accent);font-weight:700}.manual-check .state-miss{color:var(--warn);font-weight:700}
   .fields{display:grid;gap:8px}.coverage-box{padding:14px}.field-card{border:1px solid var(--line);padding:8px}.field-card b,.field-card span{display:block}.field-card b{font-size:13px}.field-card span{color:var(--muted);font-size:12px;margin-top:3px}
-  @media(max-width:900px){.shell{display:block}.side{display:none}.wrap{padding:14px}.top,.grid,.manual-layout,.manual-body,.manual-doc{display:block}.manual-head{grid-template-columns:1fr}.manual-state{justify-content:flex-start;border-left:0;border-top:1px solid var(--line)}.actions{margin-top:10px}.toolbar{display:flex;align-items:stretch;flex-wrap:wrap}.metrics,.manual-toolbar,.manual-sheet-head,.manual-ops,.manual-flow,.manual-form,.manual-clause{grid-template-columns:1fr}.module-tabs{overflow:auto}.manual-meta,.manual-op,.manual-doc div,.manual-toolbar div,.manual-sheet-head b,.manual-sheet-head span,.manual-form b,.manual-form span,.manual-clause b,.manual-clause span{border-right:0}.table-wrap{max-height:none}table{display:block;overflow-x:auto}.manual-register{display:table;min-width:640px}}
+  .sanlyn-embedded .shell{grid-template-columns:minmax(0,1fr)}
+  .sanlyn-embedded .side{display:none}
+  .sanlyn-embedded .wrap{max-width:100%;padding:16px}
+  @media(max-width:900px){.shell{display:block}.side{display:none}.wrap{padding:14px}.top,.grid,.manual-layout,.manual-body,.manual-doc{display:block}.manual-head{grid-template-columns:1fr}.manual-state{justify-content:flex-start;border-left:0;border-top:1px solid var(--line)}.actions{margin-top:10px}.toolbar{display:flex;align-items:stretch;flex-wrap:wrap}.metrics,.manual-cover,.manual-toolbar,.manual-sheet-head,.manual-book-head,.manual-ops,.manual-flow,.manual-form,.manual-clause,.manual-identity{grid-template-columns:1fr}.module-tabs{overflow:auto}.manual-meta,.manual-op,.manual-doc div,.manual-cover div,.manual-toolbar div,.manual-sheet-head b,.manual-sheet-head span,.manual-book-head b,.manual-book-head span,.manual-form b,.manual-form span,.manual-clause b,.manual-clause span,.manual-identity b,.manual-identity span{border-right:0}.table-wrap{max-height:none}table{display:block;overflow-x:auto}.manual-register{display:table;min-width:640px}}
 </style>
 </head>
 <body class="hgj-page">
 <div class="shell">
   <aside class="side hgj-side">
-    <h2>海管家</h2>
+    <h2>照海管家</h2>
     <div class="nav-title">运价管理</div>
     <button class="on" data-tab="ocean">海运运价</button>
     <button data-tab="charges">港杂费</button>
     <button data-tab="truck">拖车报价</button>
     <button data-tab="customs">报关报价</button>
     <button data-tab="insurance">货运保险</button>
-    <div class="side-foot">海管家式操作手册<br>未接入不可忽略</div>
+    <div class="side-foot">照海管家式操作手册<br>未接入不可忽略</div>
   </aside>
   <main class="wrap">
     <div class="crumb">工作台 / 价格 / 运价管理</div>
     <div class="top">
       <div><h1 class="hgj-panel-title">运价管理</h1><div class="summary" id="sub">加载中...</div></div>
-    <div class="actions"><div class="stamp" id="stamp">v2026.09.13-1 · 生成时间 --</div></div>
+      <div class="actions"><div class="stamp" id="stamp">v2026.09.28-3 · 生成时间 --</div></div>
     </div>
     <div class="notice hgj-card">运价可在本页新增/改价/作废（写 freight_rates，涨价自动留痕）；不发消息、不写费用事实。金额、额度、费率只展示真实字段，未设置显示未设置，零数据/缺字段显示未接入、缺什么字段和当前填充率。</div>
     <section class="module-tabs hgj-card" id="moduleTabs" aria-label="运价模块">
@@ -157,7 +187,7 @@
       <button class="on" data-view="manual" type="button">操作手册</button>
       <button data-view="data" type="button">我方看板</button>
     </section>
-    <section class="manual-layout is-sheet" id="manualPane" aria-label="海管家操作手册式工作区">
+    <section class="manual-layout is-sheet" id="manualPane" aria-label="照海管家操作手册式工作区">
       <nav class="manual-menu hgj-card" aria-label="运价操作目录" id="manualMenu">
         <div class="on" data-step="ocean">运价维护</div>
         <div data-step="charges">费用模板</div>
@@ -167,26 +197,47 @@
       </nav>
       <div class="manual-main hgj-card">
         <div class="manual-head">
-          <div class="manual-head-main"><div class="manual-title" id="manualTitle">海运运价 / 运价维护</div><div class="manual-page-name">海管家操作手册</div></div>
+          <div class="manual-head-main"><div class="manual-title" id="manualTitle">海运运价 / 运价维护</div><div class="manual-page-name">照海管家操作手册</div></div>
           <div class="manual-state" id="manualState">未接入不可忽略</div>
+        </div>
+        <div class="manual-identity" aria-label="手册基础信息">
+          <b>文件名称</b><span>运价管理操作手册</span>
+          <b>文件状态</b><span id="manualDocState">未接入：缺真实响应；当前填充率 未接入</span>
+        </div>
+        <div class="manual-cover" aria-label="操作手册封面栏">
+          <div><b>系统</b><span>照海管家</span></div>
+          <div class="manual-title-block"><strong>运价管理操作手册</strong><span id="manualSubject">海运运价维护</span></div>
+          <div><b>页面</b><span id="manualCoverPage">海运运价</span></div>
         </div>
         <div class="manual-toolbar" aria-label="手册页眉">
           <div><b>模块</b><span id="manualToolbarModule">运价管理</span></div>
-          <div><b>版式</b><span>海管家操作手册式</span></div>
-          <div><b>权限</b><span>只读 requireAuth</span></div>
-          <div><b>写入</b><span>可新增/改价/作废运价；不写费用事实</span></div>
+          <div><b>版式</b><span>照海管家操作手册式</span></div>
+          <div><b>权限</b><span>读写接口 requireAuth</span></div>
+          <div><b>写入</b><span>只写运价维护；不写费用事实</span></div>
+        </div>
+        <div class="manual-book-head" aria-label="操作手册栏">
+          <b>系统名称</b><span>照海管家 / 运价管理</span>
+          <b>页面样式</b><span>左侧目录 + 方格表单 + 明细登记</span>
+          <b>接入状态</b><span id="manualAccessBook">未接入：缺真实响应；当前填充率 未接入</span>
+          <b>填充率</b><span id="manualRateBook">缺字段加载中；未接入类条目不提供忽略</span>
         </div>
         <div class="manual-sheet-head" aria-label="手册单据栏">
           <b>页面编号</b><span id="manualCode">RATE-ocean</span>
-          <b>版本号</b><span id="manualVersion">v2026.09.13-1</span>
+          <b>版本号</b><span id="manualVersion">v2026.09.28-3</span>
           <b>生成时间</b><span id="manualGenerated">--</span>
         </div>
-        <div class="manual-doc" aria-label="操作手册摘要">
-          <div><b>操作路径</b><span id="manualPath">价格 / 运价管理 / 海运运价</span></div>
-          <div><b>接入依据</b><span id="manualBasis">缺字段加载中；当前填充率 未接入</span></div>
-          <div><b>当前限制</b><span id="manualLimit">只读展示；未设置不编造；未接入不提供忽略。</span></div>
-        </div>
-        <table class="manual-register" aria-label="操作手册登记栏">
+	        <div class="manual-doc" aria-label="操作手册摘要">
+	          <div><b>操作路径</b><span id="manualPath">价格 / 运价管理 / 海运运价</span></div>
+	          <div><b>接入依据</b><span id="manualBasis">缺字段加载中；当前填充率 未接入</span></div>
+	          <div><b>当前限制</b><span id="manualLimit">只读展示；未设置不编造；未接入不提供忽略。</span></div>
+	        </div>
+	        <table class="manual-catalog" aria-label="照海管家目录式操作栏">
+	          <thead><tr><th class="manual-num">序号</th><th>操作名称</th><th>照海管家式入口</th><th>我方真实字段/接入口径</th><th>限制</th></tr></thead>
+	          <tbody id="manualCatalog"></tbody>
+	        </table>
+	        <div class="manual-warning" aria-label="接入红线"><b>红线</b><span id="manualRedline">未接入类条目不提供忽略；金额、额度、费率未设置就显示未设置。</span></div>
+	        <div class="manual-note" id="manualNote">本页照海管家操作手册式重排，不删除我方看板；切换「我方看板」继续使用现有查询、导出和维护入口。</div>
+	        <table class="manual-register" aria-label="操作手册登记栏">
           <tbody id="manualRegister">
             <tr><th>制单模块</th><td>运价管理</td><th>业务口径</th><td>加载中</td></tr>
             <tr><th>真实字段</th><td>加载中</td><th>不可操作</th><td>未接入不可忽略</td></tr>
@@ -194,18 +245,18 @@
         </table>
         <div class="manual-form" aria-label="操作手册基础栏" id="manualForm"></div>
         <div class="manual-clause" aria-label="操作手册控制栏">
-          <b>控制</b><span>只读查询、CSV 导出、通过 postMessage 打开 /wb-tabs；未接入类条目不提供忽略，真实业务预警才允许进入忽略类流程。</span>
+          <b>控制</b><span>查询、CSV 导出、新增/改价/作废、通过 postMessage 打开 /wb-tabs；未接入类条目不提供忽略，真实业务预警才允许进入忽略类流程。</span>
         </div>
-        <table class="manual-kv" aria-label="海管家操作手册字段">
+        <table class="manual-kv" aria-label="照海管家操作手册字段">
           <tbody id="manualKv"></tbody>
         </table>
         <div class="manual-section-title">功能明细</div>
-        <table class="manual-ledger" aria-label="海管家功能明细登记表">
+        <table class="manual-ledger" aria-label="照海管家功能明细登记表">
           <thead><tr><th>操作栏</th><th>字段要求</th><th>数据来源</th><th>接入状态</th></tr></thead>
           <tbody id="manualLedger"></tbody>
         </table>
         <div class="manual-section-title">操作步骤</div>
-        <section class="manual-flow" aria-label="海管家操作步骤" id="manualFlow"></section>
+        <section class="manual-flow" aria-label="照海管家操作步骤" id="manualFlow"></section>
         <div class="manual-section-title">操作项与接入状态</div>
         <div class="manual-body">
           <div class="manual-meta"><b id="manualSource">数据源加载中</b><span id="manualNeed">缺字段加载中；当前填充率 未接入</span></div>
