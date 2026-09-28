@@ -54,13 +54,39 @@ async function call(h, body) {
     poolFactory: pool,
     setCorsFn: noCors,
     verifyStaff: async () => staff,
-    env: { MSG_RELAY_TOKEN: "t" },
-    fetchFn: async () => new Response(JSON.stringify({ status: "blocked", reason: "需老板批准" }), { status: 200 }),
+    env: { MSG_RELAY_TOKEN: "relay-test-token-xyz" },
+    fetchFn: async (url) => String(url).includes("/api/inbox/conversations")
+      ? new Response(JSON.stringify([{ conversation_id: "c1", channel: "meituan" }]), { status: 200 })
+      : new Response(JSON.stringify({ status: "blocked", reason: "需老板批准" }), { status: 200 }),
   });
   const r = await call(h, { action: "send", conversation_id: "c1", text: "好" });
   assert.equal(r.statusCode, 200);
   assert.equal(r.body.data.status, "blocked");
   assert.equal(r.body.data.reason, "需老板批准");
+}
+
+// 0928:inbox6 个人微信(wechat)不进宠物店消息 —— 列表滤掉、按 id 读/发也拒
+{
+  const calls = [];
+  const rows = [{ conversation_id: "m1", channel: "meituan" }, { conversation_id: "w1", channel: "wechat" }, { conversation_id: "x1", channel: "unknown" }];
+  const h = makeHandler({
+    poolFactory: pool,
+    setCorsFn: noCors,
+    verifyStaff: async () => staff,
+    env: { MSG_RELAY_TOKEN: "relay-test-token-xyz" },
+    fetchFn: async (url) => { calls.push(String(url)); return new Response(JSON.stringify(String(url).includes("/conversations") ? rows : { messages: [] }), { status: 200 }); },
+  });
+  const l = await call(h, { action: "list" });
+  assert.deepEqual(l.body.data.map((x) => x.conversation_id), ["m1"]);
+  const lw = await call(h, { action: "list", channel: "wechat" });
+  assert.deepEqual(lw.body.data, []);
+  const d = await call(h, { action: "detail", id: "w1" });
+  assert.equal(d.statusCode, 404);
+  const sd = await call(h, { action: "send", conversation_id: "w1", text: "hi" });
+  assert.equal(sd.statusCode, 404);
+  assert.ok(!calls.some((u) => u.includes("/conversation/w1") || u.includes("/api/inbox/send")));
+  const ok = await call(h, { action: "detail", id: "m1" });
+  assert.equal(ok.statusCode, 200);
 }
 
 {

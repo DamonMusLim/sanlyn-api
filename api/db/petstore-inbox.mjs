@@ -90,6 +90,19 @@ async function relayFetch(pathname, { method = "GET", query = {}, body, fetchFn 
   }
 }
 
+// 2026-09-28 止血:宠物店没有个人微信号。inbox 6(wechat)= Damon 个人混合号(银行短信/供应商/私人联系人),
+// SSOT ~/.openclaw/cs_accounts.json 标 owner_only。这里只放行宠物店渠道,白名单制(没列的一律不给)。
+// 等宠物店独立微信号建好进 SSOT,再把 wechat 加回来。
+const PET_CHANNELS = new Set(["meituan", "eleme", "wework"]);
+function petRows(data) {
+  return (Array.isArray(data) ? data : []).filter((x) => PET_CHANNELS.has(String(x?.channel || "")));
+}
+async function petConversationOk(id, deps) {
+  const r = await relayFetch("/api/inbox/conversations", { fetchFn: deps.fetchFn, env: deps.env });
+  if (r.status !== 200) return false;
+  return petRows(r.body.data).some((x) => String(x.conversation_id) === String(id));
+}
+
 async function handleAction(auth, b, deps) {
   const action = text(b.action || "list", 40);
   if (action === "upload_image") {
@@ -97,16 +110,21 @@ async function handleAction(auth, b, deps) {
     catch (e) { return { status: 400, body: { success: false, error: e.message || "上传失败" } }; }
   }
   if (action === "list") {
-    return relayFetch("/api/inbox/conversations", { query: { channel: b.channel, account: b.account }, fetchFn: deps.fetchFn, env: deps.env });
+    if (b.channel && !PET_CHANNELS.has(String(b.channel))) return { status: 200, body: { success: true, data: [] } };
+    const r = await relayFetch("/api/inbox/conversations", { query: { channel: b.channel, account: b.account }, fetchFn: deps.fetchFn, env: deps.env });
+    if (r.status === 200) r.body.data = petRows(r.body.data);
+    return r;
   }
   if (action === "detail") {
     const id = text(b.id || b.conversation_id, 160);
     if (!id) return { status: 400, body: { success: false, error: "缺少会话 id" } };
+    if (!(await petConversationOk(id, deps))) return { status: 404, body: { success: false, error: "not_found" } };
     return relayFetch(`/api/inbox/conversation/${encodeURIComponent(id)}`, { fetchFn: deps.fetchFn, env: deps.env });
   }
   if (action === "send") {
     const conversationId = text(b.conversation_id, 160);
     if (!conversationId) return { status: 400, body: { success: false, error: "缺少会话 id" } };
+    if (!(await petConversationOk(conversationId, deps))) return { status: 404, body: { success: false, error: "not_found" } };
     const body = {
       conversation_id: conversationId,
       text: text(b.text, 3000),
