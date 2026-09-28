@@ -39,6 +39,23 @@ const VIEWS = {
 };
 const BOSS_IDS = String(process.env.BOSS_EMPLOYEE_IDS || "35").split(",").map((x) => x.trim()).filter(Boolean);
 
+// ── 员工权限(0928 Damon:「给员工的权限尽量少点」)──
+// 店员(role=clerk)只看老板勾选的格子;店长/老板不受限。存 hr_org_settings.staff_biz_tiles(M135),NULL=下面默认最小集。
+export const STAFF_TILES_DEFAULT = ["商品速查", "库存预警", "临期核日期", "入库", "盘点", "报损", "库存上报", "找货记录",
+  "接待预约", "洗护报告", "客户宠物", "疫苗驱虫提醒", "寄养", "发货", "货位绑定", "保质期", "标签打印", "请假报销"];
+const MANAGER_ROLES = new Set(["manager", "store_manager", "boss"]);
+// 入口(view)→ 页面上的格子名,后端按这个拦,不只是前端藏
+const VIEW_TILE = { vaccinations: "疫苗驱虫提醒", boarding: "寄养", aftersales: "售后", requisition: "要货", ship: "发货",
+  shelf_missing: "货位绑定", stock_in: "入库", stock_out: "出库", transfer: "调拨", loss: "报损", profit: "报盈", sale: "收银订单",
+  purchase: "采购单", shelf_stock: "货位库存", reviews: "评论管理", suggest: "智能补货", ai_pic: "AI修图",
+  clinic_reg: "挂号就诊", clinic_record: "病历", clinic_rx: "处方", clinic_exam: "化验检查", clinic_adm: "住院", followup: "回访",
+  referrals: "转诊", cards: "会员卡", card_templates: "次卡模板", service_items: "服务项目", sync: "拉取外卖新品", label_print: "标签打印" };
+async function staffTiles(pool, company) {
+  const r = await pool.query(`SELECT staff_biz_tiles FROM hr_org_settings WHERE company_code=$1`, [company || "JINFANG"]).catch(() => ({ rows: [] }));
+  const t = r.rows[0]?.staff_biz_tiles;
+  return Array.isArray(t) ? t : STAFF_TILES_DEFAULT;
+}
+
 // 拉取外卖新品 = 果冻橙「立即同步」:跟 jdc 自助收银机页(petstore-kiosk-settings)共用同一个触发旗文件,Studio 每分钟轮询
 import { readFileSync, writeFileSync, renameSync } from "node:fs";
 const SYNC_DIR = "/opt/luvsome-gateway/data";
@@ -71,7 +88,7 @@ async function requireStaff(req, pool) {
   const raw = req.query?.token || (req.headers.authorization || "").replace(/^Bearer /, "");
   const claims = verifyToken(raw);
   if (!claims || claims.role !== "staff" || !claims.employee_id) return { error: "unauthorized" };
-  const r = await pool.query(`SELECT id, company_code, employment_status FROM hr_employees WHERE id=$1`, [claims.employee_id]);
+  const r = await pool.query(`SELECT id, company_code, role, employment_status FROM hr_employees WHERE id=$1`, [claims.employee_id]);
   const me = r.rows[0];
   if (!me || me.employment_status !== "active") return { error: "forbidden" };
   return { empId: claims.employee_id, me, raw };
@@ -106,6 +123,21 @@ export default async function handler(req, res) {
   const auth = await requireStaff(req, pool);
   if (auth.error) return res.status(auth.error === "unauthorized" ? 401 : 403).json({ success: false, error: auth.error });
   try {
+    const isMgr = MANAGER_ROLES.has(String(auth.me.role || "")) || BOSS_IDS.includes(String(auth.empId));
+    const view = String(req.query?.view || "");
+    if (view === "tile_perm") {
+      if (req.method === "POST") {
+        if (!BOSS_IDS.includes(String(auth.empId))) return res.status(403).json({ success: false, error: "boss_only" });
+        const list = Array.isArray(req.body?.tiles) ? req.body.tiles.map((x) => String(x).slice(0, 20)).slice(0, 80) : null;
+        if (!list) return res.status(400).json({ success: false, error: "tiles 必须是数组" });
+        await pool.query(`UPDATE hr_org_settings SET staff_biz_tiles=$1::jsonb, updated_at=now() WHERE company_code=$2`,
+          [JSON.stringify(list), auth.me.company_code || "JINFANG"]);
+      }
+      return res.status(200).json({ success: true, data: { tiles: await staffTiles(pool, auth.me.company_code), all: isMgr, is_boss: BOSS_IDS.includes(String(auth.empId)) } });
+    }
+    if (!isMgr && VIEW_TILE[view] && !(await staffTiles(pool, auth.me.company_code)).includes(VIEW_TILE[view])) {
+      return res.status(403).json({ success: false, error: "这个入口没开给店员" });
+    }
     if (req.query?.view === "sync") {
       if (req.method === "POST") requestSync(String(auth.empId));
       return res.status(200).json({ success: true, data: syncStatus() });
