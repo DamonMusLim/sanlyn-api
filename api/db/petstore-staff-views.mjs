@@ -9,7 +9,30 @@ const VIEWS = {
   requisition:  { mod: "./petstore-restock-intents.js", query: { pageSize: "100" } },       // 要货(补货意向)
   ship:         { mod: "./petstore-shop-orders.js", query: { store: "63350001", pageSize: "100" } },    // 发货(商城订单)
   shelf_missing:{ mod: "./petstore-goods-shelf.js", query: { missing_only: "1", pageSize: "200" } },     // 货位绑定(没绑货位的)
+  // 0928 照果冻橙业务页补齐:出库/调拨/报损/报盈/收银订单/采购单(同 jdc 后台的出入库、盘点、采购页)
+  stock_in:     { mod: "./petstore-stock-moves.js", query: { kind: "in", pageSize: "100" } },
+  stock_out:    { mod: "./petstore-stock-moves.js", query: { kind: "out", pageSize: "100" } },
+  transfer:     { mod: "./petstore-stock-moves.js", query: { kind: "transfer", pageSize: "100" } },
+  loss:         { mod: "./petstore-stock-moves.js", query: { kind: "loss", pageSize: "100" } },
+  profit:       { mod: "./petstore-stocktake.js", query: { diff: "profit", pageSize: "100" } },
+  sale:         { mod: "./petstore-stock-moves.js", query: { kind: "sale", pageSize: "100" } },
+  purchase:     { mod: "./petstore-purchase-orders.js", query: { pageSize: "100" } },
 };
+
+// 拉取外卖新品 = 果冻橙「立即同步」:跟 jdc 自助收银机页(petstore-kiosk-settings)共用同一个触发旗文件,Studio 每分钟轮询
+import { readFileSync, writeFileSync, renameSync } from "node:fs";
+const SYNC_DIR = "/opt/luvsome-gateway/data";
+function readSyncJson(name) { try { return JSON.parse(readFileSync(`${SYNC_DIR}/${name}`, "utf8")); } catch { return null; } }
+export function syncStatus() {
+  const rq = readSyncJson("gdc_sync_request.json"), handled = readSyncJson("gdc_sync_handled.json"), last = readSyncJson("gdc_sync_last.json");
+  const pending = !!(rq?.requested_at && handled?.handled_request_at !== rq.requested_at);
+  return { last_sync_at: last?.done_at || null, last_sync_ok: last?.ok ?? null, last_sync_summary: last?.summary || null, pending };
+}
+function requestSync(who) {
+  const tmp = `${SYNC_DIR}/gdc_sync_request.json.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify({ requested_at: new Date().toISOString(), requested_by: `staff:${who}`.slice(0, 80) }));
+  renameSync(tmp, `${SYNC_DIR}/gdc_sync_request.json`);
+}
 const DENY = /(cost|in_price|purchase|supplier|gross|margin|profit|inprice|last_price|avg_price)/i;
 
 function scrub(v) {
@@ -55,12 +78,16 @@ export async function runView(key, raw, extra = {}) {
 
 export default async function handler(req, res) {
   const { getPool, setCors } = await import("./db.js");
-  setCors(req, res, "GET, OPTIONS");
+  setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(204).end();
   const pool = getPool();
   const auth = await requireStaff(req, pool);
   if (auth.error) return res.status(auth.error === "unauthorized" ? 401 : 403).json({ success: false, error: auth.error });
   try {
+    if (req.query?.view === "sync") {
+      if (req.method === "POST") requestSync(String(auth.empId));
+      return res.status(200).json({ success: true, data: syncStatus() });
+    }
     const out = await runView(String(req.query?.view || ""), auth.raw, req.query?.q ? { q: String(req.query.q).slice(0, 40) } : {});
     return res.status(out.status).json(out.body);
   } catch (e) {
