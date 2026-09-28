@@ -1825,7 +1825,12 @@ async function show(p){
     catch(e){ window.__rivalTab = "sel"; }
   }
   if(p==="rival" && !rivalOk[window.__rivalTab]) window.__rivalTab = "sel";
-  document.querySelectorAll(".snav").forEach(function(a){a.classList.toggle("on", a.dataset.p===p)});
+  // 0928 Damon:竞品和采购建议同是 p=rival,以前两个一起亮 —— 按子页区分,采购建议=opp,其余子页归竞品
+  document.querySelectorAll(".snav").forEach(function(a){
+    var on = a.dataset.p===p;
+    if(on && p==="rival") on = a.dataset.tab ? a.dataset.tab===window.__rivalTab : window.__rivalTab!=="opp";
+    a.classList.toggle("on", on);
+  });
   $("ttl").textContent = ({board:"金枋店经营台",list:"金枋店 · 商品明细",listall:"总商品库 · 全量(含 0 库存)",risk:"风险处理台",l5:"效期风险",l6:"问题商品",l7:"比价罗盘",rival:rivalTitles[window.__rivalTab||"sel"],l10:"附近实时 · 美团H5",l11:"竞品历史库 · Excel导出2026-06-17 · ⛔已89天未更新,不代表当前在售",l12:"竞品今日行情 · 对手打法",l8:"竞店商品档(逐行明细,已并入历史库)",l9:"竞争商品档案 · PK",cat:"库存概况",l4:"产品分析",l0:"第0层 表注册表",l1:"第1层 真源状态",l2:"第2层 身份对齐",l3:"第3层 资料缺口"})[p];
   $("body").innerHTML = '<div class="verdict">读取中…</div>';
   try { var html = await PAGES[p](); if (my!==NAV_SEQ) return; $("body").innerHTML = html; }
