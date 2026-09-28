@@ -376,7 +376,7 @@ export async function authMiddleware(req, res, next) {
   // 放在这里而不是各接口里：以后新加的 hr-* 自动被管住，没人能忘了加检查。
   // 前端藏菜单不算数 —— 藏起来的接口照样能用 curl 打。
   if (!hrGate(req, res)) return;
-  if (!staffGate(req, res)) return;
+  if (!(await staffGate(req, res))) return;
 
   next();
 }
@@ -413,9 +413,33 @@ const STAFF_PATHS = new Set([
   "/api/db/petstore-stock-report", "/api/db/petstore-reception", "/api/db/petstore-inbox",
   "/api/db/my-batches", "/api/db/login-staff", "/api/recv-open",
 ]);
-function staffGate(req, res) {
+// 店员令牌以前签出去就 90 天有效,离职了旧令牌照样能用。这里每次请求核一下 hr_employees 在职(60 秒缓存)。
+// DB 短故障 fail-open(跟 checkAccountState 一致),避免店员端整片 401。
+var _staffActiveCache = new Map();
+async function staffActive(empId) {
+  var key = String(empId || "");
+  if (!key) return false;
+  var hit = _staffActiveCache.get(key);
+  if (hit && Date.now() - hit.ts < 60000) return hit.ok;
+  try {
+    var dbMod = await import("./db.js");
+    var r = await dbMod.getPool().query(`SELECT employment_status FROM hr_employees WHERE id=$1`, [key]);
+    var ok = !!r.rows[0] && r.rows[0].employment_status === "active";
+    _staffActiveCache.set(key, { ts: Date.now(), ok: ok });
+    return ok;
+  } catch (e) {
+    return true;
+  }
+}
+async function staffGate(req, res) {
   if (req.user?.role !== "staff") return true;
-  if (STAFF_PATHS.has(req.path || "")) return true;
+  // 登录/应聘这两个本来就是没令牌也能进的,不查在职
+  const p = req.path || "";
+  if (p !== "/api/db/hr-staff-auth" && p !== "/api/db/hr-apply" && !(await staffActive(req.user.employee_id))) {
+    res.status(401).json({ error: "STAFF_INACTIVE", message: "账号已停用,请联系店长" });
+    return false;
+  }
+  if (STAFF_PATHS.has(p)) return true;
   res.status(403).json({ error: "Forbidden", message: "店员账号不能访问这个接口" });
   return false;
 }

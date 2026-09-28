@@ -72,12 +72,28 @@ function requestSync(who) {
 }
 const DENY = /(cost|in_price|purchase|supplier|gross|margin|profit|inprice|last_price|avg_price)/i;
 
-function scrub(v) {
+// 0928:客户隐私。电话只留前3后4,地址不给 —— 只有「发货」要照着地址电话寄件,原样给
+const PHONE_KEY = /(phone|mobile|tel)$/i;
+const ADDR_KEY = /(address|addr)$/i;
+// 采购单:店员看得到「进了什么货、到没到」,看不到金额
+const VIEW_DENY = { purchase: /(amount|price|total|money|fee|paid)/i };
+function maskPhone(x) {
+  const t = String(x ?? "");
+  const d = t.replace(/\D/g, "");
+  return d.length >= 7 ? d.slice(0, 3) + "****" + d.slice(-4) : (t ? "****" : t);
+}
+
+function scrub(v, opt = {}) {
   if (v instanceof Date) return v.toISOString();   // 0928:日期对象别被当成普通对象清成 {}
-  if (Array.isArray(v)) return v.map(scrub);
+  if (Array.isArray(v)) return v.map((x) => scrub(x, opt));
   if (v && typeof v === "object") {
     const o = {};
-    for (const [k, x] of Object.entries(v)) if (!DENY.test(k)) o[k] = scrub(x);
+    const extra = VIEW_DENY[opt.view];
+    for (const [k, x] of Object.entries(v)) {
+      if (DENY.test(k) || (extra && extra.test(k))) continue;
+      if (opt.pii && ADDR_KEY.test(k)) continue;
+      o[k] = opt.pii && PHONE_KEY.test(k) && (typeof x === "string" || typeof x === "number") ? maskPhone(x) : scrub(x, opt);
+    }
     return o;
   }
   return v;
@@ -112,7 +128,8 @@ export async function runView(key, raw, extra = {}, empId = null) {
   const req = { method: "GET", headers: { authorization: "Bearer " + raw }, query: { ...v.query, ...extra } };
   await mod.default(req, res);
   if (status >= 400) return { status, body: { success: false, error: (body && (body.error || body.message)) || "view_failed" } };
-  return { status: 200, body: { success: true, data: v.boss && boss ? body : scrub(body) } };
+  // 老板看原样;其他人按视图去敏(发货要照地址电话寄件,不打码)
+  return { status: 200, body: { success: true, data: boss ? (v.boss ? body : scrub(body, { view: key })) : scrub(body, { view: key, pii: key !== "ship" }) } };
 }
 
 export default async function handler(req, res) {
@@ -168,12 +185,15 @@ export default async function handler(req, res) {
     }
     if (req.query?.view === "pick_perf") {
       // 拣货绩效:我们自己的拣货记录(petstore_takeout_picks),果冻橙那边没有这份数据
+      // 0928:老板看全员;店员只看自己那一行,不看同事
+      const seeAll = BOSS_IDS.includes(String(auth.empId));
       const r = await pool.query(
         `SELECT COALESCE(e.name, '未记名') AS picker, COUNT(DISTINCT p.order_no)::int AS orders,
                 COALESCE(SUM(p.picked),0)::int AS items, MAX(p.completed_at) AS last_at
            FROM petstore_takeout_picks p LEFT JOIN hr_employees e ON e.id = p.picker_employee_id
           WHERE p.completed_at >= now() - interval '30 days'
-          GROUP BY 1 ORDER BY 2 DESC`);
+            AND ($1::boolean OR p.picker_employee_id = $2)
+          GROUP BY 1 ORDER BY 2 DESC`, [seeAll, auth.empId]);
       return res.status(200).json({ success: true, data: r.rows });
     }
     const out = await runView(String(req.query?.view || ""), auth.raw, req.query?.q ? { q: String(req.query.q).slice(0, 40) } : {}, auth.empId);

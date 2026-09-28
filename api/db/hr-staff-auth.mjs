@@ -14,7 +14,7 @@
 import crypto from "crypto";
 import { getPool, setCors } from "./db.js";
 
-const TOKEN_DAYS = 90;          // 员工自己登录的，比店长发的长效链接短
+const TOKEN_DAYS = 30;          // 0928:90→30 天(离职另有每次请求核在职兜底)
 const MAX_FAIL = 5;
 const LOCK_MIN = 15;
 const STAFF_URL = "https://pet.sanlyn.cn/m/staff";
