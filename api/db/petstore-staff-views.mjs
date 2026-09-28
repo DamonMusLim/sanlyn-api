@@ -13,6 +13,7 @@ const VIEWS = {
 const DENY = /(cost|in_price|purchase|supplier|gross|margin|profit|inprice|last_price|avg_price)/i;
 
 function scrub(v) {
+  if (v instanceof Date) return v.toISOString();   // 0928:日期对象别被当成普通对象清成 {}
   if (Array.isArray(v)) return v.map(scrub);
   if (v && typeof v === "object") {
     const o = {};
