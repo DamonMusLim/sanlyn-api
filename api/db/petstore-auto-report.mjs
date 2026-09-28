@@ -31,6 +31,21 @@ async function requireStaff(req, pool) {
 
 const TODAY = `(now() AT TIME ZONE 'Asia/Shanghai')::date`;
 
+// 0929 核对卡新意图:PRINT_LABEL(价签→打纠错签)/NEED_REVIEW(待人看)。SET_SHELF/SET_STOCK 的映射保持原样不动。
+const KIND_CN = { SET_SHELF: "货位", SET_STOCK: "库存", PRINT_LABEL: "价签", NEED_REVIEW: "待人看" };
+function checkState(action, status, res, p) {
+  if (action === "PRINT_LABEL") {
+    if (/^ok:printed/.test(res)) return "已打新签";
+    if (/^no_change/.test(res)) return "价签没错";
+    if (status === "failed") return "没打成";
+    if (/^held/.test(res)) return "留给店长看";
+    return "排队中";
+  }
+  if (action === "NEED_REVIEW") return "待人看";
+  return status === "applied" ? (/^no_change/.test(res) ? "无需改" : "已改好")
+    : status === "failed" ? "没改成" : /^held/.test(res) ? "留给店长看" : (action === "SET_SHELF" && !p.to ? "只有照片,待看" : "排队中");
+}
+
 export async function todayReport(pool) {
   const price = await pool.query(
     `SELECT id, product_code, product_name, channel, old_price, target_price, status, result, decided_note
@@ -84,9 +99,7 @@ export async function todayReport(pool) {
     checks: checks.rows.map((r) => {
       const p = r.payload || {};
       const res = String(r.result || "");
-      const state = r.status === "applied" ? (/^no_change/.test(res) ? "无需改" : "已改好")
-        : r.status === "failed" ? "没改成" : /^held/.test(res) ? "留给店长看" : (r.action === "SET_SHELF" && !p.to ? "只有照片,待看" : "排队中");
-      return { id: r.id, kind: r.action === "SET_SHELF" ? "货位" : "库存", name: r.product_name, state,
+      return { id: r.id, kind: KIND_CN[r.action] || r.action, name: r.product_name, state: checkState(r.action, r.status, res, p),
                result: res.replace(/^(ok|no_change|held|unverified): ?/, ""), photo: p.photo || "" };
     }),
     takeout: takeout.rows.map((r) => ({ order_no: r.order_no, ok: !!r.ok, result: r.result || "" })),
