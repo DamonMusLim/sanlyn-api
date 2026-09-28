@@ -37,15 +37,17 @@ async function listRows(req) {
   const params = [shelfCode, missingOnly, pageSize, offset];
   const sql = `
     WITH filtered AS (
-      SELECT shelf_code, product_code, product_name, spec_text, cur_stock,
-             shelf_missing
-        FROM public.petstore_ops_row
-       WHERE ($1::text IS NULL OR shelf_code = $1)
-         AND ($2::boolean IS NOT TRUE OR shelf_missing IS TRUE)
+      -- 0928:库存统一取 petstore_skus.stock_num(同步果冻橙,跟店员App/收银机同一个数);cur_stock 保留原值不删。
+      SELECT r.shelf_code, r.product_code, r.product_name, r.spec_text, r.cur_stock, k.stock_num,
+             r.shelf_missing
+        FROM public.petstore_ops_row r
+        LEFT JOIN public.petstore_skus k ON k.product_code = r.product_code
+       WHERE ($1::text IS NULL OR r.shelf_code = $1)
+         AND ($2::boolean IS NOT TRUE OR r.shelf_missing IS TRUE)
     ), total_count AS (
       SELECT COUNT(*)::int AS total FROM filtered
     ), page_rows AS (
-      SELECT shelf_code, product_code, product_name, spec_text, cur_stock,
+      SELECT shelf_code, product_code, product_name, spec_text, cur_stock, stock_num,
              shelf_missing
         FROM filtered
        ORDER BY shelf_missing DESC NULLS LAST, shelf_code NULLS LAST, product_code

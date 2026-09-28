@@ -32,16 +32,21 @@ async function listRows(req) {
   const params = [maxDays, pageSize, offset];
   const sql = `
     WITH filtered AS (
-      SELECT r.product_code, r.product_name, r.spec_text, r.cur_stock, r.days_left,
+      -- 0928:库存统一取 petstore_skus.stock_num(每15分钟同步果冻橙,跟店员App/收银机同一个数);cur_stock 保留原值不删。
+      -- 效期快照每天追加一行,product_code 不唯一 → LATERAL 只取最新一条(原来普通 JOIN:135 品出 912 行)。
+      SELECT r.product_code, r.product_name, r.spec_text, r.cur_stock, k.stock_num, r.days_left,
              r.expiry_flag, r.shelf_code, e.out_price
         FROM public.petstore_ops_row r
-        LEFT JOIN public.petstore_offline_expiry_snapshot e ON e.product_code = r.product_code
+        LEFT JOIN public.petstore_skus k ON k.product_code = r.product_code
+        LEFT JOIN LATERAL (SELECT x.out_price FROM public.petstore_offline_expiry_snapshot x
+                            WHERE x.product_code = r.product_code
+                            ORDER BY x.captured_at DESC, x.record_id DESC LIMIT 1) e ON true
        WHERE r.days_left IS NOT NULL
          AND ($1::int IS NULL OR r.days_left <= $1::int)
     ), total_count AS (
       SELECT COUNT(*)::int AS total FROM filtered
     ), page_rows AS (
-      SELECT product_code, product_name, spec_text, cur_stock, days_left,
+      SELECT product_code, product_name, spec_text, cur_stock, stock_num, days_left,
              expiry_flag, shelf_code, out_price
         FROM filtered
        ORDER BY days_left ASC, product_code
