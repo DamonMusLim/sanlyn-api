@@ -25,34 +25,29 @@ function json(res, status, data) {
   return res.status(status).json(data);
 }
 
-async function listRows(req) {
+// 0928:原来读 petstore_offline_stock_snapshot 的「预警数量」—— 果冻橙全店都没设(alarm_num 全 0)、快照还停在 08-28,
+// 页面恒空。改成实时口径:卖得动(近30天≥1件)但库存 ≤ 约一周的量(CEIL(月销/4)),库存用 petstore_skus(15分钟同步)。
+// alarm_num 字段保留给 jdc 页面,值 = 这个「一周的量」门槛。店员 App(petstore-stock-report action=alerts)也调这里,别另写。
+export async function listRows(req) {
   const { page, pageSize, offset } = paging(req.query || {});
-  const storeCode = cleanText(req.query?.store_code, 80);
-  const params = [storeCode, pageSize, offset];
+  const params = [pageSize, offset];
   const sql = `
-    WITH filtered AS (
-      SELECT *
-        FROM petstore_offline_stock_snapshot
-       WHERE ($1::text IS NULL OR store_code = $1)
-    ), latest AS (
-      SELECT DISTINCT ON (product_code)
-             product_code, upc_code, spec, category_name, stock_num, alarm_num,
-             alarm_type, purchase_price, month_sale, store_code, captured_at
-        FROM filtered
-       ORDER BY product_code, capture_date DESC NULLS LAST, captured_at DESC NULLS LAST
-    ), alerted AS (
-      SELECT *
-        FROM latest
-       WHERE stock_num <= alarm_num
-         AND alarm_num > 0
+    WITH alerted AS (
+      SELECT r.product_code, r.product_name, r.barcode AS upc_code, r.spec_text AS spec, r.category AS category_name,
+             COALESCE(k.stock_num, r.cur_stock, 0) AS stock_num,
+             CEIL(COALESCE(k.month_sale, 0) / 4.0)::int AS alarm_num,
+             'week_of_sales' AS alarm_type, COALESCE(k.month_sale, 0) AS month_sale,
+             r.shelf_code, r.pic_url, '63350001' AS store_code, k.synced_at AS captured_at
+        FROM public.petstore_ops_row r
+        JOIN public.petstore_skus k ON k.product_code = r.product_code
+       WHERE COALESCE(k.month_sale, 0) >= 1
+         AND COALESCE(k.stock_num, r.cur_stock, 0) <= CEIL(COALESCE(k.month_sale, 0) / 4.0)
     ), total_count AS (
       SELECT COUNT(*)::int AS total FROM alerted
     ), page_rows AS (
-      SELECT product_code, upc_code, spec, category_name, stock_num, alarm_num,
-             alarm_type, purchase_price, month_sale, store_code, captured_at
-        FROM alerted
-       ORDER BY stock_num ASC NULLS LAST, product_code
-       LIMIT $2 OFFSET $3
+      SELECT * FROM alerted
+       ORDER BY stock_num ASC NULLS LAST, month_sale DESC, product_code
+       LIMIT $1 OFFSET $2
     )
     SELECT COALESCE(
              jsonb_agg(to_jsonb(page_rows)) FILTER (WHERE page_rows.product_code IS NOT NULL),
@@ -64,12 +59,7 @@ async function listRows(req) {
      GROUP BY total_count.total`;
   const result = await getPool().query(sql, params);
   const first = result.rows[0] || { rows: [], total: 0 };
-  return {
-    rows: first.rows,
-    total: first.total,
-    page,
-    pageSize,
-  };
+  return { rows: first.rows, total: first.total, page, pageSize };
 }
 
 export default async function handler(req, res) {
