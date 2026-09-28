@@ -8,8 +8,7 @@ const ROLES = ["supplier_portal", "customer_booking", "factory_booking"];
 const EDITABLE = [
   "legal_representative", "address", "business_license_no",
   "business_license_url", "biz_contact_name", "biz_contact_phone",
-  "biz_contact_email", "fin_contact_name", "fin_contact_phone",
-  "fin_contact_email",
+  "fin_contact_name", "fin_contact_phone",
 ];
 const SELECT_COLS = [
   "id", "code", "name_cn", "name_en", "short_name", "contact_name",
@@ -59,37 +58,48 @@ async function findCompany(pool, auth) {
     const label = clean(auth.meta.company_label, 160);
     const code = clean(auth.meta.company_code || auth.meta.supplier_company_code, 80);
     if (!label && !code) return null;
-    return (await pool.query(
-      `SELECT ${SELECT_COLS.join(",")} FROM companies
-        WHERE ($1<>'' AND (name_cn=$1 OR name_en=$1 OR short_name=$1))
-           OR ($2<>'' AND code=$2)
-        ORDER BY (merged_into_code IS NULL) DESC, id LIMIT 1`,
-      [label, code]
-    )).rows[0] || null;
+    if (code) {
+      const byCode = (await pool.query(
+        `SELECT ${SELECT_COLS.join(",")} FROM companies WHERE code=$1 LIMIT 2`,
+        [code]
+      )).rows;
+      if (byCode.length === 1) return byCode[0];
+    }
+    return findCompanyByNames(pool, [label]);
   }
   if (auth.role === "factory_booking") {
     const label = clean(auth.meta.factory_scope && auth.meta.factory_scope.label, 160);
     if (!label) return null;
-    return (await pool.query(
-      `SELECT ${SELECT_COLS.join(",")} FROM companies
-        WHERE name_cn=$1 OR name_en=$1 OR short_name=$1
-        ORDER BY (type='factory') DESC, id LIMIT 1`,
+    return findCompanyByNames(pool, [label], "type='factory' DESC, id");
+  }
+  const label = clean(auth.meta.customer_company_id || "", 80);
+  if (label) {
+    const byId = (await pool.query(
+      `SELECT ${SELECT_COLS.join(",")} FROM companies WHERE id::text=$1 LIMIT 2`,
       [label]
-    )).rows[0] || null;
+    )).rows;
+    if (byId.length === 1) return byId[0];
   }
   const plan = (await pool.query(
     `SELECT customer, customer_en FROM shipping_plans WHERE id=$1 LIMIT 1`,
     [auth.planId]
   )).rows[0] || {};
-  const label = clean(auth.meta.customer_company_id || "", 80);
-  return (await pool.query(
+  return findCompanyByNames(pool, [clean(plan.customer, 160), clean(plan.customer_en, 160)]);
+}
+
+async function findCompanyByNames(pool, labels, orderBy = "id") {
+  const names = Array.from(new Set(labels.map(v => clean(v, 160)).filter(Boolean)));
+  if (!names.length) return null;
+  const { rows } = await pool.query(
     `SELECT ${SELECT_COLS.join(",")} FROM companies
-      WHERE ($1<>'' AND id::text=$1)
-         OR ($2<>'' AND (name_cn=$2 OR name_en=$2 OR short_name=$2))
-         OR ($3<>'' AND (name_cn=$3 OR name_en=$3 OR short_name=$3))
-      ORDER BY id LIMIT 1`,
-    [label, clean(plan.customer, 160), clean(plan.customer_en, 160)]
-  )).rows[0] || null;
+      WHERE merged_into_code IS NULL
+        AND COALESCE(code,'') NOT ILIKE 'DEPRECATED%'
+        AND (name_cn=ANY($1::text[]) OR name_en=ANY($1::text[]) OR short_name=ANY($1::text[]))
+      ORDER BY ${orderBy} LIMIT 2`,
+    [names]
+  );
+  if (rows.length > 1) return { ambiguous: true };
+  return rows[0] || null;
 }
 
 async function handleCompanyProfile(req, res, pool) {
@@ -98,6 +108,7 @@ async function handleCompanyProfile(req, res, pool) {
   const auth = await resolveToken(pool, raw);
   if (!auth || !auth.planId) return res.status(403).json({ ok: false, error: "链接无效或已过期" });
   const company = await findCompany(pool, auth);
+  if (company?.ambiguous) return res.status(409).json({ ok: false, error: "匹配到多家同名公司，请联系 Sanlyn 处理" });
   if (!company) return res.status(404).json({ ok: false, error: "未匹配到本方公司档案" });
   if (req.method === "GET") return res.json({ ok: true, role: auth.role, company });
 
@@ -123,7 +134,7 @@ async function handleCompanyProfile(req, res, pool) {
       sets.push(`${k}=$${vals.length}`);
     }
   }
-  if (!sets.length) return res.status(400).json({ ok: false, error: "没有可保存字段" });
+  if (!sets.length) return res.status(400).json({ ok: false, error: "业务/财务邮箱由我方维护，如需修改请联系 Sanlyn" });
   vals.push(company.id);
   const { rows } = await pool.query(
     `UPDATE companies SET ${sets.join(",")}, profile_locked=true,

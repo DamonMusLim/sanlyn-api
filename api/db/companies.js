@@ -64,14 +64,38 @@ async function ensureTable(pool) {
   inited = true;
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function normalizeCcEmails(value) {
+  const raw = Array.isArray(value) ? value : String(value == null ? "" : value).split(/[,\s;]+/);
+  const seen = new Set(), out = [];
+  for (const item of raw) {
+    const email = String(item == null ? "" : item).trim().toLowerCase();
+    if (!email) continue;
+    if (!EMAIL_RE.test(email)) {
+      const err = new Error("invalid cc_emails email: " + email);
+      err.statusCode = 400;
+      throw err;
+    }
+    if (!seen.has(email)) {
+      seen.add(email);
+      out.push(email);
+    }
+  }
+  return out;
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
 
-  const _isAdmin = req.user?.role === "admin";
-
   const pool = getPool();
+  return handleCompaniesRequest(req, res, pool);
+}
+
+export async function handleCompaniesRequest(req, res, pool) {
+  const _isAdmin = req.user?.role === "admin";
   await ensureTable(pool);
 
   if (req.method === "GET") {
@@ -98,6 +122,7 @@ export default async function handler(req, res) {
       const result = await pool.query(query, params);
       return res.status(200).json({ success: true, data: result.rows, count: result.rowCount });
     } catch (err) {
+      if (err.statusCode) return res.status(err.statusCode).json({ success: false, error: err.message });
       return res.status(500).json({ success: false, error: err.message });
     }
   }
@@ -125,11 +150,12 @@ export default async function handler(req, res) {
     try {
       const { id, ...patch } = req.body || {};
       if (!id) return res.status(400).json({ error: "id required" });
-      const allowed = ["name_en","name_cn","type","country","registration_no","tax_id","bank_accounts","address","stamps","default_seller","notes","msic_code","einvoice_email","compliance_info","contact_phone","contact_name"];
+      const allowed = ["name_en","name_cn","type","country","registration_no","tax_id","bank_accounts","address","stamps","default_seller","notes","msic_code","einvoice_email","compliance_info","contact_phone","contact_name","contact_email","biz_contact_email","fin_contact_email","cc_emails"];
       const sets = [], vals = [];
       for (const k of allowed) {
         if (patch[k] !== undefined) {
-          vals.push(typeof patch[k] === "object" ? JSON.stringify(patch[k]) : patch[k]);
+          const value = k === "cc_emails" ? normalizeCcEmails(patch[k]) : patch[k];
+          vals.push(k === "cc_emails" ? value : (typeof value === "object" ? JSON.stringify(value) : value));
           sets.push(`${k} = $${vals.length}`);
         }
       }
@@ -146,9 +172,12 @@ export default async function handler(req, res) {
       if (!r.rowCount) return res.status(404).json({ error: "company not found" });
       return res.status(200).json({ success: true, data: r.rows[0] });
     } catch (err) {
+      if (err.statusCode) return res.status(err.statusCode).json({ success: false, error: err.message });
       return res.status(500).json({ success: false, error: err.message });
     }
   }
 
   return res.status(405).json({ error: "Method not allowed" });
 }
+
+export { normalizeCcEmails };

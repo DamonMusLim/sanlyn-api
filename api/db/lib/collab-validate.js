@@ -341,7 +341,8 @@ async function handleValidate(req, res, pool) {
   const companyProfile = await (async () => {
     try {
       await ensureCompanyColumns(pool);
-      return await findScopedCompany(pool, { role, meta, planId });
+      const found = await findScopedCompany(pool, { role, meta, planId });
+      return found && found.ambiguous ? null : found;   // 同名多家 → 当作未匹配(Claude 0928 一行护栏)
     } catch (e) { return null; }
   })();
   if (role === "supplier_portal" && portalScope && companyProfile) portalScope.company_profile = companyProfile;

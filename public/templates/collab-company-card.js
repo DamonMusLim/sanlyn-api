@@ -18,6 +18,9 @@
     return row(k, '<input id="'+id+'" value="'+esc(v||'')+'" '+(ro?'disabled':'')+
       ' style="width:100%;box-sizing:border-box;border:1px solid '+C.line2+';border-radius:10px;padding:10px 12px;font:inherit;font-size:13.5px;color:'+C.ink+';background:'+(ro?'rgba(255,255,255,.03)':C.field)+';'+(ro?'opacity:.6;':'')+'">');
   }
+  function ownedEmail(k, id, v){
+    return row(k, '<input id="'+id+'" value="'+esc(v||'')+'" disabled style="width:100%;box-sizing:border-box;border:1px solid '+C.line2+';border-radius:10px;padding:10px 12px;font:inherit;font-size:13.5px;color:'+C.ink+';background:rgba(255,255,255,.03);opacity:.6;"><div style="font-size:11.5px;color:'+C.muted+';margin-top:4px;">由我方维护，如需修改请联系 Sanlyn</div>');
+  }
   function twoCol(a, b){ return '<div style="display:flex;gap:8px;">'+
     '<div style="flex:1;min-width:0;">'+a+'</div><div style="flex:1;min-width:0;">'+b+'</div></div>'; }
   function group(title, dot, inner){
@@ -65,10 +68,8 @@
         business_license_url: licenseUrl,
         biz_contact_name: val("cc_biz_contact_name"),
         biz_contact_phone: val("cc_biz_contact_phone"),
-        biz_contact_email: val("cc_biz_contact_email"),
         fin_contact_name: val("cc_fin_contact_name"),
-        fin_contact_phone: val("cc_fin_contact_phone"),
-        fin_contact_email: val("cc_fin_contact_email")
+        fin_contact_phone: val("cc_fin_contact_phone")
       };
       var r = await fetch(API + "/company-profile", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({token:token, profile:patch})});
       var d = await r.json().catch(function(){ return {}; });
@@ -109,10 +110,10 @@
         (locked ? "" : row("上传营业执照附件", '<input id="ccLicenseFile" type="file" accept=".pdf,image/*" style="font:inherit;color:'+C.muted+';font-size:12.5px;">'))),
       group("业务联系人", C.accent,
         twoCol(input("姓名", "cc_biz_contact_name", p.biz_contact_name || p.contact_name, locked), input("电话", "cc_biz_contact_phone", p.biz_contact_phone || p.contact_phone, locked)) +
-        input("邮箱", "cc_biz_contact_email", p.biz_contact_email || p.contact_email, locked)),
+        ownedEmail("邮箱", "cc_biz_contact_email", p.biz_contact_email || p.contact_email)),
       group("财务联系人", C.good,
         twoCol(input("姓名", "cc_fin_contact_name", p.fin_contact_name, locked), input("电话", "cc_fin_contact_phone", p.fin_contact_phone, locked)) +
-        input("邮箱", "cc_fin_contact_email", p.fin_contact_email, locked))
+        ownedEmail("邮箱", "cc_fin_contact_email", p.fin_contact_email))
     ].join("") : '<div style="padding:24px;text-align:center;color:'+C.muted+';">暂无本方公司档案</div>';
 
     m.innerHTML = '<div style="position:absolute;left:50%;top:4%;transform:translateX(-50%);width:min(560px,94vw);max-height:90vh;overflow:auto;background:'+C.surface+';border:1px solid '+C.line+';border-radius:28px;padding:20px 20px 18px;box-shadow:0 30px 80px rgba(0,0,0,.6);color:'+C.ink+';" onclick="event.stopPropagation()">'+
