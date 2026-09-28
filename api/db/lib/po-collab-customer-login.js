@@ -21,23 +21,24 @@ import { beginLoginAttempt, checkLoginLock, finishLoginAttempt, clientIp } from 
 import { resolveCustomerToken } from "./po-collab-customer.js";
 
 const CODE_MIN = 15, MAX_TRIES = 5, MAX_FAILS_PER_HOUR = 10, MAX_SENDS_PER_HOUR = 5, MAX_SENDS_PER_IP_HOUR = 20, PW_MIN = 8;
-const EMAIL_RE = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
-const norm = (e) => String(e || "").trim().toLowerCase();
-const hashCode = (email, code) => {
+export const EMAIL_RE = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
+export const norm = (e) => String(e || "").trim().toLowerCase();
+export const splitEmails = (vals) => vals.flatMap((v) => Array.isArray(v) ? v : String(v || "").split(/[,;\s]+/)).map(norm).filter((e) => EMAIL_RE.test(e));
+export const hashCode = (email, code) => {
   if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET 未设置");   // ⛔ 不留回退 key
   return crypto.createHmac("sha256", process.env.JWT_SECRET).update(`${norm(email)}:${code}`).digest("hex");
 };
 const guardKey = (email) => `oc-code:${norm(email)}`;
 
 // 接 login-guard v2（跟 auth-login 同一套：先记一次尝试 → 查锁 → 收尾 ok/fail/blocked）
-async function guardStart(pool, email, ip) {
+export async function guardStart(pool, email, ip) {
   const attempt = await beginLoginAttempt(pool, guardKey(email), ip);
   let lock = await checkLoginLock(pool, guardKey(email), ip, attempt?.id || null);
   if (lock?.disabled) lock = null;               // 防护表坏了 → 放行（与 auth-login 一致）
   if (lock) await finishLoginAttempt(pool, attempt, "blocked");
   return { attempt, lock };
 }
-const guardEnd = (pool, g, outcome) => finishLoginAttempt(pool, g.attempt, outcome).catch(() => null);
+export const guardEnd = (pool, g, outcome) => finishLoginAttempt(pool, g.attempt, outcome).catch(() => null);
 
 // 这张单的客户公司 + 在档邮箱
 async function companyOfSheet(pool, sheet) {
@@ -46,8 +47,7 @@ async function companyOfSheet(pool, sheet) {
        FROM orders o JOIN companies c ON c.code = o.company_code WHERE o.order_no=$1 LIMIT 1`, [sheet.order_no]);
   const c = r.rows[0];
   if (!c) return null;
-  const emails = new Set([c.contact_email, c.biz_contact_email, ...(c.cc_emails || [])]
-    .map(norm).filter((e) => EMAIL_RE.test(e)));
+  const emails = new Set(splitEmails([c.contact_email, c.biz_contact_email, c.cc_emails]));
   return { ...c, emails };
 }
 
@@ -85,6 +85,7 @@ export async function handleCustomerLoginCode(req, res, pool) {
      VALUES ('order_collab_login_code','petbaby',$1::jsonb,'[]'::jsonb,$2,$3,'po_sheet',$4,NULL,'approved','order-collab-notify',NULL)`,
     [JSON.stringify([email]), `Your login code: ${code}`,
      `<p>Your login code is <b style="font-size:18px;letter-spacing:2px">${code}</b>. It expires in ${CODE_MIN} minutes.</p>`
+     + `<p>If you already have an account, this verification will reset your password and the old password will stop working.</p>`
      + `<p>If you did not request it, ignore this email.</p><p>Xiamen Pet Baby Import and Export Co., Ltd.</p>`, sheet.id]);
   await guardEnd(pool, g, "ok");
   return res.json({ ok: true, expires_min: CODE_MIN });

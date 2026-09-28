@@ -21,6 +21,7 @@ import { handleCustomerSendLink, handleCustomerValidate, handleCustomerSubmit, h
          CUSTOMER_SEAL_OPTS, CUSTOMER_SEAL_UPLOAD_OPTS, CUSTOMER_PDF_OPTS } from "./lib/po-collab-customer.js";
 import { handleCustomerNotifyEmails } from "./lib/po-collab-customer-notify.js";
 import { handleCustomerLoginCode, handleCustomerLoginVerify } from "./lib/po-collab-customer-login.js";
+import { handleFactoryLoginCode, handleFactoryLoginVerify } from "./lib/po-collab-factory-login.js";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
@@ -56,6 +57,8 @@ export default async function handler(req, res) {
       return res.status(404).json({ ok: false, error: "unknown endpoint: " + sub });
     }
     if (req.method === "POST" && sub === "send-link") return await handleSendLink(req, res, pool);
+    if (req.method === "POST" && sub === "login-code") return await handleFactoryLoginCode(req, res, pool);
+    if (req.method === "POST" && sub === "login-verify") return await handleFactoryLoginVerify(req, res, pool);
     if (req.method === "GET"  && sub === "validate")  return await handleValidate(req, res, pool);
     if (req.method === "POST" && sub === "submit")    return await handleSubmit(req, res, pool);
     if (req.method === "POST" && sub === "upload")    return await handleUpload(req, res, pool);

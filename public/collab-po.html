@@ -114,6 +114,7 @@ input.need{outline:2px solid var(--miss)}
 .loginbox{max-width:320px;margin:40px auto;background:var(--page);border:1px solid var(--line);border-radius:6px;padding:20px}
 .loginbox input{display:block;width:100%;margin:6px 0 10px;padding:8px;border:1px solid var(--line);border-radius:4px;font:inherit}
 .loginbox button{width:100%;padding:9px;border:0;border-radius:4px;background:var(--accent,#1F4B7A);color:#fff;font:inherit;font-weight:700;cursor:pointer}
+.lgfirst{margin-top:10px;font-size:12px}.lgfirst a{color:var(--ink2)}
 .signrow{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-top:0;font-size:11.5px;page-break-inside:avoid}
 .signrow>div{padding:10px 12px}.signrow>div+div{border-left:1px solid var(--line)}
 .sealspot{width:170px;height:130px;margin-top:6px;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px}
@@ -352,6 +353,7 @@ body.pdfmode table.items{width:100%!important}
 
 <script src="/templates/vendor/html2canvas.min.js"></script>
 <script src="/templates/vendor/xlsx.full.min.js"></script>
+<script src="collab-po-login.js"></script>
 <script>
 (function(){
 "use strict";
@@ -373,6 +375,7 @@ function toast(msg,isErr){var t=$("toast");t.textContent=msg;t.className="toast"
   t.style.display="block";clearTimeout(t._h);t._h=setTimeout(function(){t.style.display="none"},2600)}
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){
   return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+window.__poLogin={$: $, esc: esc, BASE: function(){return BASE}, TOKEN: function(){return TOKEN}, setFJWT: function(v){FJWT=v}, load: load};
 function val(l,k){var t=l.theirs||{},o=l.ours||{};
   if(t[k]!=null&&t[k]!=="")return t[k];
   if(o[k]!=null&&o[k]!=="")return o[k];return""}
@@ -865,27 +868,6 @@ document.addEventListener("click",function(e){
   var go=function(){var q=new URLSearchParams(location.search); q.set("sheet",sid); location.search=q.toString()};
   if(dirty)ask("这张有改动还没提交，切换会丢掉。确定切换？",go,"切换"); else go();
 });
-// ── 登录（用贵司账号）──
-function showLogin(msg){
-  $("wrap").style.display="none"; $("swBar").style.display="none";
-  $("state").style.display="";
-  $("state").innerHTML='<div class="loginbox"><b style="font-size:15px">请登录贵司账号查看采购单</b>'
-    +(msg?'<div style="font-size:12px;color:var(--miss);margin-top:6px">'+esc(msg)+'</div>':'')
-    +'<div style="font-size:11.5px;color:var(--dim);margin-top:4px">账号和密码请向厦门巴匕索取</div>'
-    +'<input id="lgU" placeholder="账号" autocomplete="username"><input id="lgP" type="password" placeholder="密码" autocomplete="current-password">'
-    +'<button id="lgBtn">登录</button><div id="lgErr" style="color:var(--miss);font-size:12px;margin-top:8px"></div></div>';
-  var go=function(){
-    var u=$("lgU").value.trim(), pw=$("lgP").value; if(!u||!pw){$("lgErr").textContent="请填账号和密码";return}
-    $("lgBtn").disabled=true;
-    fetch(BASE+"/api/db/auth-login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:pw})})
-      .then(function(r){return r.json()}).then(function(j){
-        if(!j.token){$("lgErr").textContent=j.error||"登录失败";$("lgBtn").disabled=false;return}
-        try{localStorage.setItem("po_factory_jwt",j.token)}catch(e){}
-        FJWT=j.token; $("state").innerHTML="正在读取采购单…"; load();
-      }).catch(function(e){$("lgErr").textContent="登录失败："+e.message;$("lgBtn").disabled=false});
-  };
-  $("lgBtn").onclick=go; $("lgP").onkeydown=function(e){if(e.key==="Enter")go()};
-}
 $("bSigned").onclick=function(){uploadCtx={kind:"signed_back"};$("fileInput").accept=".pdf,image/*";$("fileInput").click()};
 $("dlvDate").addEventListener("change",function(){this.classList.remove("need")});
 function paintSteps(){

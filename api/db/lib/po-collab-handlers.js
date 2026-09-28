@@ -568,4 +568,4 @@ async function handleUpload(req, res, pool) {
   return res.json({ ok: true, file_id: ins.rows[0].id, file_url: url, kind: k, status });
 }
 
-export { handleSendLink, handleValidate, handleSubmit, handleUpload, resolveToken, factoryGate, maybeConfirm, isInternal };
+export { handleSendLink, handleValidate, handleSubmit, handleUpload, resolveToken, factoryGate, maybeConfirm, isInternal, FACTORY_ROLES };
