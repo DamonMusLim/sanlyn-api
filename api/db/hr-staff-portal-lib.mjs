@@ -14,8 +14,8 @@ export async function agendaFor(pool, companyCode, today, employeeId) {
     `SELECT id, to_char(at_time,'HH24:MI') AS at_time, title, note, kind, status
        FROM hr_day_agenda
       WHERE company_code=$1
-        -- 0928:没做完的店内任务(kind='task',如改绑货位/下架过期)跨天留着,直到做完;最多带 14 天。带时间的安排只看当天
-        AND (work_date=$2 OR (kind='task' AND status='open' AND work_date < $2::date AND work_date >= $2::date - 14))
+        -- 0928/0929:没做完的店内任务/客户要实拍/转发货(task/photo/ship)跨天留着,直到做完;最多带 14 天。带时间的安排只看当天
+        AND (work_date=$2 OR (kind IN ('task','photo','ship') AND status='open' AND work_date < $2::date AND work_date >= $2::date - 14))
         AND (employee_id IS NULL OR employee_id=$3)
       ORDER BY at_time NULLS LAST, id`, [companyCode, today, employeeId]);
   const all = r.rows;
