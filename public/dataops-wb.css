@@ -162,3 +162,19 @@ tr.cmprow:hover td{background:#f7f9fc}
 .cx{display:inline-block;width:13px;color:#8a96ac;font-size:10px}
 tr.cmpdet td{background:var(--sunk,#f1f4f9);padding:0!important}
 table.mini td.ttl{white-space:normal;max-width:420px;line-height:1.45}
+
+/* 0928 Damon:数据中心嵌在 War Room 里当一个模块,窗口窄(<900px)时共用 workbench.css 把侧栏整个藏了,
+   只剩经营台,竞品/采购建议/选品表都点不到。窄屏改成顶部一排横滑页签,不藏。 */
+@media(max-width:900px){
+  .app{display:block}
+  .app>.side{display:flex!important;width:auto;flex:none;padding:6px 8px;gap:4px;overflow-x:auto;
+   white-space:nowrap;align-items:center;border-bottom:1px solid rgba(128,140,165,.22);-webkit-overflow-scrolling:touch}
+  .side .brand,.side .sgrp{display:none}
+  .side .snav{flex:none;padding:6px 11px;border-left:0;border-radius:999px;font-size:12.5px}
+  .side .snav.on{background:rgba(47,111,237,.14)}
+  .side .snav.dim{display:none!important}
+  .side .lay{display:flex;margin:0;border-top:0;align-items:center}
+  .side .lay>summary{padding:6px 10px;white-space:nowrap}
+  .side .lay[open]{gap:4px}
+  .main{padding:12px 12px 40px}
+}
