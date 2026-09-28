@@ -95,13 +95,19 @@ async function relayFetch(pathname, { method = "GET", query = {}, body, fetchFn 
 // 等宠物店独立微信号建好进 SSOT,再把 wechat 加回来。
 // "inbox #7" = 金枋店AI客服(SSOT company=宠物店),转发服务没给它映射渠道名,原样放行
 const PET_CHANNELS = new Set(["meituan", "eleme", "wework", "inbox #7"]);
-function petRows(data) {
-  return (Array.isArray(data) ? data : []).filter((x) => PET_CHANNELS.has(String(x?.channel || "")));
+// 2026-09-28 Damon:「超过2天之前跟谁联系都看不到」—— App 里只留最近 48 小时的会话和消息,更早的一律不给
+const CHAT_WINDOW_MS = 48 * 3600 * 1000;
+function recent(at, now) {
+  const t = Date.parse(at || "");
+  return Number.isFinite(t) && t >= now - CHAT_WINDOW_MS;
+}
+function petRows(data, now) {
+  return (Array.isArray(data) ? data : []).filter((x) => PET_CHANNELS.has(String(x?.channel || "")) && recent(x?.last_at, now));
 }
 async function petConversationOk(id, deps) {
   const r = await relayFetch("/api/inbox/conversations", { fetchFn: deps.fetchFn, env: deps.env });
   if (r.status !== 200) return false;
-  return petRows(r.body.data).some((x) => String(x.conversation_id) === String(id));
+  return petRows(r.body.data, deps.now()).some((x) => String(x.conversation_id) === String(id));
 }
 
 async function handleAction(auth, b, deps) {
@@ -113,14 +119,17 @@ async function handleAction(auth, b, deps) {
   if (action === "list") {
     if (b.channel && !PET_CHANNELS.has(String(b.channel))) return { status: 200, body: { success: true, data: [] } };
     const r = await relayFetch("/api/inbox/conversations", { query: { channel: b.channel, account: b.account }, fetchFn: deps.fetchFn, env: deps.env });
-    if (r.status === 200) r.body.data = petRows(r.body.data);
+    if (r.status === 200) r.body.data = petRows(r.body.data, deps.now());
     return r;
   }
   if (action === "detail") {
     const id = text(b.id || b.conversation_id, 160);
     if (!id) return { status: 400, body: { success: false, error: "缺少会话 id" } };
     if (!(await petConversationOk(id, deps))) return { status: 404, body: { success: false, error: "not_found" } };
-    return relayFetch(`/api/inbox/conversation/${encodeURIComponent(id)}`, { fetchFn: deps.fetchFn, env: deps.env });
+    const r = await relayFetch(`/api/inbox/conversation/${encodeURIComponent(id)}`, { fetchFn: deps.fetchFn, env: deps.env });
+    const d = r.status === 200 ? r.body.data : null;
+    if (d && Array.isArray(d.messages)) { const now = deps.now(); d.messages = d.messages.filter((m) => recent(m?.at, now)); }
+    return r;
   }
   if (action === "send") {
     const conversationId = text(b.conversation_id, 160);

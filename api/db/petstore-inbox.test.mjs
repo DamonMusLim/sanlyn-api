@@ -56,7 +56,7 @@ async function call(h, body) {
     verifyStaff: async () => staff,
     env: { MSG_RELAY_TOKEN: "relay-test-token-xyz" },
     fetchFn: async (url) => String(url).includes("/api/inbox/conversations")
-      ? new Response(JSON.stringify([{ conversation_id: "c1", channel: "meituan" }]), { status: 200 })
+      ? new Response(JSON.stringify([{ conversation_id: "c1", channel: "meituan", last_at: new Date().toISOString() }]), { status: 200 })
       : new Response(JSON.stringify({ status: "blocked", reason: "需老板批准" }), { status: 200 }),
   });
   const r = await call(h, { action: "send", conversation_id: "c1", text: "好" });
@@ -68,7 +68,8 @@ async function call(h, body) {
 // 0928:inbox6 个人微信(wechat)不进宠物店消息 —— 列表滤掉、按 id 读/发也拒
 {
   const calls = [];
-  const rows = [{ conversation_id: "m1", channel: "meituan" }, { conversation_id: "w1", channel: "wechat" }, { conversation_id: "x1", channel: "unknown" }];
+  const nowIso = new Date().toISOString();
+  const rows = [{ conversation_id: "m1", channel: "meituan", last_at: nowIso }, { conversation_id: "w1", channel: "wechat", last_at: nowIso }, { conversation_id: "x1", channel: "unknown", last_at: nowIso }];
   const h = makeHandler({
     poolFactory: pool,
     setCorsFn: noCors,
@@ -94,6 +95,25 @@ async function call(h, body) {
   const r = await call(h, { action: "upload_image", photo: { mime: "text/plain", base64: "eA==" } });
   assert.equal(r.statusCode, 400);
   assert.equal(r.body.error, "只允许上传图片");
+}
+
+// 0928:超过 48 小时的会话/消息不给
+{
+  const NOW = Date.parse("2026-09-28T12:00:00Z");
+  const iso = (h) => new Date(NOW - h * 3600 * 1000).toISOString();
+  const rows = [{ conversation_id: "new", channel: "wework", last_at: iso(3) }, { conversation_id: "old", channel: "wework", last_at: iso(50) }, { conversation_id: "nodate", channel: "wework" }];
+  const detail = { messages: [{ text: "今天", at: iso(1) }, { text: "三天前", at: iso(72) }], draft: null };
+  const h = makeHandler({
+    poolFactory: pool, setCorsFn: noCors, verifyStaff: async () => staff, now: () => NOW,
+    env: { MSG_RELAY_TOKEN: "relay-test-token-xyz" },
+    fetchFn: async (url) => new Response(JSON.stringify(String(url).includes("/conversations") ? rows : detail), { status: 200 }),
+  });
+  const l = await call(h, { action: "list" });
+  assert.deepEqual(l.body.data.map((x) => x.conversation_id), ["new"]);
+  const o = await call(h, { action: "detail", id: "old" });
+  assert.equal(o.statusCode, 404);
+  const d = await call(h, { action: "detail", id: "new" });
+  assert.deepEqual(d.body.data.messages.map((m) => m.text), ["今天"]);
 }
 
 console.log("petstore-inbox tests passed");
