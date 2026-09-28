@@ -19,16 +19,9 @@ function timingTokenMatches(input, expected) {
 }
 
 function decodeJwtPayload(req) {
-  const auth = String(req.headers.authorization || "");
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : auth;
-  const part = token.split(".")[1];
-  if (!part) return {};
-  try {
-    const padded = part.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(part.length / 4) * 4, "=");
-    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
-  } catch {
-    return {};
-  }
+  // 0928:以前自己 base64 解 Authorization 头、不验签,伪造 username=damon_sl 就能当老板。
+  //       改成只认全局鉴权验过签的 req.user;没验过的一律当没身份。
+  return req.user && typeof req.user === "object" ? req.user : {};
 }
 
 function bossUsers() {

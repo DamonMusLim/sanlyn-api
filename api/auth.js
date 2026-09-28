@@ -376,6 +376,7 @@ export async function authMiddleware(req, res, next) {
   // 放在这里而不是各接口里：以后新加的 hr-* 自动被管住，没人能忘了加检查。
   // 前端藏菜单不算数 —— 藏起来的接口照样能用 curl 打。
   if (!hrGate(req, res)) return;
+  if (!staffGate(req, res)) return;
 
   next();
 }
@@ -398,6 +399,24 @@ function hrGate(req, res) {
   const who = String(req.user?.username || req.user?.account || req.user?.sub || "").toLowerCase();
   if (HR_ADMINS.includes(who)) return true;
   res.status(403).json({ error: "Forbidden", message: "人事数据只有老板本人能看" });
+  return false;
+}
+
+// ── 店员令牌白名单（0928 Damon：员工只做任务、没有决定权）──
+// 店员令牌(role=staff)以前只要签名对就能打任何 /api/db/*,例如 petstore-goods-detail 直接回成本价+供应商。
+// 这里按「店员 App 实际调用的接口」放行(前端代码 + nginx 近 7 天日志对过),其余一律 403。
+// 老板(员工35)在 App 里也是 staff 令牌,老板专属数据由各接口自己判(staff-views boss 视图 / inbox / auto-report)。
+// 店员 App 新接一个接口 → 加到这里。
+const STAFF_PATHS = new Set([
+  "/api/db/hr-staff-auth", "/api/db/hr-apply", "/api/db/hr-staff-portal", "/api/db/hr-holiday", "/api/db/hr-manager-mobile",
+  "/api/db/petstore-staff-views", "/api/db/petstore-auto-report", "/api/db/petstore-takeout", "/api/db/petstore-supervision",
+  "/api/db/petstore-stock-report", "/api/db/petstore-reception", "/api/db/petstore-inbox",
+  "/api/db/my-batches", "/api/db/login-staff", "/api/recv-open",
+]);
+function staffGate(req, res) {
+  if (req.user?.role !== "staff") return true;
+  if (STAFF_PATHS.has(req.path || "")) return true;
+  res.status(403).json({ error: "Forbidden", message: "店员账号不能访问这个接口" });
   return false;
 }
 
