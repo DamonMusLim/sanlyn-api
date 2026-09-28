@@ -9,7 +9,7 @@ const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
 const PAGE_COLS = `product_code, barcode, product_name, category, spec_text, pic_url,
              gdc_created_at, gdc_updated_at,
-             store_price, mt_price, ele_price, cur_stock, product_status, shelf_code,
+             store_price, mt_price, ele_price, cur_stock, product_status, product_status_text, shelf_code,
              month_sale, warn_status, category_l1, category_l2, spu_code,
              produce_date, expiration_date, days_to_expire, expiry_captured,
              stock_num, out_price, supplier, take_out,
@@ -72,6 +72,8 @@ async function listRows(req) {
     ), filtered AS (
       SELECT r.product_code, r.barcode, r.product_name, r.category, r.spec_text, r.pic_url,
              r.store_price, r.mt_price, r.ele_price, r.cur_stock, r.product_status, r.shelf_code,
+             -- 0928:给页面直接显示用,⛔别让前端各自翻译 UP/LOWER
+             CASE r.product_status WHEN 'UP' THEN '上架' WHEN 'LOWER' THEN '下架' ELSE r.product_status END AS product_status_text,
              k.month_sale AS month_sale,
              k.warn_status AS warn_status,
              k.category_l1 AS category_l1,
