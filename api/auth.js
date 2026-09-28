@@ -123,6 +123,10 @@ const PUBLIC_PATHS = [
   "/api/db/customer-invite/activate",
   // Forwarder Booking Submit — token-authenticated, no JWT
   "/api/db/hr-staff-auth",   // 员工端登录(手机号+密码;接口内自己防爆破) [Claude 0730]
+  // 客服台往店员今日待办塞活(转发货 / 客户要实拍):无 JWT,凭 x-service-token=SHIP_TODO_TOKEN,
+  // handler 内 timingSafeEqual 比对,未配令牌 503 fail-closed。0928 实测:没列在这里时两个口都被全局鉴权挡成 401,从没通过。
+  "/api/db/hr-ship-todo",
+  "/api/db/hr-photo-todo",
   "/api/db/hr-apply",   // 招聘自助投递(候选人无账号;接口内限流+字段截断+状态锁死new) [Claude 0728]
   "/api/db/forwarder-booking-submit",
   // Billing tab read-only lens — handler validates raw magic-link token itself
