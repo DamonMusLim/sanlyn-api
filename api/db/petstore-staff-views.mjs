@@ -22,6 +22,17 @@ const VIEWS = {
   reviews:      { mod: "./petstore-reviews.js", query: { pageSize: "100" } },                     // 评论管理
   suggest:      { mod: "./petstore-gdc-suggest.js", query: { pageSize: "100" } },                 // 智能补货(果冻橙建议已全量入库)
   ai_pic:       { mod: "./petstore-ai-tasks.js", query: { task_type: "optimize_pic", pageSize: "100" } }, // AI修图
+  // 0928 宠老板(它它医生/宠老板 SaaS)那一套:诊疗 + 会员 —— 单独一块,后续可隐藏或并进门店服务
+  clinic_reg:   { mod: "./petstore-clinic-reg.js", query: { pageSize: "100", storeCode: "63350001" } },
+  clinic_record:{ mod: "./petstore-clinic-record.js", query: { pageSize: "100", storeCode: "63350001" } },
+  clinic_rx:    { mod: "./petstore-clinic-rx.js", query: { pageSize: "100", storeCode: "63350001" } },
+  clinic_exam:  { mod: "./petstore-clinic-exam.js", query: { pageSize: "100", storeCode: "63350001" } },
+  clinic_adm:   { mod: "./petstore-clinic-adm.js", query: { pageSize: "100", storeCode: "63350001" } },
+  followup:     { mod: "./petstore-followup.js", query: { pageSize: "100", storeCode: "63350001" } },
+  referrals:    { mod: "./petstore-referrals.js", query: { pageSize: "100", storeCode: "63350001" } },
+  cards:        { mod: "./petstore-cards.js", query: { pageSize: "100", storeCode: "63350001" } },
+  card_templates:{ mod: "./petstore-card-templates.js", query: { pageSize: "100", storeCode: "63350001" } },
+  service_items:{ mod: "./petstore-service-items.js", query: { pageSize: "100", storeCode: "63350001" } },
   // 数据分析:含营业额/毛利,⛔只给老板;老板看不去字段
   biz_daily:    { mod: "./petstore-platform-daily.js", query: { pageSize: "60" }, boss: true },   // 经营分析
   pnl:          { mod: "./petstore-order-pnl.js", query: { pageSize: "60" }, boss: true },        // 利润统计
