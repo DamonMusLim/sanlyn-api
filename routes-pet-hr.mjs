@@ -27,6 +27,7 @@ export function registerPetHrRoutes(mount) {
   mount("/api/db/petstore-inbox", () => import("./api/db/petstore-inbox.mjs"));
   mount("/api/db/petstore-takeout", () => import("./api/db/petstore-takeout.mjs"));
   mount("/api/db/petstore-auto-report", () => import("./api/db/petstore-auto-report.mjs"));
+  mount("/api/db/petstore-staff-views", () => import("./api/db/petstore-staff-views.mjs"));
   mount("/api/db/hr-staff-auth", () => import("./api/db/hr-staff-auth.mjs"));
   mount("/api/db/hr-apply", () => import("./api/db/hr-apply.mjs"));
   mount("/api/db/hr-recruit", () => import("./api/db/hr-recruit.mjs"));
