@@ -2,6 +2,7 @@
 // 🚨报检那一页=工厂/报检行已报的**真商检单原件(图/PDF)直接拼进来**,不是系统重画的(Damon 2026-07-05铁律)。
 // 顺序: ①报关单(横向,renderCustomsDeclaration) ②PL·SC·IV报关版(export-docs模版goto) ③真商检单原件(document_uploads)。
 // parts 可选(decl,pack,inspect[,inbound]),默认前三。复用现成渲染器,不重造。
+// audience: "internal"=内部核对版(含门禁页+缺商检占位页,行为同旧版) | "external"=对外给报关行(缺省/其它值一律按此:不出这两类内部页,门禁照查、结果照常返回)。
 import { renderCustomsDeclaration, resolveOrdersForContainer } from "./customs-declaration-form.js";
 import { renderInboundNotice } from "./inbound-notice.js";
 import { checkContainerCoverage, checkAmountReconciliation, renderGateBanner,
@@ -83,6 +84,7 @@ export async function renderCustomsBundle(pool, opts) {
   const token = opts.token || "";
   const apiBase = opts.apiBase || "https://api.sanlyn.cn";
   const partsWanted = (opts.parts && opts.parts.length) ? opts.parts : ["decl", "pack", "inspect"];
+  const audience = opts.audience === "internal" ? "internal" : "external"; // 缺省/其它值一律当 external(对外安全默认)
 
   const plan = await loadPlan(pool, shipmentId);
   if (!plan) return null;
@@ -129,7 +131,7 @@ export async function renderCustomsBundle(pool, opts) {
   const margin = { top: "12mm", bottom: "12mm", left: "10mm", right: "10mm" };
   try {
     const page = await browser.newPage();
-    if (gateBannerHtml) {
+    if (audience === "internal" && gateBannerHtml) { // 对外版(external)不出门禁页,检查照跑、结果照常返回
       const bannerHtml = `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:16px;font-family:sans-serif">
         <div style="font-size:14px;font-weight:800;margin-bottom:10px">报关全套质量门禁结果</div>
         ${gateBannerHtml}
@@ -142,8 +144,8 @@ export async function renderCustomsBundle(pool, opts) {
     if (inHtml) { await page.setContent(inHtml, { waitUntil: "load", timeout: 30000 }); await page.emulateMediaType("print"); rendered.push({ slot: "inbound", buf: await page.pdf({ format: "A4", printBackground: true, margin }) }); }
     if (cdHtml) { await page.setContent(cdHtml, { waitUntil: "load", timeout: 30000 }); await page.emulateMediaType("print"); rendered.push({ slot: "decl", buf: await page.pdf({ format: "A4", landscape: true, printBackground: true, margin }) }); }
     if (packUrl) { await page.goto(packUrl, { waitUntil: "networkidle0", timeout: 60000 }); await new Promise(r => setTimeout(r, 2000)); await page.emulateMediaType("print"); rendered.push({ slot: "pack", buf: await page.pdf({ format: "A4", printBackground: true, margin }) }); }
-    // 报检没有真单 → 出占位页(提示上传真单)
-    if (partsWanted.includes("inspect") && !inspDocs.length) {
+    // 报检没有真单 → 出占位页(提示上传真单)。对外版(external)不出占位页,缺单事实走返回值 inspection_missing
+    if (audience === "internal" && partsWanted.includes("inspect") && !inspDocs.length) {
       await page.setContent(PLACEHOLDER_HTML(containerNo || clean(plan.bl_no) || ""), { waitUntil: "load", timeout: 20000 });
       await page.emulateMediaType("print");
       rendered.push({ slot: "inspect_missing", buf: await page.pdf({ format: "A4", printBackground: true, margin }) });
@@ -180,8 +182,14 @@ export async function renderCustomsBundle(pool, opts) {
   const out = Buffer.from(await merged.save());
   const nameKey = containerNo || clean(plan.bl_no) || clean(plan.shipment_no) || "bundle";
   const gateStatus = (!coverage.ok || recon.status === "blocked") ? "blocked" : (recon.status === "warning" ? "warning" : "pass");
+  // 门禁 reasons 汇总: 5道检查各自的 reasons 拼一起(缺/非字符串跳过) — 给接口响应头/gate_json 用,不进对外 PDF
+  const gateReasons = [];
+  for (const _chk of [coverage, recon, priceChk, ctnrChk, triChk])
+    if (_chk && Array.isArray(_chk.reasons)) for (const _r of _chk.reasons) if (typeof _r === "string") gateReasons.push(_r);
+  const inspectionMissing = partsWanted.includes("inspect") && !inspDocs.length;
   return {
     buffer: out, filename: "报关全套_" + nameKey + ".pdf", pages: merged.getPageCount(), inspection_docs: inspEmbedded,
-    gate: { status: gateStatus, coverage, reconciliation: recon },
+    audience, inspection_missing: inspectionMissing,
+    gate: { status: gateStatus, coverage, reconciliation: recon, reasons: gateReasons },
   };
 }

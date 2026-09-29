@@ -204,17 +204,37 @@ export default async function handler(req, res) {
     // 一次性报关: 报关单 + PL·SC·IV报关版 + 报检单 合成一份多页 PDF (按柜)
     if (type === "customs_bundle") {
       const _parts = String(req.query.parts || "").split(",").map(x => x.trim()).filter(Boolean);
+      // audience: internal=内部核对版(含门禁页/缺商检占位页) | external=对外给报关行(缺省,不含内部页)
+      const _audience = req.query.audience === "internal" ? "internal" : "external";
       const _bundle = await renderCustomsBundle(pool, {
         shipmentId: id || bl,
         container_no: req.query.container_no || req.query.container || "",
         token: req.query.token || "",
         apiBase: "https://api.sanlyn.cn",
         parts: _parts,
+        audience: _audience,
       });
       if (!_bundle) return res.status(404).send("<h1>报关全套: 未找到船务计划或组件</h1>");
+      // format=gate_json / gate=json → 不出 PDF,只回门禁元数据(照样渲染、丢 buffer;简单实现,不做免渲染优化)
+      if (String(req.query.format || "") === "gate_json" || String(req.query.gate || "") === "json") {
+        return res.status(200).json({
+          ok: true, audience: _bundle.audience, gate: _bundle.gate,
+          inspection_missing: _bundle.inspection_missing,
+          pages: _bundle.pages, inspection_docs: _bundle.inspection_docs, filename: _bundle.filename,
+        });
+      }
+      // 响应头把门禁结果带给前端/脚本(不用下载 PDF 也能知道这份能不能正式用)
+      let _rs = ((_bundle.gate || {}).reasons || []).slice(0, 10);
+      while (_rs.length && encodeURIComponent(JSON.stringify(_rs)).length > 2000) _rs = _rs.slice(0, -1); // 整条丢,保证是合法 JSON
+      const _gateReasons = encodeURIComponent(JSON.stringify(_rs));
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent(_bundle.filename));
       res.setHeader("Cache-Control", "no-store");
+      res.setHeader("X-Bundle-Audience", _bundle.audience);
+      res.setHeader("X-Gate-Status", _bundle.gate.status);
+      res.setHeader("X-Gate-Reasons", _gateReasons);
+      res.setHeader("X-Inspection-Missing", _bundle.inspection_missing ? "1" : "0");
+      res.setHeader("Access-Control-Expose-Headers", "X-Bundle-Audience, X-Gate-Status, X-Gate-Reasons, X-Inspection-Missing");
       return res.status(200).send(_bundle.buffer);
     }
 
