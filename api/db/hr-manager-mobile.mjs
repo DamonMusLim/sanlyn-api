@@ -1,4 +1,5 @@
 import { signUploadUrl } from "./lib/upload-link.mjs";
+import { buildBossdesk, tryBossdeskAction } from "./hr-bossdesk.mjs"; // 0929 老板「待我处理」页后台
 const MANAGER_ROLE_FALLBACKS = new Set(["store_manager", "manager", "boss"]);
 const DEFAULT_BOSS_EMPLOYEE_IDS = "35";
 // 0929 Nora(店长 PET-01)审核第一版·影子模式:NORA_REVIEW=on 时,临期降价建议由
@@ -283,6 +284,8 @@ export async function managerExtras(pool, empId, me) {
       boss_tasks_pending: rollup.boss_tasks_pending,
       detail: rollup.detail,
       summary: rollup.summary,
+      // 0929 老板「待我处理」页数据(groups+done);非老板返回 null,错误自己兜住不炸本页
+      bossdesk: await buildBossdesk(pool, me, empId),
     },
     failures: failures.rows,
     employees: employees.rows || [],
@@ -290,6 +293,10 @@ export async function managerExtras(pool, empId, me) {
 }
 
 export async function tryManagerAction({ action, b, res, pool, me, empId }) {
+  // 0929 老板「待我处理」页后台 4 个 action(boss_decide_batch/note/assign/undo);
+  // 不是它的 action 返回 false,继续走下面的老通道
+  if (await tryBossdeskAction({ action, b, res, pool, me, empId }) !== false) return true;
+
   if (action !== "boss_decide" && !String(action || "").startsWith("manager_")) return false;
 
   // 0929 boss_decide:老板在手机上对单条待批直接拍板。只记录决定、不执行 ——
