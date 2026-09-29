@@ -46,6 +46,11 @@ export async function renderBlSampleXlsx(d) {
     const row = setRow([c.no||"", c.seal||"", c.type||"", num(c.vgm,2), num(c.pkgs), num(c.gw,2), num(c.cbm,3)]);
     row.eachCell(cc=>{ cc.border=border; });
   });
+  if(!(d.containers||[]).length){ // 未装柜：占位提示，不带任何柜号（防串柜）
+    const row = setRow(["待装柜后由拖车方提供柜号/封号/皮重"]);
+    merge(row.number,1,7);
+    row.eachCell({includeEmpty:true}, cc=>{ cc.border=border; });
+  }
   setRow([]);
   (d.warnings||[]).forEach(w=>{ const wr=setRow([w]); wr.getCell(1).font={color:{argb:"FFB45309"}}; });
 
@@ -57,7 +62,9 @@ export async function renderBlSampleXlsx(d) {
 export function renderBlSampleHtml(d){
   const e = v => v==null?"":String(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/\n/g,"<br>");
   const n = (v,dp)=> (v===null||v===undefined||v==="")?"":Number(v).toLocaleString("en-US",{minimumFractionDigits:dp||0,maximumFractionDigits:dp||0});
-  const rows = (d.containers||[]).map(c=>`<tr><td>${e(c.no)}</td><td>${e(c.seal)}</td><td>${e(c.type)}</td><td>${n(c.vgm,2)}</td><td>${n(c.pkgs)}</td><td>${n(c.gw,2)}</td><td>${n(c.cbm,3)}</td></tr>`).join("");
+  const rows = (d.containers||[]).length
+    ? (d.containers||[]).map(c=>`<tr><td>${e(c.no)}</td><td>${e(c.seal)}</td><td>${e(c.type)}</td><td>${n(c.vgm,2)}</td><td>${n(c.pkgs)}</td><td>${n(c.gw,2)}</td><td>${n(c.cbm,3)}</td></tr>`).join("")
+    : `<tr><td colspan="7">待装柜后由拖车方提供柜号/封号/皮重</td></tr>`;
   return `<!doctype html><html><head><meta charset="utf-8"><title>提单样单/补料 · ${e(d.blNo)}</title>
   <style>body{font-family:-apple-system,'PingFang SC',Arial,sans-serif;background:#f0f2f5;margin:0;padding:18px;color:#111}
   .p{max-width:820px;margin:auto;background:#fff;border:1px solid #ddd;border-radius:8px;padding:22px}
@@ -66,7 +73,7 @@ export function renderBlSampleHtml(d){
   .g th{background:#f4f4f4;font-size:11px}.no{border:0}.no td{border:0;padding:3px 8px}.w{color:#b45309;font-size:12px}</style></head><body><div class="p">
   <h2>提单样单 / 补料（Shipping Instruction）</h2>
   <table class="no"><tr><td class="k">Shipper 发货人</td><td>${e(d.shipperName)}${d.shipperAddrEn?"<br>ADD: "+e(d.shipperAddrEn):""}</td><td class="k">提单号</td><td>${e(d.blNo)}</td></tr>
-  <tr><td class="k">Consignee 收货人</td><td>${e(d.consignee)}${d.consAddr?"<br>"+e(d.consAddr):""}</td><td class="k">出单方式 / HS</td><td>${e(d.releaseType||"SWB 海运单")} · HS ${e(d.hsCode)}</td></tr>
+  <tr><td class="k">Consignee 收货人</td><td>${e(d.consignee)}${d.consAddr?"<br>"+e(d.consAddr):""}${d.consAddrSource?'<div style="font-size:11px;color:#888;margin-top:2px">来源：'+e(d.consAddrSource)+'</div>':""}</td><td class="k">出单方式 / HS</td><td>${e(d.releaseType||"SWB 海运单")} · HS ${e(d.hsCode)}</td></tr>
   <tr><td class="k">Notify 通知人</td><td>${e(d.notify||"SAME AS CONSIGNEE")}</td><td class="k">显示 HS</td><td>${d.showHs?"是":"否"}</td></tr>
   <tr><td class="k">船名航次</td><td>${e([d.vessel,d.voyage].filter(Boolean).join(" "))}</td><td class="k">装货港</td><td>${e(d.pol)}</td></tr>
   <tr><td class="k">卸货港</td><td>${e(d.pod)}</td><td class="k">最终目的地</td><td>${e(d.finalDest||d.pod)}</td></tr></table>

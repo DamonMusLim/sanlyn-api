@@ -1877,8 +1877,40 @@ export default async function handler(req, res) {
         try{ var _bc=await pool.query("SELECT name_en,name_cn,address_en FROM companies WHERE name_cn=$1 OR name_en=$1 LIMIT 1",[_blsh]); if(_bc.rows[0]){ _blShName=_bc.rows[0].name_en||_bc.rows[0].name_cn||_blsh; _blShAddrEn=_bc.rows[0].address_en||""; } }catch(e){}
         var _blCneeR=await pool.query("SELECT customer FROM orders WHERE shipping_plan_id=$1 AND COALESCE(customer,'')<>'' ORDER BY order_no LIMIT 1",[sp.id]);
         var _blCnee=(_blCneeR.rows[0]&&_blCneeR.rows[0].customer)||pickClean(sp.customer_en,sp.customer)||"";
-        var _blCneeAddr="";
-        try{ var _bca=await pool.query("SELECT address FROM companies WHERE name_en=$1 OR name_cn=$1 LIMIT 1",[_blCnee]); if(_bca.rows[0]) _blCneeAddr=_bca.rows[0].address||""; }catch(e){}
+        var _blCneeAddr="", _blCneeAddrSrc="";
+        // 收货人地址优先级(0929)：本票订舱登记 > 历史提单高频(与报检ciq_prep同口径) > 公司档案——只看公司档案会和报检/订舱对不上
+        var _blAddrOk = function(a){ a=String(a==null?"":a).trim(); return a.length>10?a:""; };
+        try{ var _spa=await pool.query("SELECT COALESCE(NULLIF(raw->>'consignee_address',''), raw->>'consigneeAddress') AS a FROM shipping_plans WHERE id=$1",[sp.id]); var _a1=_blAddrOk(_spa.rows[0]&&_spa.rows[0].a); if(_a1){ _blCneeAddr=_a1; _blCneeAddrSrc="本票订舱登记（shipping_plans.consignee_address）"; } }catch(e){}
+        if(!_blCneeAddr){ try{ var _spb=await pool.query("SELECT COALESCE(NULLIF(raw->>'customer_address',''), raw->>'customerAddress') AS a FROM shipping_plans WHERE id=$1",[sp.id]); var _a2=_blAddrOk(_spb.rows[0]&&_spb.rows[0].a); if(_a2){ _blCneeAddr=_a2; _blCneeAddrSrc="本票订舱登记（shipping_plans.customer_address）"; } }catch(e){} }
+        if(!_blCneeAddr){ try{ var _spc=await pool.query("SELECT customer_address AS a FROM orders WHERE shipping_plan_id=$1 AND btrim(COALESCE(customer_address,''))<>'' ORDER BY order_no LIMIT 1",[sp.id]); var _a3=_blAddrOk(_spc.rows[0]&&_spc.rows[0].a); if(_a3){ _blCneeAddr=_a3; _blCneeAddrSrc="本票订单（orders.customer_address）"; } }catch(e){} }
+        if(!_blCneeAddr && _blCnee){
+          // 历史提单高频地址(与报检 ciq_prep 同口径)：同一收货人大小写不敏感、排除本票；规范化(btrim、逗号后统一", "、多空格压一)后按出现次数降序、再按最近ETD降序取第一条
+          try{
+            var _bh=await pool.query(
+              "WITH hist AS ("+
+              " SELECT o.customer_address AS addr, p.etd AS etd FROM orders o LEFT JOIN shipping_plans p ON p.id=o.shipping_plan_id"+
+              " WHERE upper(btrim(o.customer))=upper(btrim($1)) AND COALESCE(o.shipping_plan_id,0)<>$2 AND length(btrim(COALESCE(o.customer_address,'')))>10"+
+              " UNION ALL"+
+              " SELECT COALESCE(NULLIF(p.raw->>'consignee_address',''), p.raw->>'consigneeAddress'), p.etd FROM shipping_plans p"+
+              " WHERE upper(btrim(p.customer))=upper(btrim($1)) AND p.id<>$2 AND length(btrim(COALESCE(NULLIF(p.raw->>'consignee_address',''), p.raw->>'consigneeAddress')))>10"+
+              " UNION ALL"+
+              " SELECT COALESCE(NULLIF(p.raw->>'customer_address',''), p.raw->>'customerAddress'), p.etd FROM shipping_plans p"+
+              " WHERE upper(btrim(p.customer))=upper(btrim($1)) AND p.id<>$2 AND length(btrim(COALESCE(NULLIF(p.raw->>'customer_address',''), p.raw->>'customerAddress')))>10"+
+              "), ranked AS ("+
+              " SELECT regexp_replace(regexp_replace(btrim(addr),'[[:space:]]*,[[:space:]]*',', ','g'),'[[:space:]]+',' ','g') AS nrm, etd,"+
+              " COUNT(*) OVER (PARTITION BY upper(regexp_replace(regexp_replace(btrim(addr),'[[:space:]]*,[[:space:]]*',', ','g'),'[[:space:]]+',' ','g'))) AS cnt,"+
+              " row_number() OVER (PARTITION BY upper(regexp_replace(regexp_replace(btrim(addr),'[[:space:]]*,[[:space:]]*',', ','g'),'[[:space:]]+',' ','g')) ORDER BY etd DESC NULLS LAST) AS rn"+
+              " FROM hist"+
+              ") SELECT nrm, cnt, to_char(etd,'YYYY-MM-DD') AS etd_s FROM ranked WHERE rn=1 ORDER BY cnt DESC, etd DESC NULLS LAST LIMIT 1",
+              [_blCnee, sp.id]);
+            if(_bh.rows[0] && _bh.rows[0].nrm){
+              _blCneeAddr = _bh.rows[0].nrm;
+              _blCneeAddrSrc = "历史提单高频地址（出现"+_bh.rows[0].cnt+"次，最近ETD "+(_bh.rows[0].etd_s||"无")+"）";
+            }
+          }catch(e){}
+        }
+        if(!_blCneeAddr){ try{ var _bca=await pool.query("SELECT address FROM companies WHERE name_en=$1 OR name_cn=$1 LIMIT 1",[_blCnee]); var _a4=_blAddrOk(_bca.rows[0]&&_bca.rows[0].address); if(_a4){ _blCneeAddr=_a4; _blCneeAddrSrc="公司档案（companies.address，⚠未与历史提单核对，请确认）"; } }catch(e){} }
+        if(!_blCneeAddr){ _blCneeAddrSrc="未取到收货人地址"; }
         var _blA={};
         try{ var _blAgg=await pool.query("SELECT string_agg(DISTINCT NULLIF(oli.bl_description,''),' / ') AS descr, SUM(oli.qty_ctn) AS ctn, ROUND(SUM(COALESCE(oli.gw_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,2) AS gw, ROUND(SUM(COALESCE(oli.cbm_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,3) AS cbm FROM orders o JOIN order_line_items oli ON oli.order_id=o.id WHERE o.shipping_plan_id=$1",[sp.id]); _blA=_blAgg.rows[0]||{}; var _blOrders=(await pool.query("SELECT id FROM orders WHERE shipping_plan_id=$1 ORDER BY order_no",[sp.id])).rows; const { loadMainHsByNetWeight } = await import("./shipping-main-hs.js"); _blA.hs=await loadMainHsByNetWeight(pool,_blOrders); }catch(e){}
         var _blCtns=[];
@@ -1894,7 +1926,7 @@ export default async function handler(req, res) {
         var _blData = {
           shipperName:_blShName, shipperAddrEn:_blShAddrEn, blNo:pick(sp.bl_no,""),
           releaseType:(sp.release_type||"")+(/swb/i.test(sp.release_type||"")?" 海运单":(/电放/.test(sp.release_type||"")?"":"")),
-          payTerm:"P（待确认）", consignee:_blCnee, consAddr:_blCneeAddr, hsCode:_blShowHs?(_blA.hs||""):"", showHs:_blShowHs, confirmed:_blConfirmed,
+          payTerm:"P（待确认）", consignee:_blCnee, consAddr:_blCneeAddr, consAddrSource:_blCneeAddrSrc, hsCode:_blShowHs?(_blA.hs||""):"", showHs:_blShowHs, confirmed:_blConfirmed,
           customerConfirmed:_blCustomerConfirmed, factoryConfirmed:_blFactoryConfirmed, confirmStatusText:_blConfirmStatusText,
           vessel:vessel, voyage:voyage, pol:polSp, pod:podSp, finalDest:podSp,
           marks:"N/M", totalCtn:_blA.ctn, description:_blA.descr||"CAT LITTER", gwKg:_blA.gw, cbm:_blA.cbm, containers:_blCtns,
