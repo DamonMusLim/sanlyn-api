@@ -57,7 +57,7 @@ function parseNora(desc) {
   const ds = (rest.match(/DeepSeek:[^|]*/) || [""])[0].trim();
   let caution = "";
   if (/^DeepSeek:不同意/.test(ds)) {
-    caution = "要注意:" + ds.replace(/^DeepSeek:不同意\s*[（(]?\s*/, "").replace(/\s*[)）]\s*$/, "").trim();
+    caution = ds.replace(/^DeepSeek:不同意\s*[（(]?\s*/, "").replace(/\s*[)）]\s*$/, "").trim();
   }
   return { ok, why, caution };
 }
@@ -72,7 +72,8 @@ function collectNotes(desc) {
 function kindLabel(t) { // 分组卡上的类别(writeoff 来源优先,其余按文字判)
   if (t.src === "writeoff") return "报损";
   const s = `${t.title || ""} ${t.next_action || ""}`;
-  if (/临期/.test(s)) return "临期降价";
+  if (/(改价|调价|恢复|压到成本|价格)/.test(s) && !/(?<!非)临期/.test(s)) return "改价";   // 0930:「非临期」不算临期
+  if (/(?<!非)临期/.test(s)) return "临期降价";
   if (/(改价|调价|价格)/.test(s)) return "改价";
   if (/(补货|进货|加货)/.test(s)) return "补货";
   return "其它";
@@ -85,8 +86,10 @@ const extractCodes = (t) =>
 // 建议价:先找「码所在位置之后最近的 a→b」;抽不到但全文只有一对 → 用那对;再抽不到 → null(显示「—」)
 function suggestOf(text, code) {
   const s = String(text || "");
-  const pairs = [...s.matchAll(/(\d+(?:\.\d{1,2})?)\s*→\s*(\d+(?:\.\d{1,2})?)/g)]
-    .map((m) => ({ to: m[2], at: m.index }));
+  const pairs = [
+    ...[...s.matchAll(/(\d+(?:\.\d{1,2})?)\s*→\s*(\d+(?:\.\d{1,2})?)/g)].map((m) => ({ to: m[2], at: m.index })),
+    ...[...s.matchAll(/建议价?\s*[:：]?\s*¥?\s*(\d+(?:\.\d{1,2})?)/g)].map((m) => ({ to: m[1], at: m.index })),   // 0930:「建议2.2」
+  ].sort((a, b) => a.at - b.at);
   if (!pairs.length) return null;
   const ci = s.indexOf(code);
   const after = ci >= 0 ? pairs.filter((p) => p.at > ci) : [];
