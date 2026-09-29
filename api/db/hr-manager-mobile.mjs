@@ -1,6 +1,11 @@
 import { signUploadUrl } from "./lib/upload-link.mjs";
 const MANAGER_ROLE_FALLBACKS = new Set(["store_manager", "manager", "boss"]);
 const DEFAULT_BOSS_EMPLOYEE_IDS = "35";
+// 0929 Nora(店长 PET-01)审核第一版·影子模式:NORA_REVIEW=on 时,临期降价建议由
+// ~/wt-nora-review/nora-review.mjs 判完统一升成「要我拍板」tasks,本页不再直列
+// petstore_nearexp_proposals(同一件事别出现在两处);不设或≠on 时行为完全不变。
+// 0929 Claude:默认开(不改服务器 .env);要临时关设 NORA_REVIEW=off
+const noraReviewOn = () => String(process.env.NORA_REVIEW || "on").toLowerCase() !== "off";
 
 function actorName(me) {
   return me?.name || me?.employee_code || `employee:${me?.id || ""}`;
@@ -73,7 +78,7 @@ export async function buildApprovalsSummary(pool, { caps, me, empId, leaves, rei
   const canApprove = !!caps.approvals;
   const boss = isBossEmployee(me, empId);
 
-  const nearexpReady = canApprove ? await safePart(errors, "nearexp_ready", "临期降价待批", null, async () => {
+  const nearexpReady = canApprove && !noraReviewOn() ? await safePart(errors, "nearexp_ready", "临期降价待批", null, async () => {
     const r = await pool.query(
       `SELECT DISTINCT ON (product_code)
               product_code, product_name, spec, expiry_date, days_left,
