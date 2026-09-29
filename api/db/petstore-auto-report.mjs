@@ -97,6 +97,11 @@ export async function todayReport(pool) {
       WHERE source LIKE 'clerk_card%'
         AND (COALESCE(applied_at, created_at) AT TIME ZONE 'Asia/Shanghai')::date = ${TODAY}
       ORDER BY id`);
+  // 0930 DNA 先例:Nora 按 Damon 以前的决定自己办了的(source='nora-dna'),老板要看得见
+  const dna = await pool.query(
+    `SELECT id, title, next_action, status, next_holder, updated_at FROM tasks
+      WHERE source='nora-dna' AND (updated_at AT TIME ZONE 'Asia/Shanghai')::date = ${TODAY}
+      ORDER BY id`);
   // 0929:每条明细带时间;每类最多下发 30 条,超了以 counts 为准(数字不说谎)
   const cap = (rows) => rows.slice(0, 30);
   const checksRows = checks.rows.map((r) => {
@@ -115,6 +120,16 @@ export async function todayReport(pool) {
     ...restock.rows.map((r) => ({ kind: "补货", name: r.product_name, note: r.decided_note, time: r.decided_at || null })),
     ...tasks.rows.map((r) => ({ kind: "报损/下架", name: r.title, note: "系统里已经没货了,自动关掉", time: r.closed_at || null })),
   ];
+  // 每行形状对齐 checks(kind/name/state/…):通用分组前端按 kind 显示「按你以前的决定办了」
+  const dnaRows = dna.rows.map((r) => ({
+    id: r.id,
+    kind: "按你以前的决定办了",
+    name: String(r.title || "").replace(/^\[(按DNA先例|Nora建议)\]/, "").slice(0, 60),
+    by: (String(r.next_action || "").match(/依据:([^)|]*)/) || ["", ""])[1].trim().slice(0, 60),
+    state: ["done", "closed"].includes(r.status) ? "已办完"
+      : String(r.next_holder || "") === "claude" ? "排队执行" : "处理中",
+    time: r.updated_at || null,
+  }));
   return {
     checks: cap(checksRows),
     takeout: cap(takeoutRows),
@@ -123,10 +138,12 @@ export async function todayReport(pool) {
     price_skipped_takeout: skippedTakeout,
     writeoff: cap(writeoffRows),
     expired: cap(expiredRows),
+    dna: cap(dnaRows),
     counts: {
       checks: checksRows.length, takeout: takeoutRows.length,
       price_done: did.length, price_skipped: skippedOther.length,
       writeoff: writeoffRows.length, expired: expiredRows.length,
+      dna: dnaRows.length,
     },
   };
 }

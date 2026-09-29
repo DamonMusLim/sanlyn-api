@@ -7,6 +7,13 @@
 // 数据口径:任务集合同 buildApprovalsSummary 的 writeoff+boss(next_holder=damon);
 // 商品事实照 ~/bin/nora-review.mjs productFacts(petstore_skus + petstore_ops_row view
 // + 最新效期快照 + 同品名同款),留痕进 boss_decisions(M140,undo 靠 prev 快照回滚)。
+// 0930 起拍板/补话另落 nora_dna_cases(M141)当 Nora 的 DNA 先例,Damon:「类似的就不用问我了」。
+// DNA 落库/撤销函数与 kindLabel/parseNora/extractCodes 口径在 ./hr-bossdesk-dna.mjs(0929 审核单第7条拆出)。
+
+import {
+  uniq, cut, parseNora, kindLabel, extractCodes,
+  dnaPrep, dnaCaseForDecide, dnaCaseForNote, dnaRevokeBatch,
+} from "./hr-bossdesk-dna.mjs";
 
 const DEFAULT_BOSS_EMPLOYEE_IDS = "35"; // 复制自 hr-manager-mobile.mjs(那边未 export,brief 允许复制)
 
@@ -16,9 +23,7 @@ function isBossEmployee(me, empId) {
   return ids.includes(String(me?.id || me?.employee_id || empId || ""));
 }
 
-// ── 小工具 ────────────────────────────────────────────────────────────────
-const uniq = (a) => [...new Set(a)];
-const cut = (s, n) => Array.from(String(s ?? "")).slice(0, n).join("");
+// ── 小工具(uniq/cut 从 hr-bossdesk-dna.mjs import)──────────────────────
 
 function shanghaiWhen() { // 与现有 boss_decide 同款:+08 的 YYYY-MM-DD HH:mm
   return new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 16).replace("T", " ");
@@ -41,26 +46,7 @@ async function safe(errors, label, fallback, fn) {
   try { return await fn(); } catch (e) { errors.push(`${label}: ${e?.message || e}`); return fallback; }
 }
 
-// ── Nora 升级文案解析(格式见 ~/bin/nora-review.mjs escText)───────────────
-// ⛔ 输出里不许出现 DeepSeek/MiniMax 字样:复核不同意的 note 只裹进「要注意:」
-// 老板「补一句」后 next_action 前面会多出「Damon补充:… | 」,不再以 Nora建议: 开头,
-// 所以从「Nora建议:」第一次出现的位置起解析,why/caution 都在那段里找,不吃进补充段。
-function parseNora(desc) {
-  const s = String(desc ?? "");
-  const at = s.indexOf("Nora建议:");
-  if (at < 0) return null;
-  const rest = s.slice(at);
-  const seg = rest.split(" | ")[0];
-  const m = seg.match(/^Nora建议:\s*(批|不批|没判出来)/);
-  const ok = !m ? null : m[1] === "批" ? true : m[1] === "不批" ? false : null;
-  const why = cut(seg.replace(/^Nora建议:\s*(批|不批|没判出来)\s*[—\-––]*\s*/, "").trim(), 90) || "";
-  const ds = (rest.match(/DeepSeek:[^|]*/) || [""])[0].trim();
-  let caution = "";
-  if (/^DeepSeek:不同意/.test(ds)) {
-    caution = ds.replace(/^DeepSeek:不同意\s*[（(]?\s*/, "").replace(/\s*[)）]\s*$/, "").trim();
-  }
-  return { ok, why, caution };
-}
+// (parseNora 已拆到 hr-bossdesk-dna.mjs)
 
 // 老板「补一句」留在 next_action 里的段(boss_note 前插「Damon补充:xxx · 时间 | 」),
 // 收集为数组下发,前端显示「已补的话」;补几次收几条,最多 3 条。
@@ -69,19 +55,7 @@ function collectNotes(desc) {
     .map((m) => m[0].trim()).filter(Boolean).slice(0, 3);
 }
 
-function kindLabel(t) { // 分组卡上的类别(writeoff 来源优先,其余按文字判)
-  if (t.src === "writeoff") return "报损";
-  const s = `${t.title || ""} ${t.next_action || ""}`;
-  if (/(改价|调价|恢复|压到成本|价格)/.test(s) && !/(?<!非)临期/.test(s)) return "改价";   // 0930:「非临期」不算临期
-  if (/(?<!非)临期/.test(s)) return "临期降价";
-  if (/(改价|调价|价格)/.test(s)) return "改价";
-  if (/(补货|进货|加货)/.test(s)) return "补货";
-  return "其它";
-}
-
-// 码源含 task id:Nora A 类工单 id=nora-esc-nearexp-<code>,title/正文里不一定有码
-const extractCodes = (t) =>
-  uniq(`${t.id || ""} ${t.title || ""} ${t.next_action || ""}`.match(/\b\d{10}\b/g) || []).slice(0, 6);
+// (kindLabel/extractCodes 已拆到 hr-bossdesk-dna.mjs:先例匹配键的口径展示与落库共用一份,防两边漂移)
 
 // 建议价:先找「码所在位置之后最近的 a→b」;抽不到但全文只有一对 → 用那对;再抽不到 → null(显示「—」)
 function suggestOf(text, code) {
@@ -310,6 +284,9 @@ function snapTask(pre) {
   return JSON.stringify({ next_holder: pre.next_holder, next_action: pre.next_action, damon_feedback: pre.damon_feedback });
 }
 
+// (dnaPrep/brandOf/insertDnaCase 已拆到 hr-bossdesk-dna.mjs;拍板/补话/撤销的 DNA 写入走那边导出的
+//  dnaCaseForDecide / dnaCaseForNote / dnaRevokeBatch,行为不变)
+
 async function decideBatch(b, res, pool) {
   const items = (Array.isArray(b.items) ? b.items : []).filter((x) => x && x.task_id != null).slice(0, 50);
   if (!items.length) return res.status(400).json({ success: false, error: "items 不能为空" });
@@ -317,6 +294,7 @@ async function decideBatch(b, res, pool) {
   const note = String(b.note || "").trim().slice(0, 200);
   const verdict = `Damon 拍板:${decision}${note ? `(${note})` : ""} · ${shanghaiWhen()}`;
   const batchId = newBatchId();
+  const dna = await dnaPrep(pool, items.map((x) => String(x.task_id))); // M141 未跑 → null,不挡拍板
   const c = await pool.connect(); // 事务:一批要么全落要么全回滚,不留半个批次
   try {
     await c.query("BEGIN");
@@ -341,6 +319,7 @@ async function decideBatch(b, res, pool) {
         `INSERT INTO boss_decisions (batch_id, task_id, action, decision, note, prev)
          VALUES ($1,$2,'boss_decide_batch',$3,$4,$5::jsonb)`,
         [batchId, tid, decision, note || null, snapTask(pre)]);
+      await dnaCaseForDecide(c, dna, tid, decision, note, batchId); // 拍板落 DNA(M141):facts 带 batch_id 供 undo 作废
       count++;
     }
     if (!count) { await c.query("ROLLBACK"); return res.status(404).json({ success: false, error: "这些已处理或不在你名下" }); } // 空批回滚:保证没落一条
@@ -361,6 +340,7 @@ async function noteTasks(b, res, pool) {
   if (!note) return res.status(400).json({ success: false, error: "note 不能为空" });
   const fb = `Damon补充:${note} · ${shanghaiWhen()}`;
   const batchId = newBatchId();
+  const dna = await dnaPrep(pool, ids); // M141 未跑 → null,不挡补话
   const c = await pool.connect(); // 事务:一批要么全落要么全回滚,不留半个批次
   try {
     await c.query("BEGIN");
@@ -382,6 +362,7 @@ async function noteTasks(b, res, pool) {
       await c.query(
         `INSERT INTO boss_decisions (batch_id, task_id, action, note, prev) VALUES ($1,$2,'boss_note',$3,$4::jsonb)`,
         [batchId, tid, note, snapTask(pre)]);
+      await dnaCaseForNote(c, dna, tid, note, batchId); // 补的话并进最近 case 的 damon_note;没有 → 新建 decision=null 的 case
       count++;
     }
     if (!count) { await c.query("ROLLBACK"); return res.status(404).json({ success: false, error: "这些已处理或不在你名下" }); } // 空批回滚:保证没落一条
@@ -474,6 +455,7 @@ async function undoBatch(b, res, pool) {
       [r.task_id, p.next_holder ?? null, p.next_action ?? null, p.damon_feedback ?? null]);
   }
   await pool.query(`UPDATE boss_decisions SET undone_at=now() WHERE batch_id=$1`, [batchId]);
+  await dnaRevokeBatch(pool, batchId); // 撤销把该批 DNA 先例一并作废(失败只留痕,不挡撤回)
   return res.status(200).json({ success: true });
 }
 
