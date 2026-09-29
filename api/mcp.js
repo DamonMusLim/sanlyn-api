@@ -3,7 +3,8 @@
 // Auth: x-mcp-key header = MCP_SECRET env var
 import { getPool } from "./db.js";
 
-const MCP_SECRET = process.env.MCP_SECRET || "sanlyn-mcp-2026";
+// 0929: 去掉写死的默认密码;没设 MCP_SECRET 时一律拒绝(fail closed)
+const MCP_SECRET = process.env.MCP_SECRET || "";
 const SERVER_INFO = { name: "sanlyn-api", version: "1.0.0" };
 const PROTOCOL_VERSION = "2024-11-05";
 
@@ -399,7 +400,7 @@ export default async function handler(req, res) {
 
   // Auth
   const key = req.headers["x-mcp-key"] || req.headers["authorization"]?.replace("Bearer ", "");
-  if (key !== MCP_SECRET) return res.status(401).json({ error: "invalid mcp key" });
+  if (!MCP_SECRET || key !== MCP_SECRET) return res.status(401).json({ error: "invalid mcp key" });
 
   const { method, params, id } = req.body || {};
 
