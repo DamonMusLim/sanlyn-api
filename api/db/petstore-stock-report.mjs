@@ -174,10 +174,19 @@ async function createReport(pool, me, empId, b, now, photoSaver = savePhoto) {
     [me.company_code, productCode, text(b.barcode, 80) || null, text(b.product_name, 200) || null,
      text(b.bound_location, 120) || null, num(b.system_qty), num(b.actual_qty), reason,
      JSON.stringify(urls), status, frequent, empId, me.name, text(b.shift_note, 300) || null]);
+  // 0929 Damon「需要去核对的」:下架过期这类待办不许点圈就算完 —— 店员在库存上报里报了过期/损坏(带照片),才自动关
+  let agenda_closed = 0;
+  if (reason === "damaged_expired") {
+    const c = await pool.query(
+      `UPDATE hr_day_agenda SET status='done', done_by=$3, done_at=now()
+        WHERE company_code=$1 AND status='open' AND kind='task' AND title LIKE '下架过期%' AND note LIKE '%' || $2 || '%'
+        RETURNING id`, [me.company_code, productCode, `库存上报#${r.rows[0].id} ${me.name || ""}`.trim()]);
+    agenda_closed = c.rowCount;
+  }
   const todo_created = frequent && prev === 1
     ? await addFrequentTodo(pool, me, text(b.product_name, 160), productCode, now())
     : false;
-  return { status: 200, body: { success: true, data: r.rows[0], frequent_lost: frequent, todo_created } };
+  return { status: 200, body: { success: true, data: r.rows[0], frequent_lost: frequent, todo_created, agenda_closed } };
 }
 
 async function found(pool, me, empId, b, now, photoSaver = savePhoto) {
