@@ -342,8 +342,17 @@ export default async function handler(req, res) {
         }
         const r = await pool.query(
           `UPDATE hr_day_agenda
-              SET status=$1, done_by=$2, done_at=CASE WHEN $1='done' THEN now() ELSE NULL END
-            WHERE id=$3 AND company_code=$4 AND (work_date=$5 OR (kind='task' AND work_date < $5::date))
+              SET status=$1, done_by=$2, done_at=CASE WHEN $1='done' THEN now() ELSE NULL END,
+                  -- 0929 修E4:取消时把上一次「已完成」的痕迹剥掉(need/product_code 留着),
+                  --      不然 status=open 而 evidence 还说做过了;done 不动,照片分支会补写
+                  evidence=CASE WHEN $1='done' THEN evidence
+                                WHEN evidence IS NULL THEN NULL
+                                ELSE evidence - 'done_via' - 'ref_id' - 'at' END
+            WHERE id=$3 AND company_code=$4
+              -- 0929 修E1:跨天能做的和 agendaFor(lib) 同源 —— task/photo/ship,最多带回 14 天,
+              --      不然跨天的「客户要实拍/转发货」显示了却永远点不完
+              AND (work_date=$5 OR (kind IN ('task','photo','ship')
+                                    AND work_date < $5::date AND work_date >= $5::date - 14))
               AND (employee_id IS NULL OR employee_id=$6)
             RETURNING id`,
           [done ? "done" : "open", done ? me.name : null, id, me.company_code, today, empId]);
@@ -390,12 +399,14 @@ export default async function handler(req, res) {
         await pool.query(
           `INSERT INTO hr_checklist_logs
              (company_code, work_date, phase, item_id, employee_id, employee_name, status, photo_url, note)
-           VALUES ($1,$2,'open',$3,$4,$5,$6,$7,$8)
+           -- 0929 修E3:phase 用查出来的 it.phase,不再写死 'open' —— 不然闭店日志全被记成开店,
+           --      与 hr_checklist_items.phase 对不上,以后按 phase 出的看板都会算错
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
            ON CONFLICT (company_code, work_date, phase, item_id)
            DO UPDATE SET status=EXCLUDED.status, photo_url=COALESCE(EXCLUDED.photo_url, hr_checklist_logs.photo_url),
                          note=EXCLUDED.note, employee_id=EXCLUDED.employee_id,
                          employee_name=EXCLUDED.employee_name, done_at=now()`,
-          [me.company_code, today, itemId, empId, me.name, st, url,
+          [me.company_code, today, it.phase, itemId, empId, me.name, st, url,
            ai ? JSON.stringify({ note: b.note || null, ai }) : (b.note || null)]);
         let msg = st === "done" ? "记下了" : "已标记稍后";
         if (ai && ai["能判断"] === false) msg = "记下了（照片看不清，店长会再看一眼）";
