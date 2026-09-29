@@ -318,11 +318,25 @@ export default async function handler(req, res) {
         const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
         const done = b.status !== "open";
         // 「客户要实拍」(kind=photo,hr-photo-todo 建的):完成必须带照片,照片进 hr_agenda_photos 给客服台取
-        const kind = (await pool.query(
-          "SELECT kind FROM hr_day_agenda WHERE id=$1 AND company_code=$2", [id, me.company_code])).rows[0]?.kind;
+        // 0929 M139 证据待办:evidence.need 有值的条目点圈一律不算完 ——
+        //   need='photo' 沿用同一条拍照流程(拍了才 done);
+        //   need='report' 只能由库存上报自动关,这里直接打回并告诉去哪做。
+        const row = (await pool.query(
+          "SELECT kind, evidence FROM hr_day_agenda WHERE id=$1 AND company_code=$2",
+          [id, me.company_code])).rows[0];
+        const kind = row?.kind;
+        const ev = row?.evidence || null;   // jsonb,pg 已解析成对象;空列=null
         let photoPath = null;
-        if (kind === "photo" && done) {
-          if (!b.photo_base64) return res.status(400).json({ success: false, error: "要先拍照再点完成" });
+        if (done && ev?.need === "report") {
+          return res.status(400).json({ success: false, needs_evidence: "report",
+            error: "这条要去「库存上报」报坏了/过期(要拍照)才自动完成" });
+        }
+        if (done && ev?.need && ev.need !== "photo") {   // 以后加 scan 之类的,先一律拦住不许点圈
+          return res.status(400).json({ success: false, needs_evidence: ev.need,
+            error: "这条要交证据才能完成，按提示去做" });
+        }
+        if (done && (kind === "photo" || ev?.need === "photo")) {
+          if (!b.photo_base64) return res.status(400).json({ success: false, needs_evidence: "photo", error: "要先拍照再点完成" });
           try { photoPath = savePhotoRequest(b.photo_mime, b.photo_base64); }
           catch (e) { return res.status(400).json({ success: false, error: e.message }); }
         }
@@ -335,11 +349,18 @@ export default async function handler(req, res) {
           [done ? "done" : "open", done ? me.name : null, id, me.company_code, today, empId]);
         if (!r.rowCount) return res.status(400).json({ success: false, error: "没有这件事" });
         if (photoPath) {
-          await pool.query(
-            "INSERT INTO hr_agenda_photos (agenda_id, photo_path, employee_id, employee_name) VALUES ($1,$2,$3,$4)",
+          const p = await pool.query(
+            "INSERT INTO hr_agenda_photos (agenda_id, photo_path, employee_id, employee_name) VALUES ($1,$2,$3,$4) RETURNING id",
             [id, photoPath, empId, me.name]);
+          if (ev?.need === "photo") {   // M139:把「用什么证据完成的」写回 evidence
+            await pool.query(
+              "UPDATE hr_day_agenda SET evidence = evidence || $2::jsonb WHERE id=$1",
+              [id, JSON.stringify({ done_via: "photo", ref_id: p.rows[0].id, at: new Date().toISOString() })]);
+          }
         }
-        return res.status(200).json({ success: true, message: done ? (photoPath ? "照片已交，客服会发给顾客" : "已完成") : "已取消" });
+        return res.status(200).json({ success: true, message: done
+          ? (photoPath ? (ev?.need === "photo" ? "照片已交，已记录" : "照片已交，客服会发给顾客") : "已完成")
+          : "已取消" });
       }
 
       // 开店点检:勾一条 或 跳过一条。跳过也留痕——店长看得到谁跳了什么。
@@ -348,7 +369,7 @@ export default async function handler(req, res) {
         const st = b.status === "skipped" ? "skipped" : "done";
         if (!itemId) return res.status(400).json({ success: false, error: "缺 item_id" });
         const it = (await pool.query(
-          "SELECT id, need_photo, title, hint FROM hr_checklist_items WHERE id=$1 AND company_code=$2 AND is_active=true",
+          "SELECT id, need_photo, phase, title, hint FROM hr_checklist_items WHERE id=$1 AND company_code=$2 AND is_active=true",
           [itemId, me.company_code])).rows[0];
         if (!it) return res.status(400).json({ success: false, error: "没有这一项" });
 
@@ -360,7 +381,9 @@ export default async function handler(req, res) {
           ai = await reviewPhoto(it.title, it.hint, `data:${b.photo_mime || "image/jpeg"};base64,${b.photo_base64}`);
         }
         // 要求拍照的项，勾"完成"必须有照片；"稍后"不强制（不然会有人干脆不做）
-        if (st === "done" && it.need_photo && !url) {
+        // 0929:闭店点检整张加同款闸 —— 下班不打卡、没人复查,照片是唯一证据
+        //      (lib 的 openChecklist 已同步把闭店项标成要拍照,前端走现成的📷渲染)
+        if (st === "done" && (it.need_photo || it.phase === "close") && !url) {
           return res.status(400).json({ success: false, error: `「${it.title}」要拍一张照片` });
         }
         const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);

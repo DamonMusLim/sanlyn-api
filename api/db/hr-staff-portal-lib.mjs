@@ -11,7 +11,7 @@ export const D = "YYYY-MM-DD";
 // 一张表两种用途，不另加表。
 export async function agendaFor(pool, companyCode, today, employeeId) {
   const r = await pool.query(
-    `SELECT id, to_char(at_time,'HH24:MI') AS at_time, title, note, kind, status
+    `SELECT id, to_char(at_time,'HH24:MI') AS at_time, title, note, kind, status, evidence
        FROM hr_day_agenda
       WHERE company_code=$1
         -- 0928/0929:没做完的店内任务/客户要实拍/转发货(task/photo/ship)跨天留着,直到做完;最多带 14 天。带时间的安排只看当天
@@ -68,10 +68,11 @@ export async function reviewPhoto(title, hint, dataUrl) {
 // 开店点检：模板 hr_checklist_items(phase='open') + 当天执行记录 hr_checklist_logs。
 // 只在「当天还没人做完开店点检」时返回，做完就不再打扰。
 // phase: 'open' = 开门先做的; 'close' = 走之前做的。
-// 0802 起下班不打卡,所以闭店清单**没有闸**,靠拍照留痕 + 第二天开店第1条复查。
+// 0802 起下班不打卡;0929 起闭店清单每一项都按 need_photo 出(完成必须拍照,服务端同闸)——
+// 下班后没人复查,照片是唯一证据,不再只靠自觉 + 第二天开店复查。
 export async function openChecklist(pool, companyCode, today, phase = "open") {
   const r = await pool.query(
-    `SELECT i.id, i.seq, i.title, i.hint, i.need_photo,
+    `SELECT i.id, i.seq, i.title, i.hint, (i.need_photo OR i.phase='close') AS need_photo,
             l.status, l.employee_name, to_char(l.done_at,'HH24:MI') AS done_at
        FROM hr_checklist_items i
        LEFT JOIN hr_checklist_logs l

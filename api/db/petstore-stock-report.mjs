@@ -124,9 +124,11 @@ async function addFrequentTodo(pool, me, productName, productCode, now) {
     [me.company_code, date, title]);
   if (exists.rows.length) return false;
   await pool.query(
-    `INSERT INTO hr_day_agenda (company_code, work_date, kind, title, note, status, created_by)
-     VALUES ($1,$2,'task',$3,$4,'open',$5)`,
-    [me.company_code, date, title, `常丢商品，请重新定位并贴货位标签。商品编码:${productCode}`, "stock_report"]);
+    `INSERT INTO hr_day_agenda (company_code, work_date, kind, title, note, status, created_by, evidence)
+     VALUES ($1,$2,'task',$3,$4,'open',$5,$6::jsonb)`,
+    [me.company_code, date, title, `常丢商品，请重新定位并贴货位标签。商品编码:${productCode}`, "stock_report",
+     // 0929 M139:要证据的待办 —— 重定位+贴好标签后拍照才算完成,点圈不算
+     JSON.stringify({ need: "photo", product_code: productCode })]);
   return true;
 }
 
@@ -141,9 +143,12 @@ async function addRebindTodo(pool, me, row, loc, now) {
     [me.company_code, date, title]);
   if (exists.rows.length) return false;
   await pool.query(
-    `INSERT INTO hr_day_agenda (company_code, work_date, kind, title, note, status, created_by)
-     VALUES ($1,$2,'task',$3,$4,'open',$5)`,
-    [me.company_code, date, title, `员工找到位置与绑定货位不同。本期只记待办，不自动改货位。商品编码:${row.product_code}`, "stock_report"]);
+    `INSERT INTO hr_day_agenda (company_code, work_date, kind, title, note, status, created_by, evidence)
+     VALUES ($1,$2,'task',$3,$4,'open',$5,$6::jsonb)`,
+    [me.company_code, date, title, `员工找到位置与绑定货位不同。本期只记待办，不自动改货位。商品编码:${row.product_code}`,
+     "stock_report",
+     // 0929 M139:改绑完要拍照留证才算完成
+     JSON.stringify({ need: "photo", product_code: row.product_code })]);
   return true;
 }
 
@@ -175,12 +180,19 @@ async function createReport(pool, me, empId, b, now, photoSaver = savePhoto) {
      text(b.bound_location, 120) || null, num(b.system_qty), num(b.actual_qty), reason,
      JSON.stringify(urls), status, frequent, empId, me.name, text(b.shift_note, 300) || null]);
   // 0929 Damon「需要去核对的」:下架过期这类待办不许点圈就算完 —— 店员在库存上报里报了过期/损坏(带照片),才自动关
+  // 0929 M139:改按 evidence 精确匹配(need='report' + product_code),不再靠标题前缀+note 正则;
+  //          关单时把证据指针写回 evidence
   let agenda_closed = 0;
   if (reason === "damaged_expired") {
+    const rid = r.rows[0].id;
     const c = await pool.query(
-      `UPDATE hr_day_agenda SET status='done', done_by=$3, done_at=now()
-        WHERE company_code=$1 AND status='open' AND kind='task' AND title LIKE '下架过期%' AND note LIKE '%' || $2 || '%'
-        RETURNING id`, [me.company_code, productCode, `库存上报#${r.rows[0].id} ${me.name || ""}`.trim()]);
+      `UPDATE hr_day_agenda SET status='done', done_by=$3, done_at=now(),
+              evidence = COALESCE(evidence,'{}'::jsonb) || $4::jsonb
+        WHERE company_code=$1 AND status='open'
+          AND evidence->>'need'='report' AND evidence->>'product_code'=$2
+        RETURNING id`,
+      [me.company_code, productCode, `库存上报#${rid} ${me.name || ""}`.trim(),
+       JSON.stringify({ done_via: "stock_report", ref_id: rid, at: new Date(now()).toISOString() })]);
     agenda_closed = c.rowCount;
   }
   const todo_created = frequent && prev === 1
