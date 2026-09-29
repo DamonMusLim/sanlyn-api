@@ -320,16 +320,17 @@ export default async function handler(req, res) {
         // 「客户要实拍」(kind=photo,hr-photo-todo 建的):完成必须带照片,照片进 hr_agenda_photos 给客服台取
         // 0929 M139 证据待办:evidence.need 有值的条目点圈一律不算完 ——
         //   need='photo' 沿用同一条拍照流程(拍了才 done);
-        //   need='report' 只能由库存上报自动关,这里直接打回并告诉去哪做。
+        //   need='report'/'clerk'(下架过期)只能由核对卡做完自动关,这里直接打回并告诉去哪做。
         const row = (await pool.query(
           "SELECT kind, evidence FROM hr_day_agenda WHERE id=$1 AND company_code=$2",
           [id, me.company_code])).rows[0];
         const kind = row?.kind;
         const ev = row?.evidence || null;   // jsonb,pg 已解析成对象;空列=null
         let photoPath = null;
-        if (done && ev?.need === "report") {
-          return res.status(400).json({ success: false, needs_evidence: "report",
-            error: "这条要去「库存上报」报坏了/过期(要拍照)才自动完成" });
+        // 0929「检查就是检查一套」:下架过期不再走库存上报,点圈一律打回,去核对卡
+        if (done && (ev?.need === "report" || ev?.need === "clerk")) {
+          return res.status(400).json({ success: false, needs_evidence: ev.need,
+            error: "这条要去核对卡做完才自动完成" });
         }
         if (done && ev?.need && ev.need !== "photo") {   // 以后加 scan 之类的,先一律拦住不许点圈
           return res.status(400).json({ success: false, needs_evidence: ev.need,
