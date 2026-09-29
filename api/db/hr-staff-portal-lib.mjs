@@ -14,6 +14,8 @@ export async function agendaFor(pool, companyCode, today, employeeId) {
     `SELECT id, to_char(at_time,'HH24:MI') AS at_time, title, note, kind, status, evidence
        FROM hr_day_agenda
       WHERE company_code=$1
+        -- 0929:已取消的不再显示(当天条目和跨天保留的 task/photo/ship 一并排除)
+        AND status <> 'cancelled'
         -- 0928/0929:没做完的店内任务/客户要实拍/转发货(task/photo/ship)跨天留着,直到做完;最多带 14 天。带时间的安排只看当天
         AND (work_date=$2 OR (kind IN ('task','photo','ship') AND status='open' AND work_date < $2::date AND work_date >= $2::date - 14))
         AND (employee_id IS NULL OR employee_id=$3)
@@ -76,7 +78,7 @@ export async function openChecklist(pool, companyCode, today, phase = "open") {
             l.status, l.employee_name, to_char(l.done_at,'HH24:MI') AS done_at
        FROM hr_checklist_items i
        LEFT JOIN hr_checklist_logs l
-         ON l.item_id = i.id AND l.work_date = $2 AND l.company_code = i.company_code
+         ON l.item_id = i.id AND l.work_date = $2 AND l.company_code = i.company_code AND l.phase = i.phase   -- 0929:日志按开门/闭店分开认,同一项不出两遍
       WHERE i.company_code = $1 AND i.phase = $3 AND i.is_active = true
       ORDER BY i.seq, i.id`, [companyCode, today, phase]);
   const items = r.rows;

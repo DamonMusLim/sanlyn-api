@@ -348,7 +348,7 @@ export default async function handler(req, res) {
                   evidence=CASE WHEN $1='done' THEN evidence
                                 WHEN evidence IS NULL THEN NULL
                                 ELSE evidence - 'done_via' - 'ref_id' - 'at' END
-            WHERE id=$3 AND company_code=$4
+            WHERE id=$3 AND company_code=$4 AND status <> 'cancelled'   -- 0929:已取消的不许被店员点回来
               -- 0929 修E1:跨天能做的和 agendaFor(lib) 同源 —— task/photo/ship,最多带回 14 天,
               --      不然跨天的「客户要实拍/转发货」显示了却永远点不完
               AND (work_date=$5 OR (kind IN ('task','photo','ship')
