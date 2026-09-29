@@ -48,7 +48,7 @@ function checkState(action, status, res, p) {
 
 export async function todayReport(pool) {
   const price = await pool.query(
-    `SELECT id, product_code, product_name, channel, old_price, target_price, status, result, decided_note
+    `SELECT id, product_code, product_name, channel, old_price, target_price, status, result, decided_note, decided_at
        FROM petstore_price_intents
       WHERE decided_note LIKE '[system-auto]%' AND (decided_at AT TIME ZONE 'Asia/Shanghai')::date = ${TODAY}
       ORDER BY (status='stale'), id`);
@@ -61,6 +61,7 @@ export async function todayReport(pool) {
       undone: /已撤回/.test(String(r.decided_note || "")),
       state: r.status === "applied" ? "已改好" : r.status === "failed" ? "没改成" : r.status === "stale" ? "没做" : "排队改价中",
       result: r.result || "",
+      time: r.decided_at || null,
     };
     (r.status === "stale" ? skipped : did).push(row);
   }
@@ -69,51 +70,64 @@ export async function todayReport(pool) {
   const skippedOther = skipped.filter((x) => !/外卖渠道/.test(x.note));
 
   const writeoff = await pool.query(
-    `SELECT id, product_name, confirmed_loss_qty, gdc_writeoff_result, gdc_writeoff_order_no
+    `SELECT id, product_name, confirmed_loss_qty, gdc_writeoff_result, gdc_writeoff_order_no, gdc_writeoff_at
        FROM petstore_stock_reports
       WHERE gdc_writeoff_at IS NOT NULL AND (gdc_writeoff_at AT TIME ZONE 'Asia/Shanghai')::date = ${TODAY}
       ORDER BY id`);
   const restock = await pool.query(
-    `SELECT product_name, decided_note FROM petstore_restock_intents
+    `SELECT product_name, decided_note, decided_at FROM petstore_restock_intents
       WHERE status='expired' AND decided_by='system-refresh' AND (decided_at AT TIME ZONE 'Asia/Shanghai')::date = ${TODAY}
       ORDER BY id`);
   const tasks = await pool.query(
-    `SELECT title FROM tasks
+    `SELECT title, closed_at FROM tasks
       WHERE status='cancelled' AND source='dataops' AND dedupe_key ~ '^risk:'
         AND (closed_at AT TIME ZONE 'Asia/Shanghai')::date = ${TODAY}
       ORDER BY id`);
   // 外卖拣货完成 → 自动同步果冻橙(pickedV2)的结果,没同步上的要看见
   const takeout = await pool.query(
-    `SELECT order_no, bool_or(gdc_synced_at IS NOT NULL) AS ok, max(gdc_result) AS result
+    `SELECT order_no, bool_or(gdc_synced_at IS NOT NULL) AS ok, max(gdc_result) AS result, max(completed_at) AS completed_at
        FROM petstore_takeout_picks
       WHERE completed_at IS NOT NULL AND (completed_at AT TIME ZONE 'Asia/Shanghai')::date = ${TODAY}
       GROUP BY order_no ORDER BY max(completed_at)`);
   // 0929 店员核对卡 → 系统自动改果冻橙(货位 SET_SHELF / 库存 SET_STOCK),结果都要让老板看见
   const checks = await pool.query(
-    `SELECT id, action, product_name, status, COALESCE(result,'') AS result, payload
+    `SELECT id, action, product_name, status, COALESCE(result,'') AS result, payload,
+            COALESCE(applied_at, created_at) AS at
        FROM petstore_shelf_action_intents
       WHERE source LIKE 'clerk_card%'
         AND (COALESCE(applied_at, created_at) AT TIME ZONE 'Asia/Shanghai')::date = ${TODAY}
       ORDER BY id`);
+  // 0929:每条明细带时间;每类最多下发 30 条,超了以 counts 为准(数字不说谎)
+  const cap = (rows) => rows.slice(0, 30);
+  const checksRows = checks.rows.map((r) => {
+    const p = r.payload || {};
+    const res = String(r.result || "");
+    return { id: r.id, kind: KIND_CN[r.action] || r.action, name: r.product_name, state: checkState(r.action, r.status, res, p),
+             result: res.replace(/^(ok|no_change|held|unverified): ?/, ""), photo: p.photo || "", time: r.at || null };
+  });
+  const takeoutRows = takeout.rows.map((r) => ({ order_no: r.order_no, ok: !!r.ok, result: r.result || "", time: r.completed_at || null }));
+  const writeoffRows = writeoff.rows.map((r) => ({
+    id: r.id, name: r.product_name, qty: Number(r.confirmed_loss_qty || 0),
+    ok: r.gdc_writeoff_result === "ok", result: r.gdc_writeoff_result || "", order_no: r.gdc_writeoff_order_no || "",
+    time: r.gdc_writeoff_at || null,
+  }));
+  const expiredRows = [
+    ...restock.rows.map((r) => ({ kind: "补货", name: r.product_name, note: r.decided_note, time: r.decided_at || null })),
+    ...tasks.rows.map((r) => ({ kind: "报损/下架", name: r.title, note: "系统里已经没货了,自动关掉", time: r.closed_at || null })),
+  ];
   return {
-    checks: checks.rows.map((r) => {
-      const p = r.payload || {};
-      const res = String(r.result || "");
-      return { id: r.id, kind: KIND_CN[r.action] || r.action, name: r.product_name, state: checkState(r.action, r.status, res, p),
-               result: res.replace(/^(ok|no_change|held|unverified): ?/, ""), photo: p.photo || "" };
-    }),
-    takeout: takeout.rows.map((r) => ({ order_no: r.order_no, ok: !!r.ok, result: r.result || "" })),
-    price_done: did,
-    price_skipped: skippedOther,
+    checks: cap(checksRows),
+    takeout: cap(takeoutRows),
+    price_done: cap(did),
+    price_skipped: cap(skippedOther),
     price_skipped_takeout: skippedTakeout,
-    writeoff: writeoff.rows.map((r) => ({
-      id: r.id, name: r.product_name, qty: Number(r.confirmed_loss_qty || 0),
-      ok: r.gdc_writeoff_result === "ok", result: r.gdc_writeoff_result || "", order_no: r.gdc_writeoff_order_no || "",
-    })),
-    expired: [
-      ...restock.rows.map((r) => ({ kind: "补货", name: r.product_name, note: r.decided_note })),
-      ...tasks.rows.map((r) => ({ kind: "报损/下架", name: r.title, note: "系统里已经没货了,自动关掉" })),
-    ],
+    writeoff: cap(writeoffRows),
+    expired: cap(expiredRows),
+    counts: {
+      checks: checksRows.length, takeout: takeoutRows.length,
+      price_done: did.length, price_skipped: skippedOther.length,
+      writeoff: writeoffRows.length, expired: expiredRows.length,
+    },
   };
 }
 
