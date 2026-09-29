@@ -69,8 +69,17 @@ const DECIDED_FILTER = (ref) => `NOT EXISTS (SELECT 1 FROM tasks t
                          WHERE t.dedupe_key = 'bossdecide:' || ${ref}
                            AND t.status NOT IN ('done','cancelled'))`;
 
+// 0929:Nora 升上来的条目,把「Nora 建议」和「DeepSeek 复核」拆开给 Damon 看(之前截 80 字只看得到 Nora,看不到 DeepSeek 反对)
+function noraBrief(desc) {
+  const s = String(desc ?? "");
+  if (!s.startsWith("Nora建议:")) return null;
+  const nora = s.split(" | ")[0].slice(0, 90);
+  const ds = (s.match(/DeepSeek:[^|]*/) || [""])[0].trim().slice(0, 70);
+  return nora + (ds ? "\n" + ds : "");
+}
 function detailRow(kind, id, title, desc) {
-  return { kind, id, title: String(title ?? "").slice(0, 120), next_action: String(desc ?? "").slice(0, 80) };
+  const brief = noraBrief(desc);
+  return { kind, id, title: String(title ?? "").slice(0, 120), next_action: brief ?? String(desc ?? "").slice(0, 80) };
 }
 
 export async function buildApprovalsSummary(pool, { caps, me, empId, leaves, reimb }) {
