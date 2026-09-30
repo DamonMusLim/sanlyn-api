@@ -11,7 +11,7 @@ export const D = "YYYY-MM-DD";
 // 一张表两种用途，不另加表。
 export async function agendaFor(pool, companyCode, today, employeeId) {
   const r = await pool.query(
-    `SELECT id, to_char(at_time,'HH24:MI') AS at_time, title, note, kind, status, evidence
+    `SELECT id, to_char(at_time,'HH24:MI') AS at_time, to_char(work_date,'FMMM.FMDD') AS day, work_date::text AS work_date, title, note, kind, status, evidence
        FROM hr_day_agenda
       WHERE company_code=$1
         -- 0929:已取消的不再显示(当天条目和跨天保留的 task/photo/ship 一并排除)
