@@ -7,6 +7,7 @@
  */
 
 import { appendFile, readFile } from "node:fs/promises";
+import { escalationDigest } from "./escalation-digest.mjs";
 import {
   asDate,
   companyOrDomainPrefix,
@@ -138,8 +139,8 @@ async function fetchCandidates(pool, now) {
 const OWNER_REVIEW_SINCE = new Date("2026-09-27T00:00:00+08:00");
 async function fetchOwnerReviewCandidates(pool, now) {
   const watermark = { date: OWNER_REVIEW_SINCE };
-  const params = [now.toISOString()];
-  const watermarkClause = watermark.date ? `AND created_at >= $2::timestamptz` : "";
+  const params = [];
+  const watermarkClause = watermark.date ? `AND created_at >= $1::timestamptz` : "";
   if (watermark.date) params.push(watermark.date.toISOString());
 
   const { rows } = await pool.query(
@@ -164,7 +165,7 @@ async function fetchOwnerReviewCandidates(pool, now) {
         WHERE status IN ('open', 'doing')
           AND COALESCE(raw->>'escalate_to', raw->'raw_extra'->>'escalate_to') = 'D-00'
           AND NULLIF(trim(COALESCE(raw->>'owner_staff_no', raw->'raw_extra'->>'owner_staff_no')), '') IS NOT NULL
-          AND created_at < $2::timestamptz`,
+          AND created_at < $1::timestamptz`,
       params
     );
     skippedBeforeWatermark = countRes.rows[0]?.count || 0;
@@ -215,7 +216,7 @@ async function markSentAndAdvance(client, attemptId, task, stageInfo, status = "
   );
 }
 
-async function pushNotify(task, stageInfo, chainInfo) {
+async function pushNotify(task, stageInfo, chainInfo, payload = payloadFor(task, stageInfo, chainInfo)) {
   const token = process.env.NOTIFY_TOKEN || "";
   if (!token) throw new Error("NOTIFY_TOKEN missing");
 
@@ -225,7 +226,7 @@ async function pushNotify(task, stageInfo, chainInfo) {
       "Content-Type": "application/json",
       "x-notify-token": token,
     },
-    body: JSON.stringify(payloadFor(task, stageInfo, chainInfo)),
+    body: JSON.stringify(payload),
   });
   const text = await resp.text();
   if (!resp.ok) throw new Error(`notify ${resp.status}: ${text.slice(0, 500)}`);
@@ -394,6 +395,7 @@ async function main() {
   let skippedBadOwner = 0;
   let failed = 0;
   let limitReachedLogged = false;
+  let digest = { sent: 0, count: 0 };
 
   try {
     const candidateResult = await fetchCandidates(pool, now);
@@ -425,8 +427,19 @@ async function main() {
       `待推汇总: candidates=${scanned} total=${due} priority=${JSON.stringify(priorityCounts)} owner_review=${ownerReviewResult.rows.length} live_limit=${LIVE ? LIMIT : "dry-all"} staged=${STAGED ? "1" : "0"} skipped_before_watermark=${candidateResult.skippedBeforeWatermark + ownerReviewResult.skippedBeforeWatermark} watermark=${candidateResult.watermark}`
     );
 
+    digest = await escalationDigest(loopTasks, {
+      live: LIVE, staged: STAGED, pool, shouldPushDamon, payloadFor, pushNotify,
+      reserveAttempt, markSentAndAdvance,
+      keyFor: ({ task, stageInfo }) => idempotencyKey(task.id, stageInfo, now),
+      chainFor: ({ task, stageInfo }) => stageInfo.ownerReview
+        ? ownerReviewChainInfo(task, activeStaffByNo) : resolveChain(task.assigned_to, activeStaffByNo),
+    });
+    pushed += digest.sent;
+    failed += digest.failed;
+
     for (let i = 0; i < loopTasks.length; i += 1) {
       const item = loopTasks[i];
+      if (digest.handled.has(item.task.id)) continue;
       const chainInfo = item.stageInfo.ownerReview
         ? ownerReviewChainInfo(item.task, activeStaffByNo)
         : resolveChain(item.task.assigned_to, activeStaffByNo);
@@ -454,7 +467,7 @@ async function main() {
   }
 
   console.log(`因无负责人跳过 ${skippedNoOwner} 条 · 因负责人不是有效员工跳过 ${skippedBadOwner} 条 · unclaimed_file=${STAGED ? unclaimedFileFor(now) : "off"}`);
-  console.log(`统计: 扫${scanned}/该推${due}/实推${pushed}/跳过${skipped}/失败${failed}/dry=${LIVE ? "0" : "1"}`);
+  console.log(`统计: 扫${scanned}/该推${due}/实推${pushed}/跳过${skipped}/失败${failed}/dry=${LIVE ? "0" : "1"}/digest=${digest.sent}/digest_count=${digest.count}`);
 }
 
 if (process.env.ESCALATION_SELFTEST === "owner-review-stage") {
