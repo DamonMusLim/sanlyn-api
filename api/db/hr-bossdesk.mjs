@@ -1,3 +1,4 @@
+import { sweepGroups, sweepDone, trySweepAction } from './hr-bossdesk-sweep.mjs';
 // hr-bossdesk.mjs — 老板「待我处理」页后台(0929,前端另一单)
 //
 // GET  挂在 managerExtras().approvals.bossdesk:buildBossdesk → { groups, done }
@@ -267,6 +268,8 @@ export async function buildBossdesk(pool, me, empId) {
   const errors = [];
   const groups = await safe(errors, "待我处理分组", [], () => buildGroups(pool));
   const done = await safe(errors, "已办留痕", [], () => buildDone(pool));
+  groups.push(...await safe(errors, "每周清库", [], () => sweepGroups(pool)));
+  done.push(...await safe(errors, "清库已办", [], () => sweepDone(pool)));
   const out = { groups, done };
   if (errors.length) out.errors = errors; // 表没建(M140 未跑)时这里带出来,不炸整个 manager 页
   return out;
@@ -466,6 +469,7 @@ export async function tryBossdeskAction({ action, b, res, pool, me, empId }) {
     return true;
   }
   try {
+    if (await trySweepAction(action, b, res, pool)) return true;
     if (action === "boss_decide_batch") return await decideBatch(b, res, pool);
     if (action === "boss_note") return await noteTasks(b, res, pool);
     if (action === "boss_assign") return await assignTasks(b, res, pool, me);
