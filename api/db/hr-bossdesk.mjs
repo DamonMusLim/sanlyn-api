@@ -13,8 +13,10 @@ import { sweepGroups, sweepDone, trySweepAction } from './hr-bossdesk-sweep.mjs'
 
 import {
   uniq, cut, parseNora, kindLabel, extractCodes,
-  dnaPrep, dnaCaseForDecide, dnaCaseForNote, dnaRevokeBatch,
+  dnaPrep, dnaCaseForDecide, dnaCaseForNote,
 } from "./hr-bossdesk-dna.mjs";
+
+import { buildTaskList, tryTaskAction, noteTask, assignmentTarget, assignTask, undoBatch } from "./hr-bossdesk-tasks.mjs";
 
 const DEFAULT_BOSS_EMPLOYEE_IDS = "35"; // 复制自 hr-manager-mobile.mjs(那边未 export,brief 允许复制)
 
@@ -211,19 +213,14 @@ async function buildGroups(pool) {
   return groups;
 }
 
-// ── GET:近 24h 已办(按 batch 聚合,status 映射关联 tasks 现状)────────────
+// ── GET:近 24h 已办(按 task 返回,保留 batch_id 供整批撤回)────────────
 const ASSIGN_LABEL = { clerk: "店员", nora: "Nora", ada: "Ada", claude: "Claude" };
-const ASSIGN_TARGET = { nora: "petshop-manager", ada: "pt-03", claude: "claude" }; // clerk 走 agenda,单独建
 
 function actionLabel(x) {
   if (x.action === "boss_decide_batch") return x.decision === "不同意" ? "不同意" : "同意";
   if (x.action === "boss_note") return "补一句";
   if (x.action === "boss_assign") return "转给" + (ASSIGN_LABEL[x.decision] || String(x.decision || "?"));
   return String(x.action || "?");
-}
-
-function titlesLabel(titles) {
-  return cut(uniq((titles || []).filter(Boolean).map((t) => cut(t, 16))).join(";"), 60);
 }
 
 function statusLabel(holders, tstatus) { // 有一条没走完就显示那条;全走完才「已完成」
@@ -242,24 +239,18 @@ function statusLabel(holders, tstatus) { // 有一条没走完就显示那条;�
 
 async function buildDone(pool) {
   const r = await pool.query(`
-    SELECT d.batch_id,
-           to_char(min(d.created_at) AT TIME ZONE 'Asia/Shanghai', 'HH24:MI') AS at,
-           min(d.created_at) AS first_at, max(d.undone_at) AS undone_at,
-           (array_agg(d.action ORDER BY d.id))[1] AS action,
-           (array_agg(d.decision ORDER BY d.id))[1] AS decision,
-           (array_agg(d.note ORDER BY d.id))[1] AS note,
-           array_agg(t.title ORDER BY d.id) AS titles,
-           array_agg(t.next_holder ORDER BY d.id) AS holders,
-           array_agg(t.status ORDER BY d.id) AS tstatus
-      FROM boss_decisions d
-      LEFT JOIN tasks t ON t.id = d.task_id
+    SELECT d.task_id, t.title, d.action, d.batch_id, d.created_at AS at,
+           d.note, d.decision, d.undone_at, t.status, t.current_holder AS holder,
+           t.next_holder
+      FROM boss_decisions d LEFT JOIN tasks t ON t.id=d.task_id
      WHERE d.created_at > now() - interval '24 hours'
-     GROUP BY d.batch_id
-     ORDER BY min(d.created_at) DESC LIMIT 30`);
+     ORDER BY d.created_at DESC, d.id DESC LIMIT 30`);
   return r.rows.map((x) => ({
-    batch_id: x.batch_id, at: x.at || "", action: actionLabel(x), note: x.note || "",
-    titles: titlesLabel(x.titles), status: statusLabel(x.holders, x.tstatus),
-    can_undo: !x.undone_at && !!x.first_at && Date.now() - new Date(x.first_at).getTime() <= 5 * 60 * 1000,
+    task_id: x.task_id, title: x.title, action: x.action, batch_id: x.batch_id,
+    at: x.at, status: x.status, holder: x.holder, note: x.note || "",
+    titles: x.title || "", action_label: actionLabel(x),
+    status_label: statusLabel([x.next_holder], [x.status]),
+    can_undo: !x.undone_at && !!x.at && Date.now() - new Date(x.at).getTime() <= 300000,
   }));
 }
 
@@ -270,13 +261,14 @@ export async function buildBossdesk(pool, me, empId) {
   const done = await safe(errors, "已办留痕", [], () => buildDone(pool));
   groups.push(...await safe(errors, "每周清库", [], () => sweepGroups(pool)));
   done.push(...await safe(errors, "清库已办", [], () => sweepDone(pool)));
-  const out = { groups, done };
+  const tasks = await safe(errors, "任务待办", [], () => buildTaskList(pool));
+  const out = { groups, done, tasks };
   if (errors.length) out.errors = errors; // 表没建(M140 未跑)时这里带出来,不炸整个 manager 页
   return out;
 }
 
 // ── POST:4 个 action(返回 false = 不是本模块的,交给老通道)──────────────
-const BOSSDESK_ACTIONS = new Set(["boss_decide_batch", "boss_note", "boss_assign", "boss_undo"]);
+const BOSSDESK_ACTIONS = new Set(["boss_decide_batch", "boss_note", "boss_assign", "boss_undo", "boss_task_detail", "boss_reply_parse", "boss_reply_apply"]);
 
 function taskIdList(v) {
   return uniq((Array.isArray(v) ? v : []).map((x) => String(x ?? "").trim()).filter(Boolean)).slice(0, 50);
@@ -306,7 +298,7 @@ async function decideBatch(b, res, pool) {
       const tid = String(it.task_id);
       const pre = (await c.query(
         `SELECT next_holder, next_action, damon_feedback FROM tasks
-          WHERE id=$1 AND lower(COALESCE(next_holder,''))='damon'`, [tid])).rows[0];
+          WHERE id=$1 AND lower(COALESCE(next_holder,''))='damon' FOR UPDATE`, [tid])).rows[0];
       if (!pre) continue;
       const r = await c.query(
         `UPDATE tasks
@@ -351,16 +343,9 @@ async function noteTasks(b, res, pool) {
     for (const tid of ids) {
       const pre = (await c.query(
         `SELECT next_holder, next_action, damon_feedback FROM tasks
-          WHERE id=$1 AND lower(COALESCE(next_holder,''))='damon'`, [tid])).rows[0];
+          WHERE id=$1 AND lower(COALESCE(next_holder,''))='damon' FOR UPDATE`, [tid])).rows[0];
       if (!pre) continue;
-      const r = await c.query(
-        `UPDATE tasks
-            SET next_action=$2 || COALESCE(next_action,''),
-                damon_feedback=CASE WHEN COALESCE(damon_feedback,'')='' THEN $3
-                                    ELSE damon_feedback || E'\n' || $3 END,
-                updated_at=now()
-          WHERE id=$1 AND lower(COALESCE(next_holder,''))='damon' RETURNING id`, // 不改 holder:只是补话
-        [tid, `Damon补充:${note} | `, fb]);
+      const r = await noteTask(c, tid, note, fb, true);
       if (!r.rows.length) continue;
       await c.query(
         `INSERT INTO boss_decisions (batch_id, task_id, action, note, prev) VALUES ($1,$2,'boss_note',$3,$4::jsonb)`,
@@ -391,30 +376,15 @@ async function assignTasks(b, res, pool, me) {
     await c.query("BEGIN");
     const pres = (await c.query(
       `SELECT id, title, next_action, next_holder, damon_feedback FROM tasks
-        WHERE id = ANY($1::text[]) AND lower(COALESCE(next_holder,''))='damon'`, [ids])).rows;
+        WHERE id = ANY($1::text[]) AND lower(COALESCE(next_holder,''))='damon' ORDER BY id FOR UPDATE`, [ids])).rows;
     if (!pres.length) { await c.query("ROLLBACK"); return res.status(404).json({ success: false, error: "这些已处理或不在你名下" }); }
 
-    let target;
-    if (to === "clerk") { // 店员:进今日待办,点圈必须拍照(evidence.need='photo',同 M139 口径)
-      const titles = uniq(pres.map((p) => String(p.title || "").trim()).filter(Boolean));
-      const a = await c.query(
-        `INSERT INTO hr_day_agenda (company_code, work_date, kind, status, title, note, created_by, evidence)
-         VALUES ($1,$2,'task','open',$3,$4,'boss','{"need":"photo"}'::jsonb) RETURNING id`,
-        [me.company_code, shanghaiToday(), `老板交代:${cut(titles.join("、"), 40)}`,
-         (note ? note + "\n" : "") + titles.map((t) => cut(t, 60)).join("\n")]);
-      target = `clerk-agenda:${a.rows[0].id}`;
-    } else {
-      target = ASSIGN_TARGET[to];
-    }
+    const target = await assignmentTarget(c, pres, to, note, me, shanghaiToday());
     const prefix = note ? `Damon转给${ASSIGN_LABEL[to]}:${note} 限${due}` : `Damon转给${ASSIGN_LABEL[to]}: 限${due}`;
     const batchId = newBatchId();
     let count = 0;
     for (const pre of pres) {
-      const r = await c.query(
-        `UPDATE tasks
-            SET next_holder=$2, next_action=$3 || ' | ' || COALESCE(next_action,''), updated_at=now()
-          WHERE id=$1 AND lower(COALESCE(next_holder,''))='damon' RETURNING id`,
-        [String(pre.id), target, prefix]);
+      const r = await assignTask(c, String(pre.id), target, prefix, true);
       if (!r.rows.length) continue;
       await c.query(
         `INSERT INTO boss_decisions (batch_id, task_id, action, decision, note, prev)
@@ -433,35 +403,6 @@ async function assignTasks(b, res, pool, me) {
   }
 }
 
-async function undoBatch(b, res, pool) {
-  const batchId = String(b.batch_id || "").trim();
-  if (!batchId) return res.status(400).json({ success: false, error: "缺 batch_id" });
-  const rows = (await pool.query(
-    `SELECT task_id, prev, created_at FROM boss_decisions
-      WHERE batch_id=$1 AND undone_at IS NULL ORDER BY id`, [batchId])).rows;
-  if (!rows.length) return res.status(404).json({ success: false, error: "没有可撤回的操作" });
-  if (Date.now() - new Date(rows[0].created_at).getTime() > 5 * 60 * 1000) {
-    return res.status(400).json({ success: false, error: "已超过5分钟" });
-  }
-  for (const r of rows) {
-    const cur = (await pool.query(`SELECT next_holder FROM tasks WHERE id=$1`, [r.task_id])).rows[0];
-    const h = String(cur?.next_holder || "");
-    if (h.startsWith("clerk-agenda:")) { // 转给店员的,撤回时把那条待办一并取消
-      const aid = Number(h.split(":")[1]);
-      if (Number.isInteger(aid) && aid > 0) {
-        await pool.query(`UPDATE hr_day_agenda SET status='cancelled' WHERE id=$1`, [aid]);
-      }
-    }
-    const p = r.prev && typeof r.prev === "object" ? r.prev : {};
-    await pool.query(
-      `UPDATE tasks SET next_holder=$2, next_action=$3, damon_feedback=$4, updated_at=now() WHERE id=$1`,
-      [r.task_id, p.next_holder ?? null, p.next_action ?? null, p.damon_feedback ?? null]);
-  }
-  await pool.query(`UPDATE boss_decisions SET undone_at=now() WHERE batch_id=$1`, [batchId]);
-  await dnaRevokeBatch(pool, batchId); // 撤销把该批 DNA 先例一并作废(失败只留痕,不挡撤回)
-  return res.status(200).json({ success: true });
-}
-
 export async function tryBossdeskAction({ action, b, res, pool, me, empId }) {
   if (!BOSSDESK_ACTIONS.has(action)) return false;
   if (!isBossEmployee(me, empId)) {
@@ -470,6 +411,7 @@ export async function tryBossdeskAction({ action, b, res, pool, me, empId }) {
   }
   try {
     if (await trySweepAction(action, b, res, pool)) return true;
+    if (await tryTaskAction({ action, b, res, pool, me }) !== false) return true;
     if (action === "boss_decide_batch") return await decideBatch(b, res, pool);
     if (action === "boss_note") return await noteTasks(b, res, pool);
     if (action === "boss_assign") return await assignTasks(b, res, pool, me);
