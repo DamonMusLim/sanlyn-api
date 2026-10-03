@@ -50,7 +50,7 @@ async function task(pool, id, lock = false) {
 }
 function snapshot(t) {
   return Object.fromEntries(['status', 'closed_at', 'current_holder', 'next_holder',
-    'next_action', 'damon_feedback', 'due_at'].map(k => [k, t[k] ?? null]));
+    'next_action', 'damon_feedback', 'due_at', 'reason', 'lease_owner', 'lease_until', 'next_attempt_at'].map(k => [k, t[k] ?? null]));
 }
 const version = t => hash({ ...snapshot(t), updated_at: t.updated_at ?? null });
 
@@ -157,7 +157,12 @@ async function parse(pool, id, text) {
       });
       if (!r.ok) throw new Error('model failed');
       const data = await r.json();
-      p = validate(JSON.parse(String(data.choices?.[0]?.message?.content || '').replace(/^```(?:json)?\s*|\s*```$/g, '')));
+      const parsed = JSON.parse(String(data.choices?.[0]?.message?.content || '').replace(/^```(?:json)?\s*|\s*```$/g, ''));
+      if (parsed?.action === 'redo' && (parsed.requirement == null ||
+        (typeof parsed.requirement === 'string' && !parsed.requirement.trim()))) {
+        parsed.requirement = Array.from(text).slice(0, 300).join('');
+      }
+      p = validate(parsed);
     } catch { p = null; }
   }
   if (p?.action === 'hold') p.due = tomorrow();
@@ -195,12 +200,19 @@ async function apply(pool, me, id, proposal, token) {
           updated_at=now() WHERE id=$1`, [id, 'claude', verdict]);
       }
     } else if (p.action === 'redo') {
-      const feedback = `Damon要求:${p.requirement} · ${when()}`;
+      const at = when();
+      const feedback = `Damon要求:${p.requirement} · ${at}`;
+      const runnable = ['text', 'ops'].includes(t.runner_kind);
+      const reason = `\n【Damon 退回要求 · ${at}】${p.requirement}\n【上次结论】${conclusion(t.result_summary) || '无'}`;
       await c.query(`UPDATE tasks SET status=$2,closed_at=NULL,
+        reason=COALESCE(reason,'') || $5,
+        lease_owner=CASE WHEN $6 THEN NULL ELSE lease_owner END,
+        lease_until=CASE WHEN $6 THEN NULL ELSE lease_until END,
+        next_attempt_at=CASE WHEN $6 THEN NULL ELSE next_attempt_at END,
         next_holder=COALESCE(NULLIF(btrim(current_holder),''),next_holder),
         next_action=$3 || ' | ' || COALESCE(next_action,''),
         damon_feedback=CASE WHEN COALESCE(damon_feedback,'')='' THEN $3 ELSE damon_feedback || E'\n' || $3 END,
-        due_at=COALESCE($4::timestamptz,due_at),updated_at=now() WHERE id=$1`, [id, 'open', feedback, p.due ?? null]);
+        due_at=COALESCE($4::timestamptz,due_at),updated_at=now() WHERE id=$1`, [id, runnable ? 'doing' : 'open', feedback, p.due ?? null, reason, runnable]);
     } else if (p.action === 'note') {
       await noteTask(c, id, p.requirement, `Damon补充:${p.requirement} · ${when()}`);
     } else if (p.action === 'assign') {
@@ -255,6 +267,9 @@ export async function undoBatch(b, res, pool) {
         AND batch_id<>$3 AND undone_at IS NULL LIMIT 1`, [r.task_id, r.id, id])).rows;
       if (newer.length) throw fail(409, '已有后续老板操作，请先撤回后续操作');
       const cur = (await c.query('SELECT * FROM tasks WHERE id=$1', [r.task_id])).rows[0];
+      if (cur?.lease_owner && new Date(cur.lease_until).getTime() > Date.now()) {
+        throw fail(409, '执行器已经开始重做,不能撤回');
+      }
       const p = r.prev && typeof r.prev === 'object' ? r.prev : {};
       if (p.after_version && (!cur || version(cur) !== p.after_version)) throw fail(409, '任务已推进，不能覆盖后续进度');
       const h = String(cur?.next_holder || '');
@@ -265,6 +280,10 @@ export async function undoBatch(b, res, pool) {
       await c.query(`UPDATE tasks SET next_holder=$2,next_action=$3,damon_feedback=$4,
         status=CASE WHEN $5::jsonb ? 'status' THEN $5::jsonb->>'status' ELSE status END,
         closed_at=CASE WHEN $5::jsonb ? 'closed_at' THEN ($5::jsonb->>'closed_at')::timestamptz ELSE closed_at END,
+        reason=CASE WHEN $5::jsonb ? 'reason' THEN $5::jsonb->>'reason' ELSE reason END,
+        lease_owner=CASE WHEN $5::jsonb ? 'lease_owner' THEN $5::jsonb->>'lease_owner' ELSE lease_owner END,
+        lease_until=CASE WHEN $5::jsonb ? 'lease_until' THEN ($5::jsonb->>'lease_until')::timestamptz ELSE lease_until END,
+        next_attempt_at=CASE WHEN $5::jsonb ? 'next_attempt_at' THEN ($5::jsonb->>'next_attempt_at')::timestamptz ELSE next_attempt_at END,
         current_holder=CASE WHEN $5::jsonb ? 'current_holder' THEN $5::jsonb->>'current_holder' ELSE current_holder END,
         due_at=CASE WHEN $5::jsonb ? 'due_at' THEN ($5::jsonb->>'due_at')::timestamptz ELSE due_at END,
         updated_at=now() WHERE id=$1`, [r.task_id, p.next_holder ?? null, p.next_action ?? null, p.damon_feedback ?? null, JSON.stringify(p)]);
