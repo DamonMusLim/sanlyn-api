@@ -956,6 +956,19 @@ export default async function handler(req, res) {
           });
           return tot;
         }
+        // Damon 1004 方案 A：CP-10 客户版净重锚报检 Σnw_kg，所有订单均有完整真值才缩放。
+        if(!_customsMode){
+          var _ciqNWTarget=0;
+          var _ciqNWComplete=orderRows.length>0 && orderRows.every(function(orow){
+            var ciq=_orderRaw(orow).ciq, ls=ciq&&ciq.lines;
+            return Array.isArray(ls) && ls.length>0 && ls.every(function(line){
+              var nw=Number(line&&line.nw_kg);
+              if(!Number.isFinite(nw) || nw<=0)return false;
+              _ciqNWTarget+=nw; return true;
+            });
+          });
+          if(_ciqNWComplete && Number.isFinite(_ciqNWTarget))_scaleSeg(rows.filter(function(r){return r&&!r.isHeader;}),"nw",_ciqNWTarget,2);
+        }
         if(_spActualGW>0 || _spActualCBM>0){
           var _sg=_segs(rows);
           var _perOK=_sg.length>0 && _sg.every(function(g){
