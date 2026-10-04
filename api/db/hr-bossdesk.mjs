@@ -17,6 +17,7 @@ import {
 } from "./hr-bossdesk-dna.mjs";
 
 import { buildTaskList, tryTaskAction, noteTask, assignmentTarget, assignTask, undoBatch } from "./hr-bossdesk-tasks.mjs";
+import { buildMessages, tryMessageAction, MESSAGE_ACTIONS, CHAT_UNAVAILABLE } from './hr-bossdesk-msgs.mjs';
 
 const DEFAULT_BOSS_EMPLOYEE_IDS = "35"; // 复制自 hr-manager-mobile.mjs(那边未 export,brief 允许复制)
 
@@ -85,6 +86,7 @@ async function buildGroups(pool) {
     UNION ALL
     SELECT id, title, next_action, created_at, 'boss' FROM tasks
      WHERE status='open' AND task_prefix='CAW' AND needs_human=true
+       AND COALESCE(source,'') <> 'chat-owner'
        AND lower(COALESCE(next_holder,''))='damon'
        AND NOT (source='dataops' AND status IN ('open','pending_review')
                 AND (COALESCE(title,'') ~ '报损' OR COALESCE(dedupe_key,'') ~ 'writeoff|loss|risk'))
@@ -262,13 +264,15 @@ export async function buildBossdesk(pool, me, empId) {
   groups.push(...await safe(errors, "每周清库", [], () => sweepGroups(pool)));
   done.push(...await safe(errors, "清库已办", [], () => sweepDone(pool)));
   const tasks = await safe(errors, "任务待办", [], () => buildTaskList(pool));
-  const out = { groups, done, tasks };
+  const messages = await safe(errors, "邮件消息", [], () => buildMessages(pool));
+  errors.push(CHAT_UNAVAILABLE);
+  const out = { groups, done, tasks, messages };
   if (errors.length) out.errors = errors; // 表没建(M140 未跑)时这里带出来,不炸整个 manager 页
   return out;
 }
 
 // ── POST:4 个 action(返回 false = 不是本模块的,交给老通道)──────────────
-const BOSSDESK_ACTIONS = new Set(["boss_decide_batch", "boss_note", "boss_assign", "boss_undo", "boss_task_detail", "boss_reply_parse", "boss_reply_apply"]);
+const BOSSDESK_ACTIONS = new Set([...MESSAGE_ACTIONS, "boss_decide_batch", "boss_note", "boss_assign", "boss_undo", "boss_task_detail", "boss_reply_parse", "boss_reply_apply"]);
 
 function taskIdList(v) {
   return uniq((Array.isArray(v) ? v : []).map((x) => String(x ?? "").trim()).filter(Boolean)).slice(0, 50);
@@ -410,6 +414,7 @@ export async function tryBossdeskAction({ action, b, res, pool, me, empId }) {
     return true;
   }
   try {
+    if (await tryMessageAction({ action, b, res, pool, me, empId })) return true;
     if (await trySweepAction(action, b, res, pool)) return true;
     if (await tryTaskAction({ action, b, res, pool, me }) !== false) return true;
     if (action === "boss_decide_batch") return await decideBatch(b, res, pool);

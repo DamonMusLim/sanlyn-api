@@ -16,8 +16,10 @@ const PET = `lower(COALESCE(t.next_holder,''))='damon' AND (
    AND (COALESCE(t.title,'') ~ '报损' OR COALESCE(t.dedupe_key,'') ~ 'writeoff|loss|risk'))
   OR (t.status='open' AND t.task_prefix='CAW' AND t.needs_human=true))`;
 const DECIDE = `t.status IN ('open','doing','pending_review') AND
+  COALESCE(t.source,'') <> 'chat-owner' AND
   (lower(COALESCE(t.next_holder,''))='damon' OR lower(COALESCE(t.current_holder,''))='damon')`;
 const REVIEW = `t.status='done' AND t.closed_at > now()-interval '72 hours'
+  AND COALESCE(t.source,'') <> 'chat-owner'
   AND t.dispatched_by='human_request' AND NOT EXISTS
   (SELECT 1 FROM boss_decisions d WHERE d.task_id=t.id AND d.created_at>t.closed_at)`;
 
