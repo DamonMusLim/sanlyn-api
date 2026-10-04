@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>数据中心 · 宠爱我金枋店</title>
+<style>
+:root{--bg:#F6F1EA;--line:#E6DDD2;--pri:#B8541E;--tx:#2B2520;--sub:#6E6259;--red:#B42318;--redbg:#F9E3DF;--grn:#24562E;--grnbg:#E8F2EA;--org:#8F3F15;--orgbg:#F3E3D6}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);font:15px/1.55 system-ui,"Noto Sans SC",sans-serif;overflow-x:hidden;padding-bottom:64px}
+a{color:var(--pri)}
+.num{font-variant-numeric:tabular-nums}
+.hd{display:flex;align-items:flex-start;justify-content:space-between;padding:16px 14px 10px}
+.hd h1{margin:0;font-size:20px}
+.hd .sub{color:var(--sub);font-size:12px;margin-top:3px}
+.hd .pc{font-size:13px;color:var(--pri);text-decoration:none;white-space:nowrap;padding-top:3px}
+.tabs{display:flex;gap:8px;padding:0 14px 12px}
+.tab{flex:1;min-height:44px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--tx);font-size:15px;font-weight:600}
+.tab.on{background:var(--tx);border-color:var(--tx);color:#fff}
+main{padding:0 14px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px}
+.tiles4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.tile{background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 8px;text-align:center;font-size:12px;color:var(--sub)}
+.tile b{display:block;font-size:20px;line-height:1.3;color:var(--tx);font-variant-numeric:tabular-nums}
+.tile.red b{color:var(--red)}
+.tile.btn{cursor:pointer}
+.tile.btn.on{border-color:var(--pri);box-shadow:0 0 0 2px #F3D9C8}
+.note{background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 11px;color:var(--sub);font-size:12.5px;margin-bottom:10px}
+.tb{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:13px;margin-bottom:10px}
+.tb th,.tb td{padding:7px 9px;border-bottom:1px solid #F0E9E0;text-align:left;white-space:nowrap}
+.tb th{color:var(--sub);font-weight:600;background:#FBF8F4}
+.tb tr:last-child td{border-bottom:0}
+.twrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:10px}
+.twrap .tb{margin-bottom:0}
+.tb td.r,.tb th.r{text-align:right;font-variant-numeric:tabular-nums}
+.chips{display:flex;gap:8px;margin:0 0 10px;flex-wrap:wrap}
+.chip{min-height:36px;padding:5px 13px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--tx);font-size:13px}
+.chip.on{background:var(--tx);border-color:var(--tx);color:#fff}
+.rowcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+.rtop{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.nm{font-weight:600;font-size:15px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.rmeta{color:var(--sub);font-size:12.5px;margin-top:5px}
+.rmeta .num{color:var(--tx)}
+.tag{display:inline-block;border-radius:999px;padding:2px 9px;font-size:12px;white-space:nowrap;flex:none}
+.tag.g{background:var(--grnbg);color:var(--grn)}
+.tag.o{background:var(--orgbg);color:var(--org)}
+.tag.r{background:var(--redbg);color:var(--red)}
+.tag.gr{background:#F0EAE3;color:var(--sub)}
+.price{margin-top:7px;font-size:14px;font-variant-numeric:tabular-nums}
+.price .arr{color:var(--sub);margin:0 4px}
+.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px;font-size:13px}
+.pcol{background:#FBF8F4;border:1px solid #F0E9E0;border-radius:10px;padding:8px 10px;min-width:0}
+.pcol .ph{font-weight:600;font-size:12px;color:var(--sub);margin-bottom:4px;word-break:break-all}
+.pcol .pl{margin:2px 0}
+.btns{display:flex;gap:8px;margin-top:10px}
+.btn{min-height:44px;border-radius:11px;font-size:14.5px;font-weight:600;padding:0 14px}
+.btn-pri{background:var(--pri);border:0;color:#fff;flex:1}
+.btn-pri:disabled{background:#C9BEB2;border:0;color:#fff}
+.btn-sec{background:#fff;border:1px solid var(--line);color:var(--sub)}
+.grayline{color:var(--sub);font-size:12.5px;margin-top:9px}
+.empty{color:var(--sub);text-align:center;padding:26px 0}
+.fail{background:#fff;border:1px solid var(--red);border-radius:12px;padding:12px;color:var(--red);font-size:13px;margin-bottom:10px;word-break:break-all}
+.fail button{margin-top:8px;min-height:38px;border:1px solid var(--red);border-radius:9px;background:#fff;color:var(--red);font-size:13.5px;padding:0 14px}
+.skipline{color:var(--sub);font-size:12.5px;text-align:center;padding:6px 0 2px}
+.skipline button{border:0;background:none;color:var(--pri);font-size:12.5px;text-decoration:underline;padding:0 4px}
+.mask{position:fixed;inset:0;background:rgba(43,37,32,.45);z-index:30;display:flex;align-items:flex-end}
+.mask[hidden]{display:none}
+.sheet{background:#fff;border-radius:16px 16px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom));width:100%;max-height:76vh;overflow:auto}
+.sheet h3{margin:0 0 4px;font-size:16px}
+.sheet .who{color:var(--sub);font-size:13px;margin-bottom:10px}
+.sheet .qtyrow{display:flex;align-items:center;gap:10px;margin:10px 0 2px}
+.sheet .qtyrow label{font-size:14px;flex:none}
+.sheet input{flex:1;min-height:44px;border:1px solid var(--line);border-radius:10px;padding:0 12px;font-size:16px;width:100%}
+.sheet .err{color:var(--red);font-size:13px;min-height:20px;margin-top:8px;word-break:break-all}
+.foot{position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-top:1px solid var(--line);color:var(--sub);font-size:11.5px;text-align:center;padding:7px 10px calc(7px + env(safe-area-inset-bottom));z-index:20}
+.lock{position:fixed;inset:0;background:var(--bg);z-index:40;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px}
+.lock[hidden]{display:none}
+button:focus-visible,input:focus-visible{outline:2px solid var(--pri);outline-offset:2px}
+@media(max-width:420px){main{padding:0 10px}.hd,.tabs{padding-left:10px;padding-right:10px}}
+</style>
+</head>
+<body>
+<header class="hd">
+  <div><h1>数据中心</h1><div class="sub" id="hd-sub">宠爱我 · 金枋店 · 数据生成于 —</div></div>
+  <a class="pc" href="./dataops.html">电脑版 ›</a>
+</header>
+<nav class="tabs">
+  <button class="tab" id="tab-ne" data-tab="nearexp">临期</button>
+  <button class="tab" id="tab-pk" data-tab="pick">选品机会</button>
+</nav>
+<main>
+  <section id="pane-nearexp"><div id="ne-body"><div class="empty">读取中…</div></div></section>
+  <section id="pane-pick" hidden><div id="pk-body"><div class="empty">读取中…</div></div></section>
+</main>
+<div class="mask" id="sheet-mask" hidden>
+  <div class="sheet" id="sheet">
+    <h3 id="sheet-title">采纳 · 转任务</h3>
+    <div class="who" id="sheet-who"></div>
+    <div class="qtyrow" id="sheet-qtyrow" hidden><label for="sheet-qty">补货数量</label><input id="sheet-qty" inputmode="numeric" placeholder="必填,正整数"></div>
+    <div class="err" id="sheet-err"></div>
+    <div class="btns"><button class="btn btn-sec" id="sheet-cancel" data-sheet-cancel="1">取消</button><button class="btn btn-pri" id="sheet-ok" data-sheet-ok="1">确认转任务</button></div>
+  </div>
+</div>
+<footer class="foot" id="foot">dc-m 1004 · 数据生成于 —</footer>
+<div class="lock" id="lock" hidden>
+  <div><b>请先在电脑版数据中心登录</b><div style="margin-top:10px"><a href="/console/login.html">去登录 ›</a></div></div>
+</div>
+<script>
+// 数据中心手机版 dc-m 1004:临期(只看)+选品机会(采纳转任务)。鉴权照 dataops-wb.js,⛔不发明第二套
+var API = "./api/", GEN = null;
+var MOCK = false;
+try { MOCK = new URLSearchParams(location.search).get("mock") === "1"; } catch (e) {}
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
+function txt(v){ return (v===null||v===undefined||v==="") ? "—" : esc(v); }
+function n(v){ return (v===null||v===undefined||v==="") ? "—" : Number(v).toLocaleString("zh-CN"); }
+function money(v){ if(v===null||v===undefined||v==="") return "—"; var x=Number(v); return isFinite(x)?("¥"+Math.round(x*100)/100):txt(v); }
+function authHd(){
+  var tk=""; try { tk = localStorage.getItem("jdc_token") || localStorage.getItem("token") || ""; } catch(e){}
+  var hd = {"accept":"application/json","content-type":"application/json","x-gateway-auth":"gw-dataops-0903"};
+  if (tk) hd.Authorization = tk.indexOf("Bearer")===0 ? tk : "Bearer "+tk;
+  return hd;
+}
+async function req(path, body){
+  var opt = body ? {method:"POST",headers:authHd(),credentials:"include",body:JSON.stringify(body)} : {headers:authHd(),credentials:"include"};
+  var r;
+  try { r = MOCK ? await mockFetch(API+path, opt) : await fetch(API+path, opt); }
+  catch(e){ return {ok:false, code:"NETWORK", error:String(e && e.message || e)}; }
+  if (r.status===401 || r.status===403){ $("lock").hidden=false; return {ok:false, code:"HTTP_"+r.status}; }
+  var j=null; try { j = await r.json(); } catch(e){}
+  return j || {ok:false, code:"HTTP_"+r.status};
+}
+// ── 页签 ──
+var TAB="nearexp";
+function persistTab(){ try { localStorage.setItem("dc-m-tab", TAB); } catch(e){} }
+function setTab(t){
+  TAB = t; persistTab();
+  try { if (location.hash !== "#"+t) location.hash = "#"+t; } catch(e){}
+  $("tab-ne").className = "tab"+(t==="nearexp"?" on":"");
+  $("tab-pk").className = "tab"+(t==="pick"?" on":"");
+  $("pane-nearexp").hidden = t!=="nearexp";
+  $("pane-pick").hidden = t!=="pick";
+  if (t==="nearexp" && !NE.data && !NE.loading) neLoad();
+  if (t==="pick" && !PK.data && !PK.loading) pickLoad();
+}
+window.addEventListener("hashchange", function(){
+  var h = String(location.hash||"").replace("#","");
+  if ((h==="nearexp"||h==="pick") && h!==TAB) setTab(h);
+});
+function setGen(g){
+  if (g) GEN = g;
+  var s = GEN || new Date().toLocaleString("zh-CN", {hour12:false}).slice(0, 16);
+  $("hd-sub").textContent = "宠爱我 · 金枋店 · 数据生成于 "+s;
+  $("foot").textContent = "dc-m 1004 · 数据生成于 "+s;
+}
+// ── 页签1:临期(只看) ──
+var NE = {data:null, loading:false, filter:"all", rows:[]};
+function neDedup(rows){ // 同品多行只认 proposed/approved/executed 里 id 最大的(旧行可能是 rejected)
+  var keep={}, order=[];
+  (rows||[]).forEach(function(r){
+    var st=String(r.status||"");
+    if (st!=="proposed"&&st!=="approved"&&st!=="executed") return;
+    var k = r.product_code || ("id:"+r.id);
+    if (!keep[k]){ keep[k]=r; order.push(k); }
+    else if (Number(r.id) > Number(keep[k].id)) keep[k]=r;
+  });
+  return order.map(function(k){ return keep[k]; });
+}
+function isDisc(p){ return !!p.date_verified && p.current_price!=null && p.suggest_price!=null && Math.abs(Number(p.current_price)-Number(p.suggest_price))<=0.05; }
+function dnum(v){ return v==null ? NaN : Number(v); } // ⛔ Number(null)=0,空值不许当 0 用
+function failHtml(msg, which){ return '<div class="fail">'+esc(msg)+'<br><button data-retry="'+which+'">重试</button></div>'; }
+function neRowHtml(p){
+  var dl = dnum(p.days_left);
+  var days = p.days_left==null ? "—" : (dl<0 ? "已过期 "+Math.abs(dl)+" 天" : "剩 "+dl+" 天");
+  var tag = dl<0 ? '<span class="tag r">已过期 · 下架</span>' : (p.date_verified ? '<span class="tag g">店员已核</span>' : '<span class="tag o">等店员核</span>');
+  var price = isDisc(p) ? '<span class="tag g">已打折 '+esc(money(p.current_price))+'</span>'
+    : esc(money(p.current_price))+'<span class="arr">→</span>'+esc(money(p.suggest_price));
+  return '<div class="rowcard"><div class="rtop"><div class="nm">'+esc(p.product_name)+'</div>'+tag+'</div>'
+    +'<div class="rmeta">'+txt(p.spec)+' · 货位 '+txt(p.orig_shelf)+' · 库存 <span class="num">'+n(p.stock)+'</span> 件</div>'
+    +'<div class="rmeta"><span class="num">'+days+'</span> · 到期 '+txt(p.expiry_date)+' · '+esc(p.tier_label||"")+'</div>'
+    +'<div class="price">'+price+'</div></div>';
+}
+function neRender(){
+  var d=NE.data, rows=NE.rows;
+  if (!rows.length && !(d.summary||[]).length){ $("ne-body").innerHTML = '<div class="empty">今天没有临期品</div>'; return; }
+  var exp = rows.filter(function(p){return dnum(p.days_left)<0 && dnum(p.stock)>0;}).length;
+  var ver = rows.filter(function(p){return !!p.date_verified;}).length;
+  var disc = rows.filter(isDisc).length;
+  var h = '<div class="tiles">'
+    +'<div class="tile red"><b>'+exp+'</b>已过期还有货</div>'
+    +'<div class="tile"><b class="num">'+ver+'/'+rows.length+'</b>店员已核日期</div>'
+    +'<div class="tile"><b>'+disc+'</b>已按 v5 打折</div></div>'
+    +'<div class="note">店员核过日期的,每天 08:45 自动按 v5 打折,最低 1 元;没核的先等店员核,不打折。</div>';
+  if ((d.summary||[]).length){
+    h += '<div class="twrap"><table class="tb"><tr><th>档位</th><th class="r">品数</th><th class="r">件数</th><th class="r">金额</th></tr>'
+      + d.summary.map(function(s){ return '<tr><td>'+txt(s.tier_label)+'</td><td class="r">'+n(s.product_count)+'</td><td class="r">'+n(s.stock_count)+'</td><td class="r">'+money(s.amount)+'</td></tr>'; }).join("")
+      + '</table></div>';
+  }
+  var list = rows.slice().sort(function(a,b){ var x=dnum(a.days_left),y=dnum(b.days_left); if(isFinite(x)&&isFinite(y))return x-y; return isFinite(x)?-1:1; });
+  if (NE.filter==="wait") list = list.filter(function(p){return !p.date_verified;});
+  if (NE.filter==="disc") list = list.filter(isDisc);
+  h += '<div class="chips">'
+    +'<button class="chip'+(NE.filter==="all"?" on":"")+'" data-ne-chip="all">全部 '+rows.length+'</button>'
+    +'<button class="chip'+(NE.filter==="wait"?" on":"")+'" data-ne-chip="wait">只看待核</button>'
+    +'<button class="chip'+(NE.filter==="disc"?" on":"")+'" data-ne-chip="disc">只看已打折</button></div>'
+    + (list.length ? list.map(neRowHtml).join("") : '<div class="empty">这一筛选下没有临期品</div>');
+  $("ne-body").innerHTML = h;
+}
+async function neLoad(){
+  if (NE.loading) return; NE.loading=true;
+  $("ne-body").innerHTML = '<div class="empty">读取中…</div>';
+  var d = await req("db/petstore-nearexp");
+  NE.loading=false;
+  if (!d || d.error || d.ok===false){ $("ne-body").innerHTML = failHtml((d&&(d.error||d.code||d.message))||"取数失败","ne"); return; }
+  NE.data = d; NE.rows = neDedup(d.proposals);
+  if (d.generated_at) setGen(d.generated_at);
+  neRender();
+}
+// ── 页签2:选品机会(采纳转任务) ──
+var PK = {data:null, loading:false, group:"restock", rows:[]};
+var PK_G = [["restock","补货"],["new_item","我们没有"],["review","待复核"],["watch","观察"]];
+var PK_WHO = {restock:"采购 PET-22", new_item:"采购 PET-22", review:"主数据 PET-12"};
+var OUR_ST = {on_sale_out_of_stock:"在售没货", on_sale_in_stock:"在售有货", not_sold:"没卖", unknown:"没对上"};
+var DONE = {};   // group|shop|name -> task_id,转成功的卡片标已转任务
+var SKIP = {};   // product_key -> 1,只藏本机
+try { SKIP = JSON.parse(localStorage.getItem("dc-m-skip")||"{}") || {}; } catch(e){ SKIP={}; }
+function persistSkip(){ try { localStorage.setItem("dc-m-skip", JSON.stringify(SKIP)); } catch(e){} }
+function mapActErr(code){
+  return ({TOP20_ONLY:"只有排名前 20 的能转", MED_RECORD_ONLY:"兽药类只登记不转", ACTION_MISMATCH:"类型不符,请刷新后重试", LOW_CONF_REVIEW_ONLY:"匹配不确定,只能转复核", QTY_REQUIRED:"请填数量"})[code] || code || "转单失败";
+}
+function pkCardHtml(r, i, g){
+  var key = g+"|"+r.act_shop+"|"+r.act_name;
+  var done = DONE[key];
+  var btns = "";
+  if (g!=="watch"){
+    btns = '<div class="btns">';
+    if (r.is_med) btns += '<div class="grayline" style="margin:0;flex:1">兽药类单独处理</div>';
+    else if (done) btns += '<span class="tag g">已转任务'+(done && done!=="1" ? ' '+esc(done) : '')+'</span><button class="btn btn-pri" disabled>已转任务</button>';
+    else btns += '<button class="btn btn-pri" data-adopt="'+i+'">采纳 · 转任务</button>';
+    btns += '<button class="btn btn-sec" data-skip="'+i+'">跳过</button></div>';
+  }
+  return '<div class="rowcard">'
+    +'<div class="rtop"><div><span class="tag gr">'+esc((({restock:"补货",new_item:"对手在卖·我们没有",review:"待复核",watch:"观察"})[g]))+'</span> <span class="tag gr">'+txt(r.category)+'</span></div></div>'
+    +'<div class="nm" style="margin-top:6px">'+txt(r.product_name)+'</div>'
+    +'<div class="pgrid"><div class="pcol"><div class="ph">对手 · '+txt(r.act_shop)+'</div>'
+    +'<div class="pl">月销 <span class="num">'+n(r.nearby_max_sales)+'</span>(附近合计 <span class="num">'+n(r.nearby_total_sales)+'</span>)</div>'
+    +(r.nearby_price!=null?'<div class="pl">到手 '+money(r.nearby_price)+'</div>':'')
+    +'<div class="pl">机制 '+txt(r.tier_text)+'</div></div>'
+    +'<div class="pcol"><div class="ph">我们</div><div class="pl">'+txt(OUR_ST[r.our_status]||r.our_status)+'</div>'
+    +'<div class="pl">库存 <span class="num">'+n(r.our_cur_stock)+'</span></div>'
+    +'<div class="pl">近180天卖 <span class="num">'+n(r.our_qty_180)+'</span></div></div></div>'
+    +btns+'</div>';
+}
+function pickRender(){
+  var d=PK.data, c=(d&&d.counts)||{}, g=PK.group;
+  var h = '<div class="tiles tiles4">' + PK_G.map(function(x){
+      return '<button class="tile btn'+(g===x[0]?" on":"")+'" data-g="'+x[0]+'"><b>'+n(c[x[0]])+'</b>'+esc(x[1])+'</button>';
+    }).join("") + '</div>';
+  var rows = (d && d.groups && d.groups[g]) || [];
+  PK.rows = rows;
+  var vis = rows.map(function(r,i){ return {r:r,i:i}; }).filter(function(x){ return !SKIP[x.r.product_key]; });
+  h += vis.length ? vis.map(function(x){ return pkCardHtml(x.r, x.i, g); }).join("")
+       : '<div class="empty">'+((c[g]|0) ? '这组的都被你跳过了' : '这组今天没有机会')+'</div>';
+  var sk = Object.keys(SKIP).filter(function(k){return SKIP[k];}).length;
+  if (sk) h += '<div class="skipline">已跳过 '+sk+' 条<button data-unskip="1">全部恢复</button></div>';
+  $("pk-body").innerHTML = h;
+}
+async function pickLoad(){
+  if (PK.loading) return; PK.loading=true;
+  $("pk-body").innerHTML = '<div class="empty">读取中…</div>';
+  var d = await req("db/petstore-rival-opportunity");
+  PK.loading=false;
+  if (!d || d.error || d.ok===false){ $("pk-body").innerHTML = failHtml((d&&(d.error||d.code||d.message))||"取数失败","pk"); return; }
+  PK.data = d;
+  pickRender();
+}
+// ── 采纳弹层(⛔不用 alert/confirm) ──
+var sheetCtx = null;
+function openSheet(g, r){
+  if (!r) return;
+  sheetCtx = {g:g, r:r};
+  $("sheet-title").textContent = "采纳 · 转任务";
+  $("sheet-who").textContent = r.product_name+" — 将转给:"+(PK_WHO[g]||"—");
+  $("sheet-qtyrow").hidden = g!=="restock";
+  $("sheet-qty").value = (g==="restock" && r.restock_qty!=null) ? String(r.restock_qty) : "";
+  $("sheet-err").textContent = "";
+  var ok = $("sheet-ok"); ok.disabled=false; ok.textContent="确认转任务";
+  $("sheet-mask").hidden = false;
+}
+function closeSheet(){ $("sheet-mask").hidden = true; sheetCtx=null; }
+async function submitAdopt(){
+  if (!sheetCtx) return;
+  var g=sheetCtx.g, r=sheetCtx.r, ok=$("sheet-ok"), qty=null;
+  if (g==="restock"){
+    var v = String($("sheet-qty").value||"").trim();
+    if (!/^[1-9]\d*$/.test(v)){ $("sheet-err").textContent = "请填数量(正整数)"; return; }
+    qty = Number(v);
+  }
+  ok.disabled = true; ok.textContent = "提交中…"; $("sheet-err").textContent = "";
+  var j = await req("db/petstore-rival-opportunity-act", Object.assign({shop:r.act_shop, product_name:r.act_name, action:g}, g==="restock" ? {qty:qty} : {}));
+  if (j && j.ok){
+    DONE[g+"|"+r.act_shop+"|"+r.act_name] = j.task_id || "1";
+    closeSheet(); pickRender(); return;
+  }
+  ok.disabled = false; ok.textContent = "确认转任务";
+  $("sheet-err").textContent = mapActErr((j && (j.code||j.error)) || "");
+}
+function doSkip(i){
+  var r = PK.rows[i]; if (!r || !r.product_key) return;
+  SKIP[r.product_key] = 1; persistSkip(); pickRender();
+}
+function unskipAll(){ SKIP={}; persistSkip(); pickRender(); }
+// ── 事件:全局委托,data-* 取参(品名含引号也不会炸) ──
+document.addEventListener("click", function(e){
+  var t = e.target; if (!t || !t.closest) return;
+  if (t.id==="sheet-mask"){ closeSheet(); return; }
+  var b;
+  if ((b=t.closest("[data-tab]"))) { setTab(b.getAttribute("data-tab")); return; }
+  if ((b=t.closest("[data-ne-chip]"))) { NE.filter=b.getAttribute("data-ne-chip"); neRender(); return; }
+  if ((b=t.closest("[data-retry]"))) { (b.getAttribute("data-retry")==="pk"?pickLoad:neLoad)(); return; }
+  if ((b=t.closest("[data-g]"))) { PK.group=b.getAttribute("data-g"); pickRender(); return; }
+  if ((b=t.closest("[data-adopt]"))) { openSheet(PK.group, PK.rows[+b.getAttribute("data-adopt")]); return; }
+  if ((b=t.closest("[data-skip]"))) { doSkip(+b.getAttribute("data-skip")); return; }
+  if ((b=t.closest("[data-unskip]"))) { unskipAll(); return; }
+  if ((b=t.closest("[data-sheet-cancel]"))) { closeSheet(); return; }
+  if ((b=t.closest("[data-sheet-ok]"))) { submitAdopt(); return; }
+});
+// ── mock(?mock=1 才用,默认走真接口) ──
+function mockFetch(path, opts){
+  var data;
+  if (path.indexOf("petstore-nearexp")>=0) data = MOCK_NE;
+  else if (path.indexOf("petstore-rival-opportunity-act")>=0){ MOCK_ACTN=(MOCK_ACTN||0)+1; data={ok:true, task_id:"MOCK-"+MOCK_ACTN}; }
+  else if (path.indexOf("petstore-rival-opportunity")>=0) data = MOCK_PK;
+  else data = {ok:false, code:"NOT_FOUND"};
+  return Promise.resolve({status:200, ok:true, json:function(){ return Promise.resolve(data); }});
+}
+var MOCK_ACTN = 0;
+var MOCK_NE = {ok:true, generated_at:"2026-10-04 07:50", plan:[], summary:[
+  {tier_label:"≤3天 1元清", product_count:1, stock_count:3, amount:3},
+  {tier_label:"4-14天 1折", product_count:2, stock_count:8, amount:39.8},
+  {tier_label:"31-60天 3折", product_count:2, stock_count:11, amount:201.3}],
+ proposals:[
+  {id:11, product_code:"6900001", product_name:"顽皮冻干狗粮 鸡肉粒", spec:"120g", orig_shelf:"A2-03", nearexp_shelf:"0-A2-03", days_left:2, expiry_date:"2026-10-06", date_verified:true, base_price:55, suggest_price:5.5, current_price:5.5, stock:3, tier_label:"4-14天 1折", status:"proposed"},
+  {id:5, product_code:"6900002", product_name:"旧记录不应出现", spec:"旧", orig_shelf:"Z", nearexp_shelf:"Z", days_left:-9, expiry_date:"2026-09-25", date_verified:false, current_price:39, suggest_price:19.5, stock:2, tier_label:"已过期", status:"rejected"},
+  {id:9, product_code:"6900002", product_name:"汪爸爸鲜肉粮 试吃装", spec:"100g", orig_shelf:"B1-07", nearexp_shelf:"0-B1-07", days_left:-1, expiry_date:"2026-10-03", date_verified:false, base_price:39, suggest_price:19.5, current_price:39, stock:2, tier_label:"已过期", status:"proposed"},
+  {id:8, product_code:"6900003", product_name:"麦富迪营养膏 猫用", spec:"120g", orig_shelf:"C3-01", nearexp_shelf:"0-C3-01", days_left:25, expiry_date:"2026-10-29", date_verified:false, base_price:68, suggest_price:20.4, current_price:null, stock:6, tier_label:"31-60天 3折", status:"proposed"},
+  {id:7, product_code:"6900004", product_name:"路斯洁齿棒 鸡肉味", spec:"500g", orig_shelf:"A1-02", nearexp_shelf:"0-A1-02", days_left:9, expiry_date:"2026-10-13", date_verified:true, base_price:45, suggest_price:13.5, current_price:13.5, stock:5, tier_label:"4-14天 1折", status:"executed", executed_at:"2026-10-04 08:45"},
+  {id:12, product_code:"6900005", product_name:"低id同品行", spec:"旧", orig_shelf:"D", nearexp_shelf:"D", days_left:40, expiry_date:"2026-11-13", date_verified:false, base_price:30, suggest_price:9, current_price:30, stock:4, tier_label:"31-60天 3折", status:"proposed"},
+  {id:13, product_code:"6900005", product_name:"爵宴鸭肉梨 鹌鹑冻干", spec:"80g", orig_shelf:"D2-04", nearexp_shelf:"0-D2-04", days_left:41, expiry_date:"2026-11-14", date_verified:false, base_price:30, suggest_price:9, current_price:30, stock:4, tier_label:"31-60天 3折", status:"proposed"}]};
+var MOCK_PK = {ok:true, counts:{restock:2, new_item:2, review:1, watch:1}, groups:{
+  restock:[
+    {product_key:"R1", product_code:"6900011", product_name:"路斯洁齿棒 牛肉味", category:"零食", tier_type:"plain", tier_text:"无活动", is_med:false, match_status:"matched", confidence:"high", our_status:"on_sale_out_of_stock", is_hook:false, nearby_total_sales:143, nearby_max_sales:88, nearby_shop_count:3, nearby_price:39.9, our_qty_90:41, our_qty_180:96, our_cur_stock:0, restock_qty:24, act_shop:"附近宠超(万达店)", act_name:"路斯洁齿棒 牛肉味 500g", act_rank:3},
+    {product_key:"R2", product_code:"6900012", product_name:"依依卫生纸 垫圈替换装", category:"用品", tier_type:"multi_pack", tier_text:"多袋装", is_med:false, match_status:"matched", confidence:"high", our_status:"on_sale_in_stock", is_hook:false, nearby_total_sales:57, nearby_max_sales:31, nearby_shop_count:2, nearby_price:null, our_qty_90:12, our_qty_180:30, our_cur_stock:7, restock_qty:null, act_shop:"隔壁爱宠屋", act_name:"依依卫生纸 替换装", act_rank:9}],
+  new_item:[
+    {product_key:"N1", product_code:null, product_name:"麦富迪鲜肉粮 全期猫粮", category:"主粮", tier_type:"first_item_price", tier_text:"首件价", is_med:false, match_status:"not_carried", confidence:"high", our_status:"not_sold", is_hook:false, nearby_total_sales:210, nearby_max_sales:120, nearby_shop_count:4, nearby_price:59, our_qty_90:null, our_qty_180:null, our_cur_stock:null, restock_qty:null, act_shop:"附近宠超(万达店)", act_name:"麦富迪鲜肉粮 全期猫粮 2kg", act_rank:6},
+    {product_key:"N2", product_code:null, product_name:"某品牌体外驱虫滴剂", category:"兽药", tier_type:"plain", tier_text:"无活动", is_med:true, match_status:"not_carried", confidence:"low", our_status:"unknown", is_hook:false, nearby_total_sales:66, nearby_max_sales:40, nearby_shop_count:2, nearby_price:35, our_qty_90:null, our_qty_180:null, our_cur_stock:null, restock_qty:null, act_shop:"宠物诊所便利店", act_name:"体外驱虫滴剂", act_rank:15}],
+  review:[
+    {product_key:"V1", product_code:"6900013", product_name:"好主人猫粮 海鱼味(名字像另一款)", category:"主粮", tier_type:"hook_price", tier_text:"≤¥1引流", is_med:false, match_status:"suspect", confidence:"low", our_status:"unknown", is_hook:true, nearby_total_sales:95, nearby_max_sales:52, nearby_shop_count:2, nearby_price:1, our_qty_90:3, our_qty_180:8, our_cur_stock:2, restock_qty:null, act_shop:"隔壁爱宠屋", act_name:"好主人猫粮 海鱼味 10kg", act_rank:11}],
+  watch:[
+    {product_key:"W1", product_code:"6900014", product_name:"耐咬克牛膝骨(规格不符,先看)", category:"零食", tier_type:"plain", tier_text:"无活动", is_med:false, match_status:"matched", confidence:"none", our_status:"on_sale_in_stock", is_hook:false, nearby_total_sales:33, nearby_max_sales:18, nearby_shop_count:1, nearby_price:25.5, our_qty_90:5, our_qty_180:14, our_cur_stock:9, restock_qty:null, act_shop:"附近宠超(万达店)", act_name:"耐咬克牛膝骨 M号", act_rank:26}]}};
+// 自检钩子:只在 ?mock=1 时挂
+if (/[?&]mock=1/.test(location.search)) window.__DCM = {mapActErr:mapActErr, neDedup:neDedup, openSheet:openSheet, submitAdopt:submitAdopt, setTab:setTab};
+// ── 启动 ──
+(function init(){
+  setGen();
+  var h = String(location.hash||"").replace("#","");
+  var t = (h==="nearexp"||h==="pick") ? h : null;
+  if (!t){ try { t = localStorage.getItem("dc-m-tab"); } catch(e){} }
+  setTab(t==="pick" ? "pick" : "nearexp");
+})();
+</script>
+</body>
+</html>
