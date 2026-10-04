@@ -278,7 +278,9 @@ export async function buildBossdesk(pool, me, empId) {
 const BOSSDESK_ACTIONS = new Set([...MESSAGE_ACTIONS, "boss_decide_batch", "boss_note", "boss_assign", "boss_undo", "boss_task_detail", "boss_reply_parse", "boss_reply_apply"]);
 
 function taskIdList(v) {
-  return uniq((Array.isArray(v) ? v : []).map((x) => String(x ?? "").trim()).filter(Boolean)).slice(0, 50);
+  const ids = uniq((Array.isArray(v) ? v : []).map((x) => String(x ?? "").trim()).filter(Boolean));
+  if (ids.length > 500) throw Object.assign(new Error("一次最多处理 500 条"), { status: 400 }); // 原 slice(0,50) 静默丢掉超出的(1004 转 69 条只办了 50 条)
+  return ids;
 }
 
 // prev 快照:undo 按它整行恢复,所以必须在 UPDATE 前取(且只对还在 damon 名下的取)
@@ -290,7 +292,8 @@ function snapTask(pre) {
 //  dnaCaseForDecide / dnaCaseForNote / dnaRevokeBatch,行为不变)
 
 async function decideBatch(b, res, pool) {
-  const items = (Array.isArray(b.items) ? b.items : []).filter((x) => x && x.task_id != null).slice(0, 50);
+  const items = (Array.isArray(b.items) ? b.items : []).filter((x) => x && x.task_id != null);
+  if (items.length > 500) return res.status(400).json({ success: false, error: "一次最多处理 500 条" }); // 原 slice(0,50) 静默截断
   if (!items.length) return res.status(400).json({ success: false, error: "items 不能为空" });
   const decision = b.decision === "no" ? "不同意" : "同意";
   const note = String(b.note || "").trim().slice(0, 200);
@@ -429,7 +432,7 @@ export async function tryBossdeskAction({ action, b, res, pool, me, empId }) {
     if (action === "boss_assign") return await assignTasks(b, res, pool, me);
     return await undoBatch(b, res, pool);
   } catch (err) { // 决不向上抛:接线在 tryManagerAction 开头,炸了会吃掉老通道
-    res.status(500).json({ success: false, error: String(err?.message || err).slice(0, 200) });
+    res.status(err?.status || 500).json({ success: false, error: String(err?.message || err).slice(0, 200) });
     return true;
   }
 }
