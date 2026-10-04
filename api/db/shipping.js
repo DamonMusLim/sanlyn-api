@@ -4,6 +4,7 @@ import { derivePlanFromOrders } from "../lib/derive-plan-from-orders.js"; // tas
 import { sendCancellationNotice } from "../../jobs/shipment-notify.js"; // 2026-06-26: 取消通知工厂
 import { mirrorPlanBlToOrders } from "../lib/bl-order-mirror.js"; // 2026-07-13: bl_no 镜像同步到 orders
 import { applyCostLinesMirror } from "./lib/cost-lines-mirror.js"; // 2026-08-03: costLines→镜像派生(蓝图v1.4①)
+import { validateActualGrossWeight, auditActualGrossWeight } from "./lib/actual-gross-weight.js";
 import { validateReleaseTypeBody } from "./lib/release-type.js";
 
 // Normalize a Chinese company name for matching:
@@ -31,7 +32,7 @@ const WRITABLE = [
   // 这四个正是 P0 要的字段(船代 0/273、截港/截单/截VGM 只有 10/11/3)。
   "carrier_agent","doc_cutoff_at","close_harbor_at","vgm_cutoff_at","port_cutoff_at",
   "cargo_cutoff","customs_cutoff","ams_cutoff","vgm_cutoff",
-  "actual_pkgs","actual_pkg_unit","actual_cbm","marks","place_of_receipt","place_of_delivery",
+  "actual_pkgs","actual_pkg_unit","actual_gross_weight_kg","actual_cbm","marks","place_of_receipt","place_of_delivery",
   "vessel_name_cn","issue_place","payment_place","destination_place","shipper_owned_container_mark",
   "mbl_count","hbl_count","transport_terms","freight_payment","cargo_property",
   "container_no","container_type","container_qty","seal_no","release_type","freight_term",
@@ -88,6 +89,8 @@ export default async function handler(req, res) {
   if (req.method === "POST") {
     try {
       const body = applyCostLinesMirror(req.body || {});
+      const agw = validateActualGrossWeight(body, req.user);
+      if (!agw.ok) return res.status(agw.status).json({ success:false, error:agw.error });
       const rel = validateReleaseTypeBody(body);
       if (!rel.ok) return res.status(400).json({ success:false, error:rel.error });
       const params = [];
@@ -142,6 +145,8 @@ export default async function handler(req, res) {
   if (req.method === "PATCH") {
     try {
       const body = applyCostLinesMirror(req.body || {});
+      const agw = validateActualGrossWeight(body, req.user);
+      if (!agw.ok) return res.status(agw.status).json({ success:false, error:agw.error });
       const rel = validateReleaseTypeBody(body);
       if (!rel.ok) return res.status(400).json({ success:false, error:rel.error });
       const BOOKING_STAGES = new Set(["so_received","confirming","confirmed"]);
@@ -158,8 +163,11 @@ export default async function handler(req, res) {
       let where;
       if (id != null && Number.isFinite(id)) { params.push(id); where = `id = $${params.length}`; }
       else { params.push(_id); where = `_id = $${params.length}`; }
+      const hasAgw = Object.prototype.hasOwnProperty.call(body, "actual_gross_weight_kg");
+      const oldAgw = hasAgw ? (await poolW.query(`SELECT actual_gross_weight_kg FROM shipping_plans WHERE ${id != null && Number.isFinite(id) ? "id" : "_id"} = $1`, [params[params.length - 1]])).rows[0]?.actual_gross_weight_kg : undefined;
       const r = await poolW.query(`UPDATE shipping_plans SET ${sets.join(", ")} WHERE ${where} RETURNING *`, params);
       if (!r.rows.length) return res.status(404).json({ success:false, error:"not found" });
+      if (hasAgw) await auditActualGrossWeight(poolW, r.rows[0], oldAgw, req.user);
       // ── 取消副作用 (2026-06-26): flow_status→已取消 时盖时间戳 + 留痕 + 通知工厂 ──
       try {
         const nf = String(body.flow_status || "");
