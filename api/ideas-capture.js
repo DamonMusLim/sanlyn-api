@@ -5,7 +5,7 @@
 
 import { setCors } from "./db.js";
 
-const MINIMAX_KEY  = process.env.MINIMAX_API_KEY  || "sk-cp--TQnRmQajBd6Rbng3ptBw4aES0erZfkbPS2nbYddkiG7pvRN9P3HBAUfhxyarR2m4XYNnJOIicdkqCU3MoI6AK7z4tSEp-a2VCcWoV4WCNF3uLJyJpop83M";
+const MINIMAX_KEY  = process.env.MINIMAX_API_KEY;
 const MINIMAX_URL  = process.env.MINIMAX_BASE_URL  || "https://api.minimaxi.com/v1/text/chatcompletion_v2";
 const MINIMAX_MODEL = process.env.MINIMAX_MODEL   || "MiniMax-M2.7-highspeed";
 const TRILIUM_URL  = "https://notes.sanlyn.cn";
@@ -45,6 +45,7 @@ ${content}
 - product：Sanlyn OS 产品功能相关
 - inbox：其他，暂时无法分类`;
 
+  if (!MINIMAX_KEY) throw new Error("MINIMAX_API_KEY not set");
   const resp = await fetch(MINIMAX_URL, {
     method: "POST",
     headers: {

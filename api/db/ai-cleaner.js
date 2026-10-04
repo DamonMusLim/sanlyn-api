@@ -17,7 +17,7 @@
 import { getPool, setCors } from "../db.js";
 
 var MM_URL   = process.env.MINIMAX_BASE_URL  || "https://api.minimaxi.com/v1/text/chatcompletion_v2";
-var MM_KEY   = process.env.MINIMAX_API_KEY  || "sk-cp--TQnRmQajBd6Rbng3ptBw4aES0erZfkbPS2nbYddkiG7pvRN9P3HBAUfhxyarR2m4XYNnJOIicdkqCU3MoI6AK7z4tSEp-a2VCcWoV4WCNF3uLJyJpop83M";
+var MM_KEY   = process.env.MINIMAX_API_KEY;
 var MM_MODEL = process.env.MINIMAX_MODEL     || "MiniMax-M2.7-highspeed";
 
 var ALLOWED_TASKS = [
