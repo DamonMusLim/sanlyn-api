@@ -243,6 +243,8 @@ tr.grand td{background:#111;color:#fff;font-weight:900;font-size:13px;padding:9p
   function applyTruthScale(){
     var all = window._rows || [];
     if (!all.length) return;
+    // Damon 1004 方案A:净重锚报关版合计(有 ciq 报检行时 = Σnw_kg),先于毛重缩放(毛重护栏要比净重)
+    if (Number(window._truthNW) > 0) scaleSeg(all.filter(function(r){return r && !r.isHeader;}), nw, Number(window._truthNW), 2);
     // 切段：每个 isHeader 起一段
     var segs = [], cur = null;
     all.forEach(function(r){
@@ -308,6 +310,7 @@ tr.grand td{background:#111;color:#fff;font-weight:900;font-size:13px;padding:9p
         var pl=sheets.filter(function(x){return x&&x.sheetName==='Packing List';})[0];
         var tot=pl&&pl.totals;           // ["","GRAND TOTAL:",qty,nw,gw,cbm]
         if(!tot)return;
+        window._truthNW=Number(tot[3])||0;
         window._truthGW=Number(tot[4])||0;
         window._truthCBM=Number(tot[5])||0;
       }).catch(function(){});
