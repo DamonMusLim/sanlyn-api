@@ -30,7 +30,7 @@ export function mockDB(proposals = [], tasks = []) {
       if(db.failEvent) throw new Error('mock event insert failed');
       db.events.push({sql,p});
     }
-    if(sql.includes("where state='proposed' order by")) return {rows:db.proposals.filter(x=>x.state==='proposed')};
+    if(sql.includes("where state='proposed' and recommendation <> 'continue' order by")) return {rows:db.proposals.filter(x=>x.state==='proposed'&&x.recommendation!=='continue')};
     if(sql.includes('from public.task_weekly_sweep where decided_at >')) return {rows:[]};
     if(sql.includes('insert into public.task_weekly_sweep')) {
       assert.match(sql,/on conflict \(id\) do nothing/);
