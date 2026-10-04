@@ -22,7 +22,7 @@ a{color:var(--pri)}
 .tab.on{background:var(--tx);border-color:var(--tx);color:#fff}
 main{padding:0 14px}
 .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
-.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px}
+.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:10px}
 .tiles4{grid-template-columns:repeat(4,minmax(0,1fr))}
 .tile{background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 8px;text-align:center;font-size:12px;color:var(--sub)}
 .tile b{display:block;font-size:20px;line-height:1.3;color:var(--tx);font-variant-numeric:tabular-nums}
@@ -167,10 +167,15 @@ function neDedup(rows){ // 同品多行只认 proposed/approved/executed 里 id 
     if (st!=="proposed"&&st!=="approved"&&st!=="executed") return;
     var k = r.product_code || ("id:"+r.id);
     if (!keep[k]){ keep[k]=r; order.push(k); }
-    else if (Number(r.id) > Number(keep[k].id)) keep[k]=r;
+    else {
+      var a=keep[k], ae=a.status==="executed", re=st==="executed";
+      if (re && (!ae || String(r.executed_at||"") > String(a.executed_at||""))) keep[k]=r;
+      else if (!re && !ae && Number(r.id) > Number(a.id)) keep[k]=r;
+    }
   });
   return order.map(function(k){ return keep[k]; });
 }
+function isDone(p){ return p.status==="executed"; } // 1004 执行器回读通过后回写 executed
 function liveDays(p){ // 1004:days_left 是提案生成时算的,会过时;按到期日现算
   if (!p.expiry_date) return null;
   var today = new Date(new Date().toLocaleString("en-US", {timeZone:"Asia/Shanghai"})); today.setHours(0,0,0,0);
@@ -182,7 +187,8 @@ function neRowHtml(p){
   var dl = dnum(p.days_left);
   var days = p.days_left==null ? "—" : (dl<0 ? "已过期 "+Math.abs(dl)+" 天" : "剩 "+dl+" 天");
   var tag = dl<0 ? '<span class="tag r">已过期 · 下架</span>' : (p.date_verified ? '<span class="tag g">店员已核</span>' : '<span class="tag o">等店员核</span>');
-  var price = esc(money(p.current_price))+'<span class="arr">→</span>'+esc(money(p.suggest_price));
+  var price = isDone(p) ? '<span class="tag g">已打折 '+esc(money(p.readback_price!=null?p.readback_price:p.current_price))+'</span>'
+    : esc(money(p.current_price))+'<span class="arr">→</span>'+esc(money(p.suggest_price));
   return '<div class="rowcard"><div class="rtop"><div class="nm">'+esc(p.product_name)+'</div>'+tag+'</div>'
     +'<div class="rmeta">'+txt(p.spec)+' · 货位 '+txt(p.orig_shelf)+' · 库存 <span class="num">'+n(p.stock)+'</span> 件</div>'
     +'<div class="rmeta"><span class="num">'+days+'</span> · 到期 '+txt(p.expiry_date)+' · '+esc(p.tier_label||"")+'</div>'
@@ -193,11 +199,13 @@ function neRender(){
   if (!rows.length && !(d.summary||[]).length){ $("ne-body").innerHTML = '<div class="empty">今天没有临期品</div>'; return; }
   var exp = rows.filter(function(p){return dnum(p.days_left)<0 && dnum(p.stock)>0;}).length;
   var ver = rows.filter(function(p){return !!p.date_verified;}).length;
+  var done = rows.filter(isDone).length;
   var soon = rows.filter(function(p){var x=dnum(p.days_left); return x>=0 && x<=30 && dnum(p.stock)>0;}).length;
   var h = '<div class="tiles">'
     +'<div class="tile red"><b>'+exp+'</b>已过期还有货</div>'
     +'<div class="tile"><b class="num">'+ver+'/'+rows.length+'</b>店员已核日期</div>'
-    +'<div class="tile"><b>'+soon+'</b>30 天内到期</div></div>'
+    +'<div class="tile"><b>'+soon+'</b>30 天内到期</div>'
+    +'<div class="tile"><b>'+done+'</b>已按 v5 打折</div></div>'
     +'<div class="note">店员核过日期的,每天 08:45 自动按 v5 打折,最低 1 元;没核的先等店员核,不打折。</div>';
   if ((d.summary||[]).length){
     h += '<div class="twrap"><table class="tb"><tr><th>档位</th><th class="r">品数</th><th class="r">件数</th><th class="r">金额</th></tr>'
@@ -206,9 +214,11 @@ function neRender(){
   }
   var list = rows.slice().sort(function(a,b){ var x=dnum(a.days_left),y=dnum(b.days_left); if(isFinite(x)&&isFinite(y))return x-y; return isFinite(x)?-1:1; });
   if (NE.filter==="wait") list = list.filter(function(p){return !p.date_verified;});
+  if (NE.filter==="done") list = list.filter(isDone);
   h += '<div class="chips">'
     +'<button class="chip'+(NE.filter==="all"?" on":"")+'" data-ne-chip="all">全部 '+rows.length+'</button>'
-    +'<button class="chip'+(NE.filter==="wait"?" on":"")+'" data-ne-chip="wait">只看待核</button>'+'</div>'
+    +'<button class="chip'+(NE.filter==="wait"?" on":"")+'" data-ne-chip="wait">只看待核</button>'
+    +'<button class="chip'+(NE.filter==="done"?" on":"")+'" data-ne-chip="done">只看已打折</button></div>'
     + (list.length ? list.map(neRowHtml).join("") : '<div class="empty">这一筛选下没有临期品</div>');
   $("ne-body").innerHTML = h;
 }
