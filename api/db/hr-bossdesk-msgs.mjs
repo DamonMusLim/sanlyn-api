@@ -17,7 +17,7 @@ function mapped(row) {
   return { id: `mail:${row.id}`, channel: 'email', source_label: '发件台',
     counterparty: Array.isArray(row.to_emails) ? row.to_emails.join(', ') : '', subject: row.subject ?? '',
     summary: '', received_at: null, prepared_at: row.prepared_at,
-    waiting: row.status === 'changes' ? '待修改' : '待审核', needs_owner: true,
+    waiting: row.status === 'changes' ? '待修改' : '待审核', needs_owner: false, // Nora 关只管聊天;邮件 true 会让前端置灰发送
     nora: null, has_draft: typeof row.body_html === 'string' && !!row.body_html.trim() };
 }
 export async function buildMessages(pool) {

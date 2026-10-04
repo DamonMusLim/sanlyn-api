@@ -4,7 +4,7 @@ const SOURCES = `WITH history AS (
   SELECT 'mail' AS kind, id::text AS id,
     CASE WHEN status='sent' THEN sent_at ELSE updated_at END AS at,
     jsonb_build_object('id',id,'status',status,'to_emails',to_emails,'subject',subject,
-      'body_html',body_html,'sent_by',sent_by,'before_edit',before_edit,
+      'body_html',body_html,'sent_by',sent_by,'reviewed_by',reviewed_by,'before_edit',before_edit,
       'review_note',review_note,'ai_note',ai_note) AS data
   FROM public.mail_outbox WHERE status IN ('sent','cancelled')
   UNION ALL
@@ -25,7 +25,7 @@ export function mapHistory(row) {
       counterparty: Array.isArray(data.to_emails) ? data.to_emails.join(', ') : '',
       subject: data.subject || '', summary: '', final_reply: cancelled ? '' : data.body_html || '',
       body_format: 'html', before_edit: data.before_edit || null,
-      actor: cancelled ? cancel?.[2] || '' : data.sent_by || '', at: row.at,
+      actor: cancelled ? cancel?.[2] || '' : data.reviewed_by || data.sent_by || '', at: row.at, // sent_by 是发件邮箱代号,点审核的人在 reviewed_by
       outcome: cancelled ? 'dismissed' : 'sent', note: cancelled ? cancel?.[1] || '' : data.review_note || '' };
   }
   const prev = data.prev || {};

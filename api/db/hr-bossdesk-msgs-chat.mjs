@@ -75,6 +75,15 @@ export function mapChat(row, task) {
     waiting: row.need_owner && !parseNora(task?.next_action) ? 'Nora 还没看完' : '待回复' };
 }
 
+// 通知/短信/系统号不进「消息」(Damon:广告、通知不进)。统一客服对这些会话没有分类,只能按确定特征挡。
+// ponytail: 名单式过滤,新出现的通知号要补名单;等统一客服有分类后改用分类。
+const NOISE_NAMES = new Set(['对外收款', '客户联系', '📬 邮件提醒']);
+export function isNoise(row) {
+  const name = String(row.customer_name || '').trim();
+  return row.account === 'system' || /^\d{4,}$/.test(name) || NOISE_NAMES.has(name)
+    || /正在转接另一个客服/.test(String(row.last_message || ''));
+}
+
 export async function buildChats(pool) {
   const items = [];
   // 先用列表字段粗筛再拉详情:全量 600+ 会话逐个拉详情太重。
@@ -83,9 +92,8 @@ export async function buildChats(pool) {
   const candidates = (await conversations())
     .filter(r => Date.parse(r.last_at) >= since)
     .sort((a, b) => Date.parse(b.last_at) - Date.parse(a.last_at)).slice(0, 30);
-  for (const row of candidates) {
+  for (const full of await Promise.all(candidates.filter(r => !isNoise(r)).map(conversation))) {
     // 列表没有方向字段，必须读真实消息；不把 unread 当作客人未回复。
-    const full = await conversation(row);
     if (awaitingReply(full) && !await handled(pool, full)) items.push(mapChat(full, await chatTask(pool, full)));
   }
   return items;
@@ -97,6 +105,12 @@ export async function readChat(pool, id) {
   if (!row) throw fail(404, '会话不存在');
   const full = await conversation(row);
   if (!awaitingReply(full) || await handled(pool, full)) throw fail(409, '会话已处理，请刷新');
+  if (!full.draft?.text) { // 没草稿就按需让统一客服生成(带分类,要老板批的会被标出来)
+    try {
+      const made = await relay('/api/inbox/suggest', { conversation_id: String(row.conversation_id) });
+      if (made?.draft) Object.assign(full, { draft: made.draft, need_owner: full.need_owner || made.draft.need_owner === true });
+    } catch { full.draft_error = 'AI 草稿没生成出来,可以直接写'; } // 生成失败不挡打开
+  }
   return { ...full, task: await chatTask(pool, full) };
 }
 
