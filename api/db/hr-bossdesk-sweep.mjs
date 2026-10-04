@@ -6,7 +6,7 @@ const label = p => p.recommendation === 'merge' ? `合并到 ${p.target_id}`
 
 export async function sweepGroups(pool) {
   const rows = (await pool.query(`select * from public.task_weekly_sweep
-    where state='proposed' order by sweep_week desc, domain, recommendation, task_id`)).rows;
+    where state='proposed' and recommendation <> 'continue' order by sweep_week desc, domain, recommendation, task_id`)).rows;
   const groups = new Map();
   for (const p of rows) {
     const base = `${p.sweep_week}:${p.domain ?? ''}:${p.recommendation}`;
