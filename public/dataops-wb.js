@@ -84,6 +84,8 @@ var PAGES = {
     var d = st.data || await get("db/petstore-store-board");
     if (!st.data) st.at = Date.now();
     st.data = d;
+    // 1004:取数 5xx/{error} 时别渲染一屏「—」不吭声(401 例外,get() 已写「没登录」)
+    if (d.error || d.ok===false) { if (d.error !== "Unauthorized" && window.verdict) verdict("🔴 "+(d.error||d.message||"取数失败"),"red"); return ""; }
     if (window.verdict) verdict(d.verdict || "—", d.verdict_level || "ok");
     var cards = d.cards || {}, cats = d.categories || [], health = d.health || {};
     function unk(v){ return v==null || v==="" ? "—" : E(v); }
@@ -186,6 +188,8 @@ var PAGES = {
     var d = st.data || await get("db/petstore-risk-center");
     if (!st.data) st.at = Date.now();
     st.data = d;
+    // 1004:取数 5xx/{error} 时别渲染一屏「—」不吭声(401 例外,get() 已写「没登录」)
+    if (d.error || d.ok===false) { if (d.error !== "Unauthorized" && window.verdict) verdict("🔴 "+(d.error||d.message||"取数失败"),"red"); return ""; }
     if (window.verdict) verdict(d.verdict, (d.rows||[]).some(function(r){return (r.problems||[]).some(function(p){return p.tier==="red"})}) ? "red" : "ok");
     var ps = d.problems || [], rows = d.rows || [], cards = d.cards || {};
     function hasOpen(r,k){ return (r.open_tasks||[]).some(function(t){return !k || t.problem_key===k}); }
