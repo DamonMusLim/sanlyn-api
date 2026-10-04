@@ -1,3 +1,5 @@
+import { execFile } from "node:child_process";
+import { homedir } from "node:os";
 // collab-submit-roles.js — extracted from booking-collab.js (structural split 2026-07-31, zero behavior change)
 import { rawToHash } from "./collab-shared.js";
 import { derivePortalSegments } from "./collab-portal-segments.js";
@@ -202,9 +204,14 @@ async function handleCustomerNotes(req, res, pool) {
       const noteTxt = Object.entries(notes).filter(([k, v]) => v).map(([k, v]) => `${k}: ${v}`).join("\n");
       if (noteTxt) {
         const { rows: pn } = await pool.query(`SELECT shipment_no FROM shipping_plans WHERE id = $1`, [planId]);
-        fetch("https://ntfy.sh/sanlyn-damon-alert", { method: "POST",
-          headers: { Title: encodeURIComponent(`客户备注 ${(pn[0]||{}).shipment_no||""}`), Priority: "default" },
-          body: `客户在协同页写了备注（可能要求改品名/HS）：\n${noteTxt.slice(0,500)}` }).catch(() => {});
+        const title = `客户备注 ${(pn[0]||{}).shipment_no||""}`;
+        const text = `客户在协同页写了备注（可能要求改品名/HS）：\n${noteTxt.slice(0,500)}`;
+        execFile(`${homedir()}/bin/wechat-push`, [`${title}\n${text}`],
+          { env: { ...process.env, PUSH_CALLER: "collab-submit-roles.js" } }, error => {
+            if (error) fetch("https://ntfy.sh/sanlyn-damon-alert", { method: "POST",
+              headers: { Title: encodeURIComponent(title), Priority: "default" },
+              body: text }).catch(() => {});
+          });
       }
     } catch (e) {}
 return res.json({ ok: true, freight_term: upd[0] ? upd[0].freight_term : null });

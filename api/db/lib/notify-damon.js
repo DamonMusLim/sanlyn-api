@@ -1,3 +1,4 @@
+// push-transport: API 内部通知库，负责卡片发送和任务登记；保留通道逻辑。
 // 内部提醒 Damon 走微信服务号模板消息(push-card, 最正规, 无 48h 窗口/无条数限)。
 // 服务号服务 = 本机 wechat-mp-push :3791; token 从 env MP_NOTIFY_TOKEN(server .env, 绝不进 git)。
 // 铁律: 通知是旁路, 发送失败绝不阻断业务; 无 token = 静默跳过(不报错)。

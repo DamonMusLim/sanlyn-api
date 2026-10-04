@@ -1,3 +1,5 @@
+import { execFile } from "node:child_process";
+import { homedir } from "node:os";
 // collab-files.js — extracted from booking-collab.js (structural split 2026-07-31, zero behavior change)
 import fs from "fs";
 import path from "path";
@@ -353,9 +355,15 @@ async function alertIfTotalsMismatch(pool, planId) {
       }
     } catch (e) {}
     if (!issues.length) return;
-    await fetch("https://ntfy.sh/sanlyn-damon-alert", { method: "POST",
-      headers: { Title: encodeURIComponent(`报关硬规则未过 ${r.shipment_no || ""}`), Priority: "high" },
-      body: `${r.shipment_no} / BL ${r.bl_no || "-"} 三方全部提交但总量不一致：\n` + issues.join("\n") }).catch(() => {});
+    const title = `报关硬规则未过 ${r.shipment_no || ""}`;
+    const text = `${r.shipment_no} / BL ${r.bl_no || "-"} 三方全部提交但总量不一致：\n` + issues.join("\n");
+    const gateOk = await new Promise(resolve => {
+      execFile(`${homedir()}/bin/wechat-push`, [`${title}\n${text}`],
+        { env: { ...process.env, PUSH_CALLER: "collab-files.js" } }, error => resolve(!error));
+    });
+    if (!gateOk) await fetch("https://ntfy.sh/sanlyn-damon-alert", { method: "POST",
+      headers: { Title: encodeURIComponent(title), Priority: "high" },
+      body: text }).catch(() => {});
   } catch (e) { console.error("[totals-alert]", e.message); }
 }
 
