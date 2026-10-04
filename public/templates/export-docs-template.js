@@ -284,7 +284,7 @@ function fillHeader(pfx,primary,all,seller,cur,port,companyMap){
   // 顺序: 卖方档案英文 → 卖方档案中文 → 公司表中文(实在没有才用,总比空好)。
   setT0(pfx+'-sellerAddr', (seller&&(firstText(seller.address_en)||firstText(seller.address))) || companyAddr(sellerCo) || '');
   setT0(pfx+'-buyerName',companyName(buyerCo)||primary.customer||primary.company_name_en||'');
-  setT0(pfx+'-buyerAddr',primary._buyerAddr||companyAddr(buyerCo)||primary.customer_address||'');
+  setT0(pfx+'-buyerAddr',primary._buyerAddr||primary.customer_address||companyAddr(buyerCo)||''); // Damon 1005:买方地址=订单(BL收货人)地址优先,档案只兜底
   var praw=orderRaw(primary);
   // 多单合并只显示【主订单(URL order_no那个=primary)】的一个FS,不再把全部FS用 / 拼(Damon 2026-07-08定案);单单自然=它自己的FS/PO
   // 主FS取【URL order_no 指定的那单】(Damon 2026-07-08:多单合并显示主订单的FS),不是排序后的all[0];找不到才退primary
