@@ -17,7 +17,9 @@ import {
 } from "./hr-bossdesk-dna.mjs";
 
 import { buildTaskList, tryTaskAction, noteTask, assignmentTarget, assignTask, undoBatch } from "./hr-bossdesk-tasks.mjs";
-import { buildMessages, tryMessageAction, MESSAGE_ACTIONS, CHAT_UNAVAILABLE } from './hr-bossdesk-msgs.mjs';
+import { buildMessages, tryMessageAction, MESSAGE_ACTIONS } from './hr-bossdesk-msgs.mjs';
+
+import { buildChats } from './hr-bossdesk-msgs-chat.mjs';
 
 const DEFAULT_BOSS_EMPLOYEE_IDS = "35"; // 复制自 hr-manager-mobile.mjs(那边未 export,brief 允许复制)
 
@@ -246,6 +248,7 @@ async function buildDone(pool) {
            t.next_holder
       FROM boss_decisions d LEFT JOIN tasks t ON t.id=d.task_id
      WHERE d.created_at > now() - interval '24 hours'
+       AND d.action NOT IN ('boss_msg_send','boss_msg_dismiss')
      ORDER BY d.created_at DESC, d.id DESC LIMIT 30`);
   return r.rows.map((x) => ({
     task_id: x.task_id, title: x.title, action: x.action, batch_id: x.batch_id,
@@ -265,7 +268,7 @@ export async function buildBossdesk(pool, me, empId) {
   done.push(...await safe(errors, "清库已办", [], () => sweepDone(pool)));
   const tasks = await safe(errors, "任务待办", [], () => buildTaskList(pool));
   const messages = await safe(errors, "邮件消息", [], () => buildMessages(pool));
-  errors.push(CHAT_UNAVAILABLE);
+  messages.push(...await safe(errors, "聊天消息", [], () => buildChats(pool)));
   const out = { groups, done, tasks, messages };
   if (errors.length) out.errors = errors; // 表没建(M140 未跑)时这里带出来,不炸整个 manager 页
   return out;
@@ -414,6 +417,10 @@ export async function tryBossdeskAction({ action, b, res, pool, me, empId }) {
     return true;
   }
   try {
+    if (action === 'boss_undo' && String(b.batch_id || '').trim().startsWith('msg-')) {
+      res.status(409).json({ success: false, error: '消息发送/不用回不能通过任务撤回，请核实真实渠道状态' });
+      return true;
+    }
     if (await tryMessageAction({ action, b, res, pool, me, empId })) return true;
     if (await trySweepAction(action, b, res, pool)) return true;
     if (await tryTaskAction({ action, b, res, pool, me }) !== false) return true;

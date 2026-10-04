@@ -18,10 +18,10 @@ function b64urlDecode(str) {
 }
 
 // ── Generate JWT ──
-export function generateToken(payload) {
+export function generateToken(payload, ttlSec) { // ttlSec 可选:不传=原 TOKEN_EXPIRY(待我处理代发邮件传 60)
   var header = { alg: "HS256", typ: "JWT" };
   var now = Math.floor(Date.now() / 1000);
-  var body = Object.assign({}, payload, { iat: now, exp: now + TOKEN_EXPIRY });
+  var body = Object.assign({}, payload, { iat: now, exp: now + (Number.isInteger(ttlSec) && ttlSec > 0 ? ttlSec : TOKEN_EXPIRY) });
 
   var segments = [b64url(JSON.stringify(header)), b64url(JSON.stringify(body))];
   var sig = crypto.createHmac("sha256", SECRET).update(segments.join(".")).digest();
