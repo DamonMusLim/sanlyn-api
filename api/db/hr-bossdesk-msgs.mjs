@@ -87,7 +87,7 @@ async function mailMutation(id, row, content, dismiss, identity) {
   // 代 Damon 调发件台的临时凭证:60 秒有效,只在内存用一次
   const { generateToken } = await import('../auth.js');
   const token = generateToken({ uid: identity.id, username: identity.username, role: identity.role, via: 'bossdesk' }, 60);
-  const call = (suffix, method, body) => requestJson(`http://127.0.0.1:4780/ac/api/mail-outbox/${id.slice(5)}${suffix}`, {
+  const call = (suffix, method, body) => requestJson(`${(process.env.ACFIN_BASE || "http://127.0.0.1:4790").replace(/\/+$/, "")}/ac/api/mail-outbox/${id.slice(5)}${suffix}`, {
     method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body),
   }, [token]);
   if (dismiss) return call('/cancel', 'POST', { reason: content });
