@@ -1858,6 +1858,8 @@ $("ft").innerHTML = "数据源：腾讯 PG · petstore-api:9010 · 三个接口�
   var qs = new URLSearchParams(location.search);
   var p = qs.get("p") || "";
   var tab = qs.get("tab") || "";
+  // 1004 Damon「去套娃」:嵌进 War Room 时(?embed=1)外壳管导航/标题/刷新,这里只留内容
+  if (qs.get("embed") === "1") document.documentElement.classList.add("embed");
   var okTab = {sel:1, ov:1, opp:1, l7:1};
   if (p === "rival" && okTab[tab]) {
     window.__rivalTab = tab;
