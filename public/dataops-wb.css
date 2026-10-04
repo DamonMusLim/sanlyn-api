@@ -182,3 +182,4 @@ table.mini td.ttl{white-space:normal;max-width:420px;line-height:1.45}
 /* 1004 嵌入 War Room(?embed=1):侧栏/大标题/页脚交给外壳,只留内容;单独打开不受影响 */
 html.embed .side,html.embed .hd h1,html.embed #ft{display:none}
 html.embed .main{padding:16px}
+html.embed .app{grid-template-columns:minmax(0,1fr)}
