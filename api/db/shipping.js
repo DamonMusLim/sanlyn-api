@@ -78,6 +78,10 @@ export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
+  // 1005: 写入只给内部管理员(admin-v1 后台 + mini 脚本 svc-agent 均签 role=admin);客户/工厂/货代等外部账号 403
+  if ((req.method === "POST" || req.method === "PATCH") && !["admin", "superadmin", "super_admin"].includes((req.user || {}).role)) {
+    return res.status(403).json({ success: false, error: "forbidden_role" });
+  }
   const poolW = getPool();
 
   // ── POST: 新建海运计划（修复「一直没写入」：原来只有 GET，+New 撞 405）──
